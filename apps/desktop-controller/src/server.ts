@@ -243,9 +243,17 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       }
     };
 
+    // per-connection serialization: async handlers must not interleave
+    let inbound: Promise<void> = Promise.resolve();
     const handleJson = (raw: string) => {
-      for (const response of dispatcher.handle(raw, ctx)) sendJson(response);
-      afterDispatch();
+      inbound = inbound
+        .then(async () => {
+          for (const response of await dispatcher.handle(raw, ctx)) sendJson(response);
+          afterDispatch();
+        })
+        .catch(() => {
+          socket.close(1011, "internal error");
+        });
     };
 
     socket.on("message", (data, isBinary) => {

@@ -1,5 +1,5 @@
 import { type PairGrant, PairGrantSchema, PairRequest, parseInbound } from "@rdc/protocol";
-import { type KxKeypair, openBox, toB64 } from "@rdc/security";
+import { type KxKeypair, openBox, toB64 } from "@rdc/security/client";
 import { defaultWebSocketFactory, type WebSocketFactory } from "./websocket.ts";
 
 export interface PairOptions {

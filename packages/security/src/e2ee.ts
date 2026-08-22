@@ -1,27 +1,24 @@
-import { createRequire } from "node:module";
 import type { StateAddress } from "libsodium-wrappers";
 
-type SodiumModule = typeof import("libsodium-wrappers");
+export type SodiumModule = typeof import("libsodium-wrappers");
 
 /**
  * E2EE primitives (PLAN §36): X25519 crypto_kx session keys + XChaCha20-Poly1305
- * secretstream. libsodium-wrappers' ESM dist is broken under Node resolution,
- * so the CJS build is loaded via createRequire; the phone swaps this module for
- * react-native-libsodium behind the same API surface (S2b).
- *
- * Call `initSodium()` once at process start; everything after is synchronous.
+ * secretstream. This file is runtime-agnostic (no node: imports — React Native
+ * bundles it): callers inject the sodium module via `initSodiumFrom()`.
+ * Node processes use `initSodium()` from node-init.ts instead.
  */
 
 let sodium: SodiumModule | null = null;
 
-export async function initSodium(): Promise<void> {
-  const mod = createRequire(import.meta.url)("libsodium-wrappers") as SodiumModule;
+export async function initSodiumFrom(mod: SodiumModule): Promise<void> {
   await mod.ready;
   sodium = mod;
 }
 
 function s(): SodiumModule {
-  if (!sodium) throw new Error("initSodium() must be awaited before using crypto");
+  if (!sodium)
+    throw new Error("sodium not initialized — await initSodium()/initSodiumFrom() first");
   return sodium;
 }
 

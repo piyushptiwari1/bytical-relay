@@ -154,6 +154,28 @@ export const FileList = defineCommand(
   z.object({ entries: z.array(FileEntrySchema) }),
 );
 
+/** On-demand content fetch (PLAN §7): capped, canonicalized, sensitive-paths denied. */
+export const FileRead = defineCommand(
+  "file.read",
+  z.object({
+    project_id: z.string().min(1),
+    relative_path: z.string().min(1),
+    max_bytes: z
+      .number()
+      .int()
+      .positive()
+      .max(1024 * 1024)
+      .default(256 * 1024),
+  }),
+  z.object({
+    relative_path: z.string(),
+    size: z.number().int().nonnegative(),
+    encoding: z.enum(["utf8", "base64"]),
+    content: z.string(),
+    truncated: z.boolean(),
+  }),
+);
+
 export const FileChanged = defineEvent("file.changed", FileChangeSchema);
 
 // ── Inbound parsing ──────────────────────────────────────────────────────────
@@ -181,6 +203,8 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   ProjectList.response,
   FileList.request,
   FileList.response,
+  FileRead.request,
+  FileRead.response,
   DebugEchoed.schema,
   FileChanged.schema,
 ]);

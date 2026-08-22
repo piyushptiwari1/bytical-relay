@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "rdc",
+    "slug": "rdc-mobile",
+    "version": "0.0.1",
+    "scheme": "rdc",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.rdc.mobile"
+    },
+    "ios": {
+      "bundleIdentifier": "com.rdc.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "rdc connects to your development machine on your local network."
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "rdc uses the camera only to scan the pairing QR code shown on your computer."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-status-bar"
+    ]
+  }
+}

@@ -33,7 +33,7 @@ export function defineMessage<TType extends string, TPayload extends z.ZodType>(
   return {
     type,
     schema,
-    create(payloadValue: z.infer<TPayload>, meta: EnvelopeMeta = {}): Message {
+    create(payloadValue: z.input<TPayload>, meta: EnvelopeMeta = {}): Message {
       return { ...baseFields(type), payload: payloadValue, ...meta } as Message;
     },
   };
@@ -70,7 +70,7 @@ export function defineCommand<
     request,
     response,
     createRequest(
-      argsValue: z.infer<TArgs>,
+      argsValue: z.input<TArgs>,
       opts: EnvelopeMeta & { command_id?: string } = {},
     ): Request {
       const { command_id, ...meta } = opts;
@@ -123,7 +123,7 @@ export function defineEvent<TType extends string, TPayload extends z.ZodType>(
     create(
       stream: string,
       seq: number,
-      payloadValue: z.infer<TPayload>,
+      payloadValue: z.input<TPayload>,
       meta: EnvelopeMeta = {},
     ): Event {
       return { ...baseFields(type), stream, seq, payload: payloadValue, ...meta } as Event;

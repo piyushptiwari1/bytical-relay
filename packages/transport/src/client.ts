@@ -11,7 +11,7 @@ import {
   SyncSubscribe,
   SysPing,
 } from "@rdc/protocol";
-import { type KxKeypair, SecureChannel } from "@rdc/security";
+import { type KxKeypair, SecureChannel } from "@rdc/security/client";
 import { type BackoffOptions, nextDelayMs, TypedEmitter } from "@rdc/shared";
 import { OrderedStreamBuffer } from "./ordered.ts";
 import { defaultWebSocketFactory, type WebSocketFactory, type WebSocketLike } from "./websocket.ts";

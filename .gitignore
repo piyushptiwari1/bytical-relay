@@ -5,3 +5,7 @@ coverage/
 *.tsbuildinfo
 *.log
 .DS_Store
+.expo/
+.export-check/
+apps/mobile/android/
+apps/mobile/ios/

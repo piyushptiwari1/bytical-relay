@@ -1,8 +1,12 @@
+import { open } from "node:fs/promises";
+import path from "node:path";
 import type { EventStore } from "@rdc/event-store";
 import type { FilesystemService, FsIndex } from "@rdc/filesystem";
+import { isSensitivePath, resolveInsideProject } from "@rdc/filesystem";
 import {
   DebugEcho,
   FileList,
+  FileRead,
   HelloAck,
   HelloReject,
   type KnownMessage,
@@ -49,17 +53,17 @@ export interface DispatcherDeps {
 export class ControllerDispatcher {
   constructor(private readonly deps: DispatcherDeps) {}
 
-  handle(raw: string, ctx: ClientContext): string[] {
+  async handle(raw: string, ctx: ClientContext): Promise<string[]> {
     const parsed = parseInbound(raw);
     if (!parsed.ok) {
       return [
         JSON.stringify(HelloReject.create({ error: parsed.error, supported: SUPPORTED_VERSIONS })),
       ];
     }
-    return this.#dispatch(parsed.value, ctx).map((m) => JSON.stringify(m));
+    return (await this.#dispatch(parsed.value, ctx)).map((m) => JSON.stringify(m));
   }
 
-  #dispatch(msg: KnownMessage, ctx: ClientContext): unknown[] {
+  async #dispatch(msg: KnownMessage, ctx: ClientContext): Promise<unknown[]> {
     if (msg.type === "hello") {
       const negotiated = negotiateVersion(SUPPORTED_VERSIONS, msg.payload.protocol);
       if (negotiated === null) {
@@ -112,6 +116,8 @@ export class ControllerDispatcher {
           }),
         ];
       }
+      case "file.read":
+        return [await this.#readFile(msg)];
       case "sync.subscribe": {
         for (const stream of msg.payload.streams) ctx.subscriptions.add(stream);
         return [SyncSubscribe.createOk(msg.command_id, { subscribed: [...ctx.subscriptions] })];
@@ -153,6 +159,61 @@ export class ControllerDispatcher {
       }
       default:
         return []; // events/results from peers are not commands — nothing to answer
+    }
+  }
+
+  /** PLAN §7: canonicalize → sensitive-deny → capped read → binary detection. */
+  async #readFile(msg: Extract<KnownMessage, { type: "file.read" }>): Promise<unknown> {
+    const { project_id, relative_path, max_bytes } = msg.payload;
+    const root = this.deps.fsIndex.getProjectRoot(project_id);
+    if (root === undefined) {
+      return FileRead.createError(
+        msg.command_id,
+        protocolError("NOT_FOUND", `unknown project: ${project_id}`),
+      );
+    }
+    const resolved = await resolveInsideProject(root, relative_path);
+    if (!resolved.ok) {
+      return FileRead.createError(
+        msg.command_id,
+        protocolError("FORBIDDEN", resolved.error.message),
+      );
+    }
+    if (isSensitivePath(resolved.value.rel)) {
+      return FileRead.createError(
+        msg.command_id,
+        protocolError("FORBIDDEN", "sensitive file — viewing requires the approval flow (S4)"),
+      );
+    }
+    try {
+      const handle = await open(resolved.value.abs, "r");
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile()) {
+          return FileRead.createError(
+            msg.command_id,
+            protocolError("INVALID_PAYLOAD", "not a regular file"),
+          );
+        }
+        const toRead = Math.min(stat.size, max_bytes);
+        const buffer = Buffer.alloc(toRead);
+        await handle.read(buffer, 0, toRead, 0);
+        const isBinary = buffer.subarray(0, 8192).includes(0);
+        return FileRead.createOk(msg.command_id, {
+          relative_path: resolved.value.rel,
+          size: stat.size,
+          encoding: isBinary ? "base64" : "utf8",
+          content: isBinary ? buffer.toString("base64") : buffer.toString("utf8"),
+          truncated: stat.size > toRead,
+        });
+      } finally {
+        await handle.close();
+      }
+    } catch (cause) {
+      return FileRead.createError(
+        msg.command_id,
+        protocolError("NOT_FOUND", `cannot read ${path.basename(relative_path)}: ${String(cause)}`),
+      );
     }
   }
 }
