@@ -158,9 +158,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const started = deps.pairing.start();
     const address = app.server.address();
     const port = typeof address === "object" && address !== null ? address.port : 0;
-    const addrs = [...allowedHosts]
-      .filter((h) => h !== "::1" && h !== "[::1]" && h !== "localhost")
-      .map((h) => `ws://${h}:${port}`);
+    // Only LAN-reachable addresses belong in the QR — loopback is the phone's own.
+    const lanHosts = [...allowedHosts].filter(
+      (h) => h !== "::1" && h !== "[::1]" && h !== "localhost" && h !== "127.0.0.1",
+    );
+    const addrs = (lanHosts.length > 0 ? lanHosts : ["127.0.0.1"]).map((h) => `ws://${h}:${port}`);
     const payload = deps.pairing.qrPayload(addrs);
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { margin: 1, width: 260 });
     return {

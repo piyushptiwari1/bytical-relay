@@ -12,6 +12,8 @@ export interface PairOptions {
   controllerKxPub: Uint8Array;
   onPending?: (fingerprint: string) => void;
   timeoutMs?: number;
+  /** how long to wait for the socket to open before trying the next address */
+  connectTimeoutMs?: number;
   webSocketFactory?: WebSocketFactory;
 }
 
@@ -30,12 +32,19 @@ export function pairWithController(options: PairOptions): Promise<PairGrant> {
       reject(new Error("pairing timed out"));
     }, options.timeoutMs ?? 90_000);
     (timer as { unref?: () => void }).unref?.();
+    const connectTimer = setTimeout(() => {
+      socket.close(4001, "connect timeout");
+      reject(new Error("controller unreachable"));
+    }, options.connectTimeoutMs ?? 8_000);
+    (connectTimer as { unref?: () => void }).unref?.();
     const fail = (cause: Error) => {
       clearTimeout(timer);
+      clearTimeout(connectTimer);
       socket.close(1000);
       reject(cause);
     };
     socket.addEventListener("open", () => {
+      clearTimeout(connectTimer);
       socket.send(
         JSON.stringify(
           PairRequest.create({
@@ -67,6 +76,7 @@ export function pairWithController(options: PairOptions): Promise<PairGrant> {
           );
           const grant = PairGrantSchema.parse(JSON.parse(inner));
           clearTimeout(timer);
+          clearTimeout(connectTimer);
           socket.close(1000, "paired");
           resolve(grant);
         } catch (cause) {
