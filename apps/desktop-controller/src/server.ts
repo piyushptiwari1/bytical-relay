@@ -1,23 +1,41 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import websocket from "@fastify/websocket";
 import type { EventStore } from "@rdc/event-store";
 import type { FilesystemService, FsIndex } from "@rdc/filesystem";
-import { eventEnvelopeFromRecord } from "@rdc/protocol";
+import { decodeFrame, encodeFrame, eventEnvelopeFromRecord, FrameKind } from "@rdc/protocol";
+import { fromB64, hashToken, type KxKeypair, SecureChannel } from "@rdc/security";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import QRCode from "qrcode";
+import type { DeviceRecord, DeviceStore } from "./device-store.ts";
 import { type ClientContext, ControllerDispatcher, newClientContext } from "./dispatcher.ts";
+import type { PairingCoordinator } from "./pairing-coordinator.ts";
 
 export interface ServerDeps {
   machineId: string;
+  machineName: string;
   localToken: string;
+  keys: KxKeypair;
+  devices: DeviceStore;
+  pairing: PairingCoordinator;
   fsService: FilesystemService;
   fsIndex: FsIndex;
   eventStore: EventStore;
 }
 
-const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+/** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
+function collectAllowedHostnames(): Set<string> {
+  const allowed = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+  for (const infos of Object.values(os.networkInterfaces())) {
+    for (const info of infos ?? []) {
+      if (info.family === "IPv4") allowed.add(info.address);
+    }
+  }
+  return allowed;
+}
 
 function tokenMatches(expected: string, presented: string | undefined): boolean {
   if (!presented) return false;
@@ -39,18 +57,18 @@ function extractToken(req: FastifyRequest): string | undefined {
   return undefined;
 }
 
-function hostAllowed(hostHeader: string | undefined): boolean {
+function hostAllowed(hostHeader: string | undefined, allowed: Set<string>): boolean {
   if (!hostHeader) return false;
   const hostname = hostHeader.startsWith("[")
     ? hostHeader.slice(0, hostHeader.indexOf("]") + 1)
     : (hostHeader.split(":")[0] ?? "");
-  return LOCAL_HOSTNAMES.has(hostname);
+  return allowed.has(hostname);
 }
 
-function originAllowed(origin: string | undefined): boolean {
+function originAllowed(origin: string | undefined, allowed: Set<string>): boolean {
   if (origin === undefined) return true; // non-browser clients send no Origin
   try {
-    return LOCAL_HOSTNAMES.has(new URL(origin).hostname);
+    return allowed.has(new URL(origin).hostname);
   } catch {
     return false;
   }
@@ -67,30 +85,53 @@ function dashHtml(): string {
 
 /** Structural socket type — avoids a hard dependency on ws's type package. */
 interface WsLike {
-  send(data: string): void;
-  on(event: "message", cb: (data: Buffer) => void): void;
+  send(data: string | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+  on(event: "message", cb: (data: Buffer, isBinary: boolean) => void): void;
   on(event: "close", cb: () => void): void;
 }
 
+interface ConnectedClient {
+  ctx: ClientContext;
+  sendJson: (json: string) => void;
+}
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
 /**
- * Local HTTP/WS server, hardened per PLAN §19/§38: binds 127.0.0.1 only (caller),
- * validates Host + Origin (DNS-rebinding defense), and requires the local token
- * on every request except /healthz — even from localhost.
+ * Local HTTP/WS server, hardened per PLAN §19/§38: Host + Origin validation
+ * (DNS-rebinding defense — LAN IPs of this machine are allowed for phone
+ * clients), token auth on everything except /healthz and /pair, and a
+ * mandatory E2EE secretstream channel for paired devices.
  */
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await app.register(websocket);
   const dispatcher = new ControllerDispatcher(deps);
-  const clients = new Map<WsLike, ClientContext>();
+  const clients = new Map<WsLike, ConnectedClient>();
+  const allowedHosts = collectAllowedHostnames();
+  const requestDevices = new WeakMap<FastifyRequest, DeviceRecord>();
 
   app.addHook("onRequest", async (req, reply) => {
-    if (req.url === "/healthz") return;
-    if (!hostAllowed(req.headers.host) || !originAllowed(req.headers.origin)) {
+    if (
+      !hostAllowed(req.headers.host, allowedHosts) ||
+      !originAllowed(req.headers.origin, allowedHosts)
+    ) {
       return reply.code(403).send({ error: "forbidden host/origin" });
     }
-    if (!tokenMatches(deps.localToken, extractToken(req))) {
-      return reply.code(401).send({ error: "missing or invalid token" });
+    const routePath = req.url.split("?")[0];
+    if (routePath === "/healthz" || routePath === "/pair") return;
+    const presented = extractToken(req);
+    if (tokenMatches(deps.localToken, presented)) return; // local caller (dashboard/extension)
+    if (presented) {
+      const device = deps.devices.findByTokenHash(hashToken(presented));
+      if (device) {
+        requestDevices.set(req, device);
+        return;
+      }
     }
+    return reply.code(401).send({ error: "missing or invalid token" });
   });
 
   app.get("/healthz", async () => ({ ok: true, machine_id: deps.machineId }));
@@ -108,25 +149,151 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return reply.type("text/html").send(dashHtml());
   });
 
-  app.get("/ws", { websocket: true }, (socket) => {
-    const ctx = newClientContext();
-    clients.set(socket, ctx);
-    socket.on("message", (data: Buffer) => {
-      for (const response of dispatcher.handle(data.toString(), ctx)) {
-        socket.send(response);
+  // ── Pairing (dashboard-driven, PLAN §20) ────────────────────────────────
+  app.post("/api/pairing/start", async () => {
+    const started = deps.pairing.start();
+    const address = app.server.address();
+    const port = typeof address === "object" && address !== null ? address.port : 0;
+    const addrs = [...allowedHosts]
+      .filter((h) => h !== "::1" && h !== "[::1]" && h !== "localhost")
+      .map((h) => `ws://${h}:${port}`);
+    const payload = deps.pairing.qrPayload(addrs);
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { margin: 1, width: 260 });
+    return {
+      code: started.code,
+      expires_at: started.expiresAt,
+      qr_payload: payload,
+      qr_data_url: qrDataUrl,
+    };
+  });
+
+  app.get("/api/pairing/status", async () => deps.pairing.status());
+
+  app.post("/api/pairing/confirm", async (_req, reply) => {
+    const granted = deps.pairing.confirm();
+    if (!granted) return reply.code(409).send({ error: "nothing pending confirmation" });
+    return { ok: true, ...granted };
+  });
+
+  app.post("/api/pairing/cancel", async () => {
+    deps.pairing.cancel();
+    return { ok: true };
+  });
+
+  app.get("/api/devices", async () => ({ devices: deps.devices.list() }));
+
+  /** Unauthenticated by design — gated by the one-time code + lockout inside the coordinator. */
+  app.get("/pair", { websocket: true }, (socket: WsLike) => {
+    const adapter = {
+      send: (json: string) => socket.send(json),
+      close: (code?: number, reason?: string) => socket.close(code, reason),
+    };
+    deps.pairing.attachSocket(adapter);
+    socket.on("message", (data, isBinary) => {
+      if (isBinary) {
+        socket.close(1008, "binary not allowed on /pair");
+        return;
       }
+      deps.pairing.handlePairMessage(data.toString());
+    });
+    socket.on("close", () => deps.pairing.detachSocket(adapter));
+  });
+
+  // ── Protocol endpoint (E2EE mandatory for paired devices) ──────────────────
+  app.get("/ws", { websocket: true }, (socket: WsLike, req: FastifyRequest) => {
+    const device = requestDevices.get(req);
+    const ctx = newClientContext();
+    const secure = device ? new SecureChannel("server", deps.keys, fromB64(device.kx_pub)) : null;
+    let ownHeaderSent = false;
+    let peerHeaderAccepted = false;
+    const encReady = () => secure !== null && ownHeaderSent && peerHeaderAccepted;
+
+    const sendJson = (json: string) => {
+      if (secure && encReady()) {
+        socket.send(
+          encodeFrame({
+            kind: FrameKind.Encrypted,
+            streamId: 0,
+            seq: 0,
+            payload: secure.encrypt(enc.encode(json)),
+          }),
+        );
+      } else {
+        socket.send(json);
+      }
+    };
+    clients.set(socket, { ctx, sendJson });
+
+    const afterDispatch = () => {
+      // server's secretstream header goes out right after the hello exchange
+      if (secure && ctx.helloDone && !ownHeaderSent) {
+        socket.send(
+          encodeFrame({
+            kind: FrameKind.SecureHeader,
+            streamId: 0,
+            seq: 0,
+            payload: secure.createHeader(),
+          }),
+        );
+        ownHeaderSent = true;
+      }
+    };
+
+    const handleJson = (raw: string) => {
+      for (const response of dispatcher.handle(raw, ctx)) sendJson(response);
+      afterDispatch();
+    };
+
+    socket.on("message", (data, isBinary) => {
+      if (!isBinary) {
+        if (secure && encReady()) {
+          socket.close(1008, "plaintext after secure handshake");
+          return;
+        }
+        handleJson(data.toString());
+        return;
+      }
+      if (!secure) {
+        socket.close(1008, "unexpected binary frame");
+        return;
+      }
+      const frame = decodeFrame(new Uint8Array(data));
+      if (!frame.ok) {
+        socket.close(1008, "malformed frame");
+        return;
+      }
+      if (frame.value.kind === FrameKind.SecureHeader) {
+        secure.acceptHeader(frame.value.payload);
+        peerHeaderAccepted = true;
+        afterDispatch();
+        return;
+      }
+      if (frame.value.kind === FrameKind.Encrypted) {
+        if (!encReady()) {
+          socket.close(1008, "encrypted frame before handshake");
+          return;
+        }
+        try {
+          handleJson(dec.decode(secure.decrypt(frame.value.payload)));
+        } catch {
+          socket.close(1008, "decrypt failed");
+        }
+        return;
+      }
+      socket.close(1008, "unsupported frame kind");
     });
     socket.on("close", () => clients.delete(socket));
   });
 
-  // Live push: journaled events → sockets subscribed to that stream.
+  // Live push: journaled events → sockets subscribed to that stream (encrypted per client).
   deps.fsService.emitter.on("events", (stored) => {
     for (const record of stored) {
       const envelope = eventEnvelopeFromRecord(record);
       if (!envelope.ok) continue;
       const json = JSON.stringify(envelope.value);
-      for (const [socket, ctx] of clients) {
-        if (ctx.helloDone && ctx.subscriptions.has(record.stream)) socket.send(json);
+      for (const [, client] of clients) {
+        if (client.ctx.helloDone && client.ctx.subscriptions.has(record.stream))
+          client.sendJson(json);
       }
     }
   });

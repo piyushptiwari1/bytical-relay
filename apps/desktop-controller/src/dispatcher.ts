@@ -13,6 +13,7 @@ import {
   SUPPORTED_VERSIONS,
   SyncReplay,
   SyncSubscribe,
+  SysPing,
 } from "@rdc/protocol";
 import { nowIso } from "@rdc/shared";
 
@@ -118,6 +119,8 @@ export class ControllerDispatcher {
           }),
         ];
       }
+      case "sys.ping":
+        return [SysPing.createOk(msg.command_id, { pong: nowIso() })];
       case "debug.echo": {
         const cached = this.deps.eventStore.getCommandResult(msg.command_id);
         if (cached !== undefined) {

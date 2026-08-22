@@ -27,6 +27,21 @@
   @keyframes flash { from { background: #1f6feb44; } to { background: transparent; } }
   #log { position: fixed; bottom: 0; right: 0; max-width: 46%; max-height: 30%; overflow: auto;
          font-size: 11px; color: #8b949e; padding: 8px 12px; background: #0d1117dd; }
+  #pairBtn { margin-left: auto; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+             border-radius: 6px; padding: 4px 12px; cursor: pointer; font: inherit; }
+  #pairBtn:hover { background: #30363d; }
+  #pairPanel { position: fixed; inset: 0; background: #000a; display: flex;
+               align-items: center; justify-content: center; }
+  #pairPanel[hidden] { display: none; }
+  #pairCard { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+              padding: 24px; text-align: center; max-width: 340px; }
+  #pairCard img { border-radius: 8px; background: #fff; padding: 6px; }
+  #pairCode { font-size: 22px; letter-spacing: 4px; margin: 10px 0; color: #79c0ff; }
+  #pairFp { font-size: 26px; margin: 8px 0; }
+  #pairState { color: #8b949e; font-size: 12px; min-height: 18px; }
+  #pairCard button { margin: 8px 4px 0; background: #238636; border: 0; color: #fff;
+                     border-radius: 6px; padding: 6px 16px; cursor: pointer; font: inherit; }
+  #pairCard button.secondary { background: #21262d; border: 1px solid #30363d; }
 </style>
 </head>
 <body>
@@ -34,7 +49,20 @@
   <h1>rdc controller</h1>
   <span id="status">connecting…</span>
   <span id="machine" style="color:#8b949e;font-size:12px"></span>
+  <button id="pairBtn" type="button">Pair device</button>
 </header>
+<div id="pairPanel" hidden>
+  <div id="pairCard">
+    <div style="font-size:15px;margin-bottom:10px">Pair a new device</div>
+    <img id="pairQr" alt="pairing QR" width="260" height="260" />
+    <div id="pairCode"></div>
+    <div id="pairFp"></div>
+    <div id="pairDevice" style="color:#e6edf3"></div>
+    <div id="pairState"></div>
+    <button id="pairConfirm" type="button" hidden>Confirm pairing</button>
+    <button id="pairCancel" type="button" class="secondary">Close</button>
+  </div>
+</div>
 <main>
   <div id="projects"></div>
   <div id="tree"><em style="color:#8b949e">Select a project</em></div>
@@ -179,6 +207,50 @@
       setTimeout(() => document.getElementById("tree").classList.remove("flash"), 1200);
     }, 400);
   }
+
+  // ── pairing UI ───────────────────────────────────────────────────────
+  let pairPoll = null;
+  const api = (method, url) => fetch(url, { method }).then((r) => r.json());
+
+  $("pairBtn").onclick = async () => {
+    const started = await api("POST", "/api/pairing/start");
+    $("pairQr").src = started.qr_data_url;
+    $("pairCode").textContent = started.code;
+    $("pairFp").textContent = "";
+    $("pairDevice").textContent = "";
+    $("pairState").textContent = "Scan with the phone app, then compare the emoji";
+    $("pairConfirm").hidden = true;
+    $("pairPanel").hidden = false;
+    clearInterval(pairPoll);
+    pairPoll = setInterval(pollPairing, 1000);
+  };
+
+  async function pollPairing() {
+    const s = await api("GET", "/api/pairing/status");
+    if (s.state === "waiting") {
+      $("pairState").textContent = `Waiting for scan… ${s.expires_in_s}s left`;
+    } else if (s.state === "pending_confirm") {
+      $("pairFp").textContent = s.fingerprint ?? "";
+      $("pairDevice").textContent = s.device_name ?? "";
+      $("pairState").textContent = "Verify the emoji match on the phone, then confirm";
+      $("pairConfirm").hidden = false;
+    } else if (s.state === "granted") {
+      $("pairState").textContent = "Paired ✓";
+      $("pairConfirm").hidden = true;
+      clearInterval(pairPoll);
+    } else {
+      $("pairState").textContent = `Pairing ${s.state}`;
+      $("pairConfirm").hidden = true;
+      clearInterval(pairPoll);
+    }
+  }
+
+  $("pairConfirm").onclick = () => api("POST", "/api/pairing/confirm").then(pollPairing);
+  $("pairCancel").onclick = async () => {
+    clearInterval(pairPoll);
+    await api("POST", "/api/pairing/cancel").catch(() => {});
+    $("pairPanel").hidden = true;
+  };
 
   connect();
 })();

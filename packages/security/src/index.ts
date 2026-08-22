@@ -1,4 +1,5 @@
-// E2EE (crypto_kx + secretstream via libsodium) and the pairing state machine
-// land in slice S2 — see IMPLEMENTATION-PLAN S2.2.
+// E2EE + pairing session live here since S2; DPAPI key wrapping tracked for later.
 export * from "./audit.ts";
+export * from "./e2ee.ts";
+export * from "./pairing.ts";
 export * from "./tokens.ts";

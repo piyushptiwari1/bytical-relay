@@ -11,6 +11,8 @@ export const ConfigSchema = z.object({
   /** Local API token — DPAPI wrapping arrives with pairing in S2. */
   local_token: z.string().min(32),
   log_level: z.enum(["trace", "debug", "info", "warn", "error"]),
+  /** bind 0.0.0.0 so phones on the LAN can reach the controller (S2 pairing) */
+  lan: z.boolean().default(true),
 });
 export type ControllerConfig = z.infer<typeof ConfigSchema>;
 
@@ -43,6 +45,7 @@ export function loadOrCreateConfig(dir = configDir()): ControllerConfig {
     project_roots: defaultProjectRoots(),
     local_token: randomBytes(32).toString("base64url"),
     log_level: "info",
+    lan: true,
   };
   writeFileSync(file, `${JSON.stringify(created, null, 2)}\n`, "utf8");
   return created;

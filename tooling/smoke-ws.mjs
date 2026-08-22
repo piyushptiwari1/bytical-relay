@@ -49,10 +49,17 @@ console.log("subscribed");
 
 writeFileSync(path.join(projectDir, "smoke-live.txt"), `written ${new Date().toISOString()}`);
 const pushed = await next(); // live push, no polling
-console.log("live-push:", pushed.type, pushed.payload.change, pushed.payload.relative_path, `seq=${pushed.seq}`);
+console.log(
+  "live-push:",
+  pushed.type,
+  pushed.payload.change,
+  pushed.payload.relative_path,
+  `seq=${pushed.seq}`,
+);
 
-const replay = (await command("sync.replay", { stream: `fs:${project.project_id}`, since: 0, limit: 100 })).payload
-  .result;
+const replay = (
+  await command("sync.replay", { stream: `fs:${project.project_id}`, since: 0, limit: 100 })
+).payload.result;
 console.log("replay:", replay.events.length, "event(s), head_seq =", replay.head_seq);
 ws.close();
 console.log("SMOKE OK");

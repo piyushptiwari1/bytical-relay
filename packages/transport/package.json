@@ -1,5 +1,5 @@
 {
-  "name": "@rdc/security",
+  "name": "@rdc/transport",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,11 +11,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@rdc/shared": "workspace:*",
-    "libsodium-wrappers": "catalog:"
+    "@rdc/protocol": "workspace:*",
+    "@rdc/security": "workspace:*",
+    "@rdc/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/libsodium-wrappers": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

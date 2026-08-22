@@ -7,6 +7,10 @@ export const FrameKind = {
   FileChunk: 1,
   TerminalChunk: 2,
   TunnelData: 3,
+  /** secretstream header exchange during the secure handshake (S2) */
+  SecureHeader: 4,
+  /** secretstream-encrypted JSON envelope (S2) */
+  Encrypted: 5,
 } as const;
 export type FrameKind = (typeof FrameKind)[keyof typeof FrameKind];
 

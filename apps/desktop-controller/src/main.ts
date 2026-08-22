@@ -1,11 +1,16 @@
 import { mkdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { SqliteEventStore } from "@rdc/event-store";
 import { detectProjects, FilesystemService, FsIndex } from "@rdc/filesystem";
+import { initSodium } from "@rdc/security";
 import { Command } from "commander";
 import pino from "pino";
 import { configDir, loadOrCreateConfig } from "./config.ts";
+import { DeviceStore } from "./device-store.ts";
 import { runDoctor } from "./doctor.ts";
+import { loadOrCreateKeys } from "./keys.ts";
+import { PairingCoordinator } from "./pairing-coordinator.ts";
 import { buildServer } from "./server.ts";
 import { acquireSingleInstanceLock } from "./single-instance.ts";
 
@@ -24,6 +29,15 @@ async function start(): Promise<void> {
   );
 
   const releaseLock = acquireSingleInstanceLock(dir);
+  await initSodium();
+  const keys = loadOrCreateKeys(dir);
+  const devices = new DeviceStore(path.join(dir, "devices.db"));
+  const pairing = new PairingCoordinator({
+    keys,
+    devices,
+    machineId: config.machine_id,
+    machineName: os.hostname(),
+  });
   const eventStore = new SqliteEventStore(path.join(dir, "events.db"));
   const fsIndex = new FsIndex(path.join(dir, "index.db"));
   const fsService = new FilesystemService(fsIndex, eventStore);
@@ -48,12 +62,16 @@ async function start(): Promise<void> {
 
   const app = await buildServer({
     machineId: config.machine_id,
+    machineName: os.hostname(),
     localToken: config.local_token,
+    keys,
+    devices,
+    pairing,
     fsService,
     fsIndex,
     eventStore,
   });
-  await app.listen({ port: config.port, host: "127.0.0.1" });
+  await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 
   const dashUrl = `http://127.0.0.1:${config.port}/dash?token=${config.local_token}`;
   logger.info({ port: config.port, projects: detected.length }, "controller ready");

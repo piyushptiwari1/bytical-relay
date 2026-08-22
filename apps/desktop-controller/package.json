@@ -20,10 +20,13 @@
     "commander": "catalog:",
     "fastify": "catalog:",
     "pino": "catalog:",
+    "qrcode": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@rdc/transport": "workspace:*",
     "@types/node": "catalog:",
+    "@types/qrcode": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

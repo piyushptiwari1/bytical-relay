@@ -43,6 +43,53 @@ export const HelloReject = defineMessage(
   }),
 );
 
+// ── Pairing (S2, exchanged on the unauthenticated /pair endpoint) ───────────
+export const PairRequest = defineMessage(
+  "pair.request",
+  z.object({
+    code: z.string().min(4).max(16),
+    device_name: z.string().min(1).max(64),
+    kx_pub: z.string().min(1),
+  }),
+);
+
+export const PairPending = defineMessage("pair.pending", z.object({ fingerprint: z.string() }));
+
+export const PairReject = defineMessage(
+  "pair.reject",
+  z.object({ error: ProtocolErrorSchema, attempts_left: z.number().int().nullable() }),
+);
+
+/** payload.sealed = crypto_box(nonce‖cipher) of PairGrant JSON — proves controller identity. */
+export const PairGranted = defineMessage("pair.granted", z.object({ sealed: z.string() }));
+
+export const PairGrantSchema = z.object({
+  device_id: z.string().min(1),
+  token: z.string().min(16),
+  machine_id: z.string().min(1),
+  machine_name: z.string().min(1),
+  controller_kx_pub: z.string().min(1),
+});
+export type PairGrant = z.infer<typeof PairGrantSchema>;
+
+/** Payload encoded into the pairing QR shown on the dashboard. */
+export const PairQrSchema = z.object({
+  v: z.literal(1),
+  addrs: z.array(z.string().min(1)).min(1),
+  machine_id: z.string().min(1),
+  name: z.string().min(1),
+  kx_pub: z.string().min(1),
+  code: z.string().min(4).max(16),
+});
+export type PairQr = z.infer<typeof PairQrSchema>;
+
+// ── System ────────────────────────────────────────────────────────────────────
+export const SysPing = defineCommand(
+  "sys.ping",
+  z.object({}),
+  z.object({ pong: z.iso.datetime() }),
+);
+
 // ── Debug domain (S0 round-trip proof; pattern for all future domains) ──────
 export const DebugEcho = defineCommand(
   "debug.echo",
@@ -95,6 +142,12 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   Hello.schema,
   HelloAck.schema,
   HelloReject.schema,
+  PairRequest.schema,
+  PairPending.schema,
+  PairReject.schema,
+  PairGranted.schema,
+  SysPing.request,
+  SysPing.response,
   DebugEcho.request,
   DebugEcho.response,
   SyncReplay.request,
