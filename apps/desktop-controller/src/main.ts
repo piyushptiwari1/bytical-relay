@@ -9,7 +9,9 @@ import pino from "pino";
 import { configDir, loadOrCreateConfig } from "./config.ts";
 import { DeviceStore } from "./device-store.ts";
 import { runDoctor } from "./doctor.ts";
+import { KeepAwake } from "./keep-awake.ts";
 import { loadOrCreateKeys } from "./keys.ts";
+import { HealthMonitor } from "./machine-health.ts";
 import { PairingCoordinator } from "./pairing-coordinator.ts";
 import { buildServer } from "./server.ts";
 import { acquireSingleInstanceLock } from "./single-instance.ts";
@@ -41,6 +43,9 @@ async function start(): Promise<void> {
   const eventStore = new SqliteEventStore(path.join(dir, "events.db"));
   const fsIndex = new FsIndex(path.join(dir, "index.db"));
   const fsService = new FilesystemService(fsIndex, eventStore);
+  const health = new HealthMonitor({ projectRoots: config.project_roots });
+  health.start();
+  const keepAwake = new KeepAwake();
 
   logger.info({ roots: config.project_roots }, "detecting projects");
   const detected = await detectProjects(config.project_roots);
@@ -70,6 +75,8 @@ async function start(): Promise<void> {
     fsService,
     fsIndex,
     eventStore,
+    health,
+    keepAwake,
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 
@@ -84,6 +91,8 @@ async function start(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, "shutting down");
     clearInterval(reconcileTimer);
+    health.stop();
+    keepAwake.disable();
     await app.close();
     await fsService.stop();
     eventStore.close();

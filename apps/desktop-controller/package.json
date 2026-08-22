@@ -18,7 +18,9 @@
     "@rdc/security": "workspace:*",
     "@rdc/shared": "workspace:*",
     "commander": "catalog:",
+    "execa": "catalog:",
     "fastify": "catalog:",
+    "koffi": "catalog:",
     "pino": "catalog:",
     "qrcode": "catalog:",
     "zod": "catalog:"

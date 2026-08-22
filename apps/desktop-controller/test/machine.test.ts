@@ -1,0 +1,86 @@
+import { MachineHealthSchema } from "@rdc/protocol";
+import { describe, expect, test, vi } from "vitest";
+import { type AwakeStrategy, KeepAwake } from "../src/keep-awake.ts";
+import { HealthMonitor } from "../src/machine-health.ts";
+
+describe("HealthMonitor", () => {
+  test("quickSnapshot returns schema-valid sane values synchronously", () => {
+    const monitor = new HealthMonitor();
+    const snap = monitor.latest();
+    const parsed = MachineHealthSchema.safeParse(snap);
+    expect(parsed.success).toBe(true);
+    expect(snap.memory.total_bytes).toBeGreaterThan(0);
+    expect(snap.memory.free_bytes).toBeLessThanOrEqual(snap.memory.total_bytes);
+    expect(snap.cpu.cores).toBeGreaterThan(0);
+    expect(snap.disks.length).toBeGreaterThanOrEqual(1);
+    expect(snap.disks[0]?.total_bytes).toBeGreaterThan(0);
+  });
+
+  test("sampleOnce fills async probes and caches; cpu load appears on second sample", async () => {
+    const monitor = new HealthMonitor({ probeHost: "127.0.0.1", probePort: 1 }); // closed port → offline, fast
+    const first = await monitor.sampleOnce();
+    expect(MachineHealthSchema.safeParse(first).success).toBe(true);
+    const second = await monitor.sampleOnce();
+    expect(second.cpu.load_percent).not.toBeNull();
+    expect(second.cpu.load_percent).toBeGreaterThanOrEqual(0);
+    expect(second.cpu.load_percent).toBeLessThanOrEqual(100);
+    expect(monitor.latest().sampled_at).toBe(second.sampled_at); // cached
+  }, 15_000);
+});
+
+describe("KeepAwake", () => {
+  function tracked(): { strategy: AwakeStrategy; calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      strategy: {
+        supported: true,
+        activate: () => calls.push("activate"),
+        deactivate: () => calls.push("deactivate"),
+      },
+    };
+  }
+
+  test("enable/disable drives the strategy and reports state", () => {
+    const { strategy, calls } = tracked();
+    const ka = new KeepAwake(strategy);
+    expect(ka.state()).toEqual({ supported: true, enabled: false, until: null });
+
+    const on = ka.enable();
+    expect(on.enabled).toBe(true);
+    expect(on.until).toBeNull();
+    const off = ka.disable();
+    expect(off.enabled).toBe(false);
+    expect(calls).toEqual(["activate", "deactivate"]);
+  });
+
+  test("TTL auto-disables", () => {
+    vi.useFakeTimers();
+    try {
+      const { strategy, calls } = tracked();
+      const ka = new KeepAwake(strategy);
+      const on = ka.enable(15);
+      expect(on.until).not.toBeNull();
+      vi.advanceTimersByTime(15 * 60_000 + 1);
+      expect(ka.state().enabled).toBe(false);
+      expect(calls).toEqual(["activate", "deactivate"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("unsupported strategy is a safe no-op", () => {
+    const ka = new KeepAwake({ supported: false, activate() {}, deactivate() {} });
+    expect(ka.enable().enabled).toBe(false);
+    expect(ka.state().supported).toBe(false);
+  });
+
+  test("real platform strategy loads without throwing", () => {
+    const ka = new KeepAwake();
+    // Windows/macOS always support it; Linux depends on systemd presence
+    if (process.platform === "win32" || process.platform === "darwin") {
+      expect(ka.supported).toBe(true);
+    }
+    expect(() => ka.disable()).not.toThrow();
+  });
+});

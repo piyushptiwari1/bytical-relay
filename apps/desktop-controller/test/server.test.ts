@@ -6,6 +6,8 @@ import { generateKxKeypair, initSodium } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { DeviceStore } from "../src/device-store.ts";
+import { KeepAwake } from "../src/keep-awake.ts";
+import { HealthMonitor } from "../src/machine-health.ts";
 import { PairingCoordinator } from "../src/pairing-coordinator.ts";
 import { buildServer } from "../src/server.ts";
 
@@ -45,6 +47,8 @@ function makeDeps() {
     fsService,
     fsIndex,
     eventStore,
+    health: new HealthMonitor(),
+    keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
   };
 }
 

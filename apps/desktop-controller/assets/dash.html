@@ -27,9 +27,11 @@
   @keyframes flash { from { background: #1f6feb44; } to { background: transparent; } }
   #log { position: fixed; bottom: 0; right: 0; max-width: 46%; max-height: 30%; overflow: auto;
          font-size: 11px; color: #8b949e; padding: 8px 12px; background: #0d1117dd; }
-  #pairBtn { margin-left: auto; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+  #pairBtn, #awakeBtn { margin-left: auto; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
              border-radius: 6px; padding: 4px 12px; cursor: pointer; font: inherit; }
-  #pairBtn:hover { background: #30363d; }
+  #awakeBtn { margin-left: 0; }
+  #awakeBtn.on { color: #3fb950; border-color: #3fb950; }
+  #pairBtn:hover, #awakeBtn:hover { background: #30363d; }
   #pairPanel { position: fixed; inset: 0; background: #000a; display: flex;
                align-items: center; justify-content: center; }
   #pairPanel[hidden] { display: none; }
@@ -49,7 +51,9 @@
   <h1>rdc controller</h1>
   <span id="status">connecting…</span>
   <span id="machine" style="color:#8b949e;font-size:12px"></span>
+  <span id="health" style="color:#8b949e;font-size:12px"></span>
   <button id="pairBtn" type="button">Pair device</button>
+  <button id="awakeBtn" type="button" hidden>☕ keep awake</button>
 </header>
 <div id="pairPanel" hidden>
   <div id="pairCard">
@@ -110,6 +114,8 @@
         $("status").className = "ok";
         $("machine").textContent = msg.payload.machine_id;
         void loadProjects();
+        void refreshHealth();
+        if (!healthPoll) healthPoll = setInterval(refreshHealth, 30000);
         return;
       }
       if (msg.command_id && pending.has(msg.command_id)) {
@@ -250,6 +256,39 @@
     clearInterval(pairPoll);
     await api("POST", "/api/pairing/cancel").catch(() => {});
     $("pairPanel").hidden = true;
+  };
+
+  // ── machine health + keep-awake ───────────────────────────────────────
+  let healthPoll = null;
+  let awakeEnabled = false;
+  const gb = (bytes) => (bytes / 1073741824).toFixed(1);
+
+  async function refreshHealth() {
+    try {
+      const h = await command("machine.status", {});
+      const usedGb = gb(h.memory.total_bytes - h.memory.free_bytes);
+      const parts = [`RAM ${usedGb}/${gb(h.memory.total_bytes)} GB`];
+      if (h.cpu.load_percent !== null) parts.push(`CPU ${h.cpu.load_percent}%`);
+      parts.push(h.network.online ? `net ${h.network.latency_ms}ms` : "net offline");
+      if (h.battery) parts.push(`🔋 ${h.battery.percent}%${h.battery.charging ? "⚡" : ""}`);
+      $("health").textContent = parts.join(" · ");
+      renderAwake(h.keep_awake);
+    } catch (err) {
+      log(`health: ${err.message}`);
+    }
+  }
+
+  function renderAwake(state) {
+    const btn = $("awakeBtn");
+    btn.hidden = !state.supported;
+    awakeEnabled = state.enabled;
+    btn.className = state.enabled ? "on" : "";
+    btn.textContent = state.enabled ? "☕ staying awake" : "☕ keep awake";
+  }
+
+  $("awakeBtn").onclick = async () => {
+    renderAwake(await command("machine.keep_awake", { enabled: !awakeEnabled }));
+    log(`keep-awake ${awakeEnabled ? "enabled" : "disabled"}`);
   };
 
   connect();

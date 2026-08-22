@@ -1,6 +1,12 @@
 import { err, ok, type Result, safeJsonParse } from "@rdc/shared";
 import { z } from "zod";
-import { FileChangeSchema, FileEntrySchema, ProjectSchema } from "./entities.ts";
+import {
+  FileChangeSchema,
+  FileEntrySchema,
+  KeepAwakeStateSchema,
+  MachineHealthSchema,
+  ProjectSchema,
+} from "./entities.ts";
 import { defineCommand, defineEvent, defineMessage } from "./envelope.ts";
 import { type ProtocolError, ProtocolErrorSchema, protocolError } from "./errors.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
@@ -90,6 +96,19 @@ export const SysPing = defineCommand(
   z.object({ pong: z.iso.datetime() }),
 );
 
+// ── Machine domain (S1.6: health + power control) ─────────────────────────
+export const MachineStatus = defineCommand(
+  "machine.status",
+  z.object({}),
+  MachineHealthSchema.extend({ keep_awake: KeepAwakeStateSchema }),
+);
+
+export const MachineKeepAwake = defineCommand(
+  "machine.keep_awake",
+  z.object({ enabled: z.boolean(), ttl_minutes: z.number().int().min(1).max(720).optional() }),
+  KeepAwakeStateSchema,
+);
+
 // ── Debug domain (S0 round-trip proof; pattern for all future domains) ──────
 export const DebugEcho = defineCommand(
   "debug.echo",
@@ -148,6 +167,10 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   PairGranted.schema,
   SysPing.request,
   SysPing.response,
+  MachineStatus.request,
+  MachineStatus.response,
+  MachineKeepAwake.request,
+  MachineKeepAwake.response,
   DebugEcho.request,
   DebugEcho.response,
   SyncReplay.request,

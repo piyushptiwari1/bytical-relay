@@ -36,6 +36,9 @@ catalogs:
     ignore:
       specifier: ^7.0.0
       version: 7.0.6
+    koffi:
+      specifier: ^2.9.0
+      version: 2.16.3
     libsodium-wrappers:
       specifier: ^0.7.13
       version: 0.7.16
@@ -101,9 +104,15 @@ importers:
       commander:
         specifier: 'catalog:'
         version: 13.1.0
+      execa:
+        specifier: 'catalog:'
+        version: 9.6.1
       fastify:
         specifier: 'catalog:'
         version: 5.12.1
+      koffi:
+        specifier: 'catalog:'
+        version: 2.16.3
       pino:
         specifier: 'catalog:'
         version: 9.14.0
@@ -1238,6 +1247,9 @@ packages:
 
   jsonfile@4.0.0:
     resolution: {integrity: sha512-m6F1R3z8jjlf2imQHS2Qez5sjKWQzbuuhuJ/FKYFRZvPE3PuHcSMVZzfsLhGVOkfd20obL5SWEBew5ShlquNxg==}
+
+  koffi@2.16.3:
+    resolution: {integrity: sha512-E9y1AsgYGlaxMhcZzHr8y96QF2U5XzA12GGVAfbWqIubTwPNMXQarfBzePNXHe0xtIEtNd6ifAv3GAKYGUeBAQ==}
 
   libsodium-wrappers@0.7.16:
     resolution: {integrity: sha512-Gtr/WBx4dKjvRL1pvfwZqu7gO6AfrQ0u9vFL+kXihtHf6NfkROR8pjYWn98MFDI3jN19Ii1ZUfPR9afGiPyfHg==}
@@ -2651,6 +2663,8 @@ snapshots:
   jsonfile@4.0.0:
     optionalDependencies:
       graceful-fs: 4.2.11
+
+  koffi@2.16.3: {}
 
   libsodium-wrappers@0.7.16:
     dependencies:

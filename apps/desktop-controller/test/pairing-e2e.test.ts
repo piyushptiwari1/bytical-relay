@@ -6,6 +6,8 @@ import { newEventId, nowIso } from "@rdc/shared";
 import { ControllerClient, pairWithController } from "@rdc/transport";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { DeviceStore } from "../src/device-store.ts";
+import { KeepAwake } from "../src/keep-awake.ts";
+import { HealthMonitor } from "../src/machine-health.ts";
 import { PairingCoordinator } from "../src/pairing-coordinator.ts";
 import { buildServer, type ServerDeps } from "../src/server.ts";
 
@@ -46,6 +48,8 @@ beforeAll(async () => {
     fsService,
     fsIndex,
     eventStore,
+    health: new HealthMonitor(),
+    keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
   };
   const app = await buildServer(deps);
   closers.push(() => app.close());

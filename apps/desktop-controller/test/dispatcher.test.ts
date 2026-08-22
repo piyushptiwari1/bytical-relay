@@ -4,6 +4,8 @@ import {
   DebugEcho,
   FileList,
   Hello,
+  MachineKeepAwake,
+  MachineStatus,
   ProjectList,
   parseInbound,
   SUPPORTED_VERSIONS,
@@ -11,6 +13,10 @@ import {
 } from "@rdc/protocol";
 import { describe, expect, test } from "vitest";
 import { ControllerDispatcher, newClientContext } from "../src/dispatcher.ts";
+import { KeepAwake } from "../src/keep-awake.ts";
+import { HealthMonitor } from "../src/machine-health.ts";
+
+const fakeAwakeStrategy = { supported: true, activate() {}, deactivate() {} };
 
 function makeDeps() {
   const fsIndex = new FsIndex(":memory:");
@@ -35,7 +41,14 @@ function makeDeps() {
       mtime_ms: 1,
     },
   ]);
-  return { machineId: "mch_test", fsService, fsIndex, eventStore };
+  return {
+    machineId: "mch_test",
+    fsService,
+    fsIndex,
+    eventStore,
+    health: new HealthMonitor(),
+    keepAwake: new KeepAwake(fakeAwakeStrategy),
+  };
 }
 
 function parse(raw: string) {
@@ -119,6 +132,51 @@ describe("ControllerDispatcher", () => {
       expect(retry.payload.duplicate).toBe(true);
     } else {
       throw new Error("echo round-trip failed");
+    }
+  });
+
+  test("machine.status and machine.keep_awake round-trip", () => {
+    const dispatcher = new ControllerDispatcher(makeDeps());
+    const ctx = newClientContext();
+    dispatcher.handle(
+      JSON.stringify(Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "t" })),
+      ctx,
+    );
+
+    const [status] = dispatcher
+      .handle(JSON.stringify(MachineStatus.createRequest({})), ctx)
+      .map(parse);
+    if (status?.type === "machine.status.result" && status.payload.status === "ok") {
+      expect(status.payload.result.memory.total_bytes).toBeGreaterThan(0);
+      expect(status.payload.result.keep_awake).toEqual({
+        supported: true,
+        enabled: false,
+        until: null,
+      });
+    } else {
+      throw new Error("machine.status failed");
+    }
+
+    const [on] = dispatcher
+      .handle(
+        JSON.stringify(MachineKeepAwake.createRequest({ enabled: true, ttl_minutes: 30 })),
+        ctx,
+      )
+      .map(parse);
+    if (on?.type === "machine.keep_awake.result" && on.payload.status === "ok") {
+      expect(on.payload.result.enabled).toBe(true);
+      expect(on.payload.result.until).not.toBeNull();
+    } else {
+      throw new Error("keep_awake enable failed");
+    }
+
+    const [off] = dispatcher
+      .handle(JSON.stringify(MachineKeepAwake.createRequest({ enabled: false })), ctx)
+      .map(parse);
+    if (off?.type === "machine.keep_awake.result" && off.payload.status === "ok") {
+      expect(off.payload.result.enabled).toBe(false);
+    } else {
+      throw new Error("keep_awake disable failed");
     }
   });
 });

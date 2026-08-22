@@ -19,8 +19,15 @@ export type ControllerConfig = z.infer<typeof ConfigSchema>;
 export function configDir(): string {
   const override = process.env.RDC_CONFIG_DIR;
   if (override) return override;
-  const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
-  return path.join(localAppData, "rdc");
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
+    return path.join(localAppData, "rdc");
+  }
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "rdc");
+  }
+  const xdg = process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share");
+  return path.join(xdg, "rdc");
 }
 
 function defaultProjectRoots(): string[] {

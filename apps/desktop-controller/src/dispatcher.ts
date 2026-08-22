@@ -6,6 +6,8 @@ import {
   HelloAck,
   HelloReject,
   type KnownMessage,
+  MachineKeepAwake,
+  MachineStatus,
   negotiateVersion,
   ProjectList,
   parseInbound,
@@ -16,6 +18,8 @@ import {
   SysPing,
 } from "@rdc/protocol";
 import { nowIso } from "@rdc/shared";
+import type { KeepAwake } from "./keep-awake.ts";
+import type { HealthMonitor } from "./machine-health.ts";
 
 export interface ClientContext {
   helloDone: boolean;
@@ -34,6 +38,8 @@ export interface DispatcherDeps {
   fsService: FilesystemService;
   fsIndex: FsIndex;
   eventStore: EventStore;
+  health: HealthMonitor;
+  keepAwake: KeepAwake;
 }
 
 /**
@@ -121,6 +127,19 @@ export class ControllerDispatcher {
       }
       case "sys.ping":
         return [SysPing.createOk(msg.command_id, { pong: nowIso() })];
+      case "machine.status":
+        return [
+          MachineStatus.createOk(msg.command_id, {
+            ...this.deps.health.latest(),
+            keep_awake: this.deps.keepAwake.state(),
+          }),
+        ];
+      case "machine.keep_awake": {
+        const state = msg.payload.enabled
+          ? this.deps.keepAwake.enable(msg.payload.ttl_minutes)
+          : this.deps.keepAwake.disable();
+        return [MachineKeepAwake.createOk(msg.command_id, state)];
+      }
       case "debug.echo": {
         const cached = this.deps.eventStore.getCommandResult(msg.command_id);
         if (cached !== undefined) {

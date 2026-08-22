@@ -12,6 +12,8 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
 import type { DeviceRecord, DeviceStore } from "./device-store.ts";
 import { type ClientContext, ControllerDispatcher, newClientContext } from "./dispatcher.ts";
+import type { KeepAwake } from "./keep-awake.ts";
+import type { HealthMonitor } from "./machine-health.ts";
 import type { PairingCoordinator } from "./pairing-coordinator.ts";
 
 export interface ServerDeps {
@@ -24,6 +26,8 @@ export interface ServerDeps {
   fsService: FilesystemService;
   fsIndex: FsIndex;
   eventStore: EventStore;
+  health: HealthMonitor;
+  keepAwake: KeepAwake;
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
