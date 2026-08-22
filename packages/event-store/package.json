@@ -1,0 +1,23 @@
+{
+  "name": "@rdc/event-store",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rdc/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@rdc/protocol": "workspace:*",
+    "@types/node": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
