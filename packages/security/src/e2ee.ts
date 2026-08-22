@@ -1,26 +1,21 @@
-import type { StateAddress } from "libsodium-wrappers";
-
-export type SodiumModule = typeof import("libsodium-wrappers");
+import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
+import { x25519 } from "@noble/curves/ed25519.js";
+import { blake2b } from "@noble/hashes/blake2.js";
+import { concatBytes, randomBytes } from "@noble/hashes/utils.js";
 
 /**
- * E2EE primitives (PLAN §36): X25519 crypto_kx session keys + XChaCha20-Poly1305
- * secretstream. This file is runtime-agnostic (no node: imports — React Native
- * bundles it): callers inject the sodium module via `initSodiumFrom()`.
- * Node processes use `initSodium()` from node-init.ts instead.
+ * E2EE primitives (PLAN §36) on audited pure-JS @noble crypto — no WASM, no
+ * native code, so the identical implementation runs in Node and React Native
+ * (Hermes has no WebAssembly, which rules libsodium out on the phone).
+ *
+ * Construction ("rdc/e2ee/v2"):
+ *   - session keys: X25519 shared secret → BLAKE2b-512(q ‖ client_pk ‖ server_pk)
+ *     split into rx/tx halves (the libsodium crypto_kx layout)
+ *   - channel: per-connection random 24-byte headers; per-direction message key
+ *     = keyed BLAKE2b(context ‖ header); each message = nonce(24) ‖ XChaCha20-
+ *     Poly1305 ciphertext, nonce = LE64 counter ‖ 16 random bytes; receivers
+ *     enforce strictly-increasing counters (replay/reorder rejection)
  */
-
-let sodium: SodiumModule | null = null;
-
-export async function initSodiumFrom(mod: SodiumModule): Promise<void> {
-  await mod.ready;
-  sodium = mod;
-}
-
-function s(): SodiumModule {
-  if (!sodium)
-    throw new Error("sodium not initialized — await initSodium()/initSodiumFrom() first");
-  return sodium;
-}
 
 export interface KxKeypair {
   publicKey: Uint8Array;
@@ -28,76 +23,171 @@ export interface KxKeypair {
 }
 
 export const generateKxKeypair = (): KxKeypair => {
-  const kp = s().crypto_kx_keypair();
-  return { publicKey: kp.publicKey, privateKey: kp.privateKey };
+  const privateKey = x25519.utils.randomSecretKey();
+  return { publicKey: x25519.getPublicKey(privateKey), privateKey };
 };
 
-export const toB64 = (bytes: Uint8Array): string =>
-  s().to_base64(bytes, s().base64_variants.ORIGINAL);
-export const fromB64 = (text: string): Uint8Array =>
-  s().from_base64(text, s().base64_variants.ORIGINAL);
+// ── base64 (no Buffer/btoa — Hermes-safe) ────────────────────────────────────
+const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const B64_LOOKUP = (() => {
+  const table = new Int8Array(128).fill(-1);
+  for (let i = 0; i < B64_ALPHABET.length; i++) table[B64_ALPHABET.charCodeAt(i)] = i;
+  return table;
+})();
 
+export function toB64(bytes: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i] as number;
+    const b1 = bytes[i + 1];
+    const b2 = bytes[i + 2];
+    out += B64_ALPHABET[b0 >> 2];
+    out += B64_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)];
+    out += b1 === undefined ? "=" : B64_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)];
+    out += b2 === undefined ? "=" : B64_ALPHABET[b2 & 0x3f];
+  }
+  return out;
+}
+
+export function fromB64(text: string): Uint8Array {
+  const clean = text.replace(/=+$/, "");
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let o = 0;
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const code = clean.charCodeAt(i);
+    const value = code < 128 ? (B64_LOOKUP[code] as number) : -1;
+    if (value < 0) throw new Error("invalid base64 input");
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out[o++] = (buffer >> bits) & 0xff;
+    }
+  }
+  return out;
+}
+
+// ── crypto_kx-style session keys ─────────────────────────────────────────────
 export type ChannelRole = "client" | "server";
 
+function kxSessionKeys(
+  role: ChannelRole,
+  mine: KxKeypair,
+  peerPublicKey: Uint8Array,
+): { rx: Uint8Array; tx: Uint8Array } {
+  const isClient = role === "client";
+  const clientPk = isClient ? mine.publicKey : peerPublicKey;
+  const serverPk = isClient ? peerPublicKey : mine.publicKey;
+  const q = x25519.getSharedSecret(mine.privateKey, peerPublicKey);
+  const h = blake2b(concatBytes(q, clientPk, serverPk), { dkLen: 64 });
+  const first = h.slice(0, 32);
+  const second = h.slice(32, 64);
+  return isClient ? { rx: first, tx: second } : { rx: second, tx: first };
+}
+
+const CHANNEL_CONTEXT = new TextEncoder().encode("rdc/e2ee/v2");
+const NONCE_BYTES = 24;
+const TAG_BYTES = 16;
+const COUNTER_BYTES = 8;
+
+function writeCounterLE(target: Uint8Array, counter: number): void {
+  let lo = counter >>> 0;
+  let hi = Math.floor(counter / 0x1_0000_0000);
+  for (let i = 0; i < 4; i++) {
+    target[i] = lo & 0xff;
+    lo >>>= 8;
+  }
+  for (let i = 4; i < 8; i++) {
+    target[i] = hi & 0xff;
+    hi = Math.floor(hi / 256);
+  }
+}
+
+function readCounterLE(source: Uint8Array): number {
+  let value = 0;
+  for (let i = COUNTER_BYTES - 1; i >= 0; i--) value = value * 256 + (source[i] as number);
+  return value;
+}
+
 /**
- * Bidirectional secretstream channel. Flow:
- *   1. both sides derive session keys via crypto_kx (role decides key orientation)
+ * Bidirectional encrypted channel. Flow:
+ *   1. both sides derive session keys via X25519 kx (role decides orientation)
  *   2. each side sends `createHeader()` to the peer (SecureHeader frame)
  *   3. each side calls `acceptHeader(peerHeader)` → `ready`
  *   4. `encrypt()`/`decrypt()` wrap every protocol envelope
- * Fresh headers per connection re-randomize stream keys even though the
+ * Fresh headers per connection re-randomize message keys even though the
  * kx keypairs are static (ephemeral-key upgrade tracked for the relay phase).
  */
 export class SecureChannel {
   #txKey: Uint8Array;
   #rxKey: Uint8Array;
-  #pushState: StateAddress | null = null;
-  #pullState: StateAddress | null = null;
+  #txMsgKey: Uint8Array | null = null;
+  #rxMsgKey: Uint8Array | null = null;
+  #txCounter = 0;
+  #rxCounter = 0;
 
   constructor(role: ChannelRole, mine: KxKeypair, peerPublicKey: Uint8Array) {
-    const keys =
-      role === "client"
-        ? s().crypto_kx_client_session_keys(mine.publicKey, mine.privateKey, peerPublicKey)
-        : s().crypto_kx_server_session_keys(mine.publicKey, mine.privateKey, peerPublicKey);
-    this.#rxKey = keys.sharedRx;
-    this.#txKey = keys.sharedTx;
+    const keys = kxSessionKeys(role, mine, peerPublicKey);
+    this.#rxKey = keys.rx;
+    this.#txKey = keys.tx;
   }
 
   createHeader(): Uint8Array {
-    const { state, header } = s().crypto_secretstream_xchacha20poly1305_init_push(this.#txKey);
-    this.#pushState = state;
+    const header = randomBytes(NONCE_BYTES);
+    this.#txMsgKey = blake2b(concatBytes(CHANNEL_CONTEXT, header), {
+      key: this.#txKey,
+      dkLen: 32,
+    });
+    this.#txCounter = 0;
     return header;
   }
 
   acceptHeader(header: Uint8Array): void {
-    this.#pullState = s().crypto_secretstream_xchacha20poly1305_init_pull(header, this.#rxKey);
+    this.#rxMsgKey = blake2b(concatBytes(CHANNEL_CONTEXT, header), {
+      key: this.#rxKey,
+      dkLen: 32,
+    });
+    this.#rxCounter = 0;
   }
 
   get ready(): boolean {
-    return this.#pushState !== null && this.#pullState !== null;
+    return this.#txMsgKey !== null && this.#rxMsgKey !== null;
   }
 
   encrypt(plaintext: Uint8Array): Uint8Array {
-    if (!this.#pushState) throw new Error("secure channel: createHeader() not called");
-    return s().crypto_secretstream_xchacha20poly1305_push(
-      this.#pushState,
-      plaintext,
-      null,
-      s().crypto_secretstream_xchacha20poly1305_TAG_MESSAGE,
-    );
+    if (!this.#txMsgKey) throw new Error("secure channel: createHeader() not called");
+    this.#txCounter += 1;
+    const nonce = new Uint8Array(NONCE_BYTES);
+    writeCounterLE(nonce, this.#txCounter);
+    nonce.set(randomBytes(NONCE_BYTES - COUNTER_BYTES), COUNTER_BYTES);
+    const ciphertext = xchacha20poly1305(this.#txMsgKey, nonce).encrypt(plaintext);
+    return concatBytes(nonce, ciphertext);
   }
 
-  /** Throws on tampered/replayed ciphertext. */
+  /** Throws on tampered, replayed, or reordered ciphertext. */
   decrypt(ciphertext: Uint8Array): Uint8Array {
-    if (!this.#pullState) throw new Error("secure channel: peer header not accepted");
-    const result = s().crypto_secretstream_xchacha20poly1305_pull(
-      this.#pullState,
-      ciphertext,
-      null,
+    if (!this.#rxMsgKey) throw new Error("secure channel: peer header not accepted");
+    if (ciphertext.length < NONCE_BYTES + TAG_BYTES) {
+      throw new Error("secure channel: ciphertext too short");
+    }
+    const nonce = ciphertext.subarray(0, NONCE_BYTES);
+    const counter = readCounterLE(nonce);
+    if (counter <= this.#rxCounter) {
+      throw new Error("secure channel: replayed or reordered message");
+    }
+    const message = xchacha20poly1305(this.#rxMsgKey, nonce).decrypt(
+      ciphertext.subarray(NONCE_BYTES),
     );
-    if (!result) throw new Error("secure channel: decryption failed");
-    return result.message;
+    this.#rxCounter = counter;
+    return message;
   }
+}
+
+// ── one-shot authenticated box (pairing grant) ───────────────────────────────
+function boxKey(sharedSecret: Uint8Array): Uint8Array {
+  return blake2b(sharedSecret, { dkLen: 32 });
 }
 
 /** Authenticated one-shot box for the pairing grant (server → freshly-paired device). */
@@ -106,12 +196,10 @@ export function sealBox(
   recipientPub: Uint8Array,
   senderPriv: Uint8Array,
 ): string {
-  const nonce = s().randombytes_buf(s().crypto_box_NONCEBYTES);
-  const box = s().crypto_box_easy(payload, nonce, recipientPub, senderPriv);
-  const out = new Uint8Array(nonce.length + box.length);
-  out.set(nonce, 0);
-  out.set(box, nonce.length);
-  return toB64(out);
+  const key = boxKey(x25519.getSharedSecret(senderPriv, recipientPub));
+  const nonce = randomBytes(NONCE_BYTES);
+  const ciphertext = xchacha20poly1305(key, nonce).encrypt(payload);
+  return toB64(concatBytes(nonce, ciphertext));
 }
 
 export function openBox(
@@ -120,10 +208,11 @@ export function openBox(
   recipientPriv: Uint8Array,
 ): Uint8Array {
   const bytes = fromB64(sealed);
-  const nonceLen = s().crypto_box_NONCEBYTES;
-  const nonce = bytes.subarray(0, nonceLen);
-  const box = bytes.subarray(nonceLen);
-  return s().crypto_box_open_easy(box, nonce, senderPub, recipientPriv);
+  if (bytes.length < NONCE_BYTES + TAG_BYTES) throw new Error("sealed box too short");
+  const key = boxKey(x25519.getSharedSecret(recipientPriv, senderPub));
+  return xchacha20poly1305(key, bytes.subarray(0, NONCE_BYTES)).decrypt(
+    bytes.subarray(NONCE_BYTES),
+  );
 }
 
 const FINGERPRINT_EMOJI = [
@@ -163,10 +252,7 @@ const FINGERPRINT_EMOJI = [
 
 /** 4-emoji verification fingerprint of the key pairing (server pub ‖ client pub). */
 export function emojiFingerprint(serverPub: Uint8Array, clientPub: Uint8Array): string {
-  const joined = new Uint8Array(serverPub.length + clientPub.length);
-  joined.set(serverPub, 0);
-  joined.set(clientPub, serverPub.length);
-  const digest = s().crypto_generichash(8, joined);
+  const digest = blake2b(concatBytes(serverPub, clientPub), { dkLen: 8 });
   return [0, 1, 2, 3]
     .map((i) => FINGERPRINT_EMOJI[(digest[i] as number) % FINGERPRINT_EMOJI.length])
     .join(" ");

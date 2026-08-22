@@ -3,7 +3,6 @@ import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useApp } from "../src/machines.ts";
-import { initCrypto } from "../src/sodium.ts";
 import { colors } from "../src/theme.ts";
 
 export default function RootLayout() {
@@ -11,8 +10,7 @@ export default function RootLayout() {
   const hydrate = useApp((s) => s.hydrate);
 
   useEffect(() => {
-    initCrypto()
-      .then(() => hydrate())
+    hydrate()
       .then(() => setReady(true))
       .catch(() => setReady(true));
   }, [hydrate]);

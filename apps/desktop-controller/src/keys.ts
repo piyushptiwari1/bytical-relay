@@ -3,7 +3,7 @@ import path from "node:path";
 import { fromB64, generateKxKeypair, type KxKeypair, toB64 } from "@rdc/security";
 
 /**
- * Controller X25519 identity (requires initSodium() first).
+ * Controller X25519 identity.
  * TODO(S7): DPAPI-wrap before public distribution (PLAN §19).
  */
 export function loadOrCreateKeys(dir: string): KxKeypair {

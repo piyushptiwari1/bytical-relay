@@ -2,9 +2,9 @@ import net from "node:net";
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { FileChanged, fsStream, Hello, SUPPORTED_VERSIONS, SyncSubscribe } from "@rdc/protocol";
-import { generateKxKeypair, initSodium } from "@rdc/security";
+import { generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vitest";
 import { DeviceStore } from "../src/device-store.ts";
 import { KeepAwake } from "../src/keep-awake.ts";
 import { HealthMonitor } from "../src/machine-health.ts";
@@ -12,10 +12,6 @@ import { PairingCoordinator } from "../src/pairing-coordinator.ts";
 import { buildServer } from "../src/server.ts";
 
 const TOKEN = "test-token-0123456789abcdef0123456789abcdef";
-
-beforeAll(async () => {
-  await initSodium();
-});
 
 function makeDeps() {
   const fsIndex = new FsIndex(":memory:");

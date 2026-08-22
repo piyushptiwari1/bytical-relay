@@ -12,11 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@rdc/shared": "workspace:*",
-    "libsodium-wrappers": "catalog:"
+    "@noble/ciphers": "catalog:",
+    "@noble/curves": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@rdc/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/libsodium-wrappers": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

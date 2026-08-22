@@ -18,8 +18,9 @@ catalog:
   ignore: ^7.0.0
   "@parcel/watcher": ^2.5.0
   tsx: ^4.19.0
-  libsodium-wrappers: ^0.7.13
-  "@types/libsodium-wrappers": ^0.7.14
+  "@noble/curves": ^2.3.0
+  "@noble/ciphers": ^2.3.0
+  "@noble/hashes": ^2.3.0
   qrcode: ^1.5.4
   "@types/qrcode": ^1.5.5
   koffi: ^2.9.0

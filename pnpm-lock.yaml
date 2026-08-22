@@ -9,12 +9,18 @@ catalogs:
     '@fastify/websocket':
       specifier: ^11.0.0
       version: 11.3.0
+    '@noble/ciphers':
+      specifier: ^2.3.0
+      version: 2.3.0
+    '@noble/curves':
+      specifier: ^2.3.0
+      version: 2.3.0
+    '@noble/hashes':
+      specifier: ^2.3.0
+      version: 2.3.0
     '@parcel/watcher':
       specifier: ^2.5.0
       version: 2.6.0
-    '@types/libsodium-wrappers':
-      specifier: ^0.7.14
-      version: 0.7.14
     '@types/node':
       specifier: ^24.0.0
       version: 24.13.3
@@ -39,9 +45,6 @@ catalogs:
     koffi:
       specifier: ^2.9.0
       version: 2.16.3
-    libsodium-wrappers:
-      specifier: ^0.7.13
-      version: 0.7.16
     pino:
       specifier: ^9.0.0
       version: 9.14.0
@@ -186,9 +189,6 @@ importers:
       fast-text-encoding:
         specifier: ^1.0.6
         version: 1.0.6
-      libsodium-wrappers:
-        specifier: 'catalog:'
-        version: 0.7.16
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -205,9 +205,6 @@ importers:
         specifier: ^5.0.0
         version: 5.0.15(@types/react@19.2.18)(react@19.2.3)
     devDependencies:
-      '@types/libsodium-wrappers':
-        specifier: 'catalog:'
-        version: 0.7.14
       '@types/react':
         specifier: ~19.2.0
         version: 19.2.18
@@ -292,16 +289,19 @@ importers:
 
   packages/security:
     dependencies:
+      '@noble/ciphers':
+        specifier: 'catalog:'
+        version: 2.3.0
+      '@noble/curves':
+        specifier: 'catalog:'
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: 'catalog:'
+        version: 2.3.0
       '@rdc/shared':
         specifier: workspace:*
         version: link:../shared
-      libsodium-wrappers:
-        specifier: 'catalog:'
-        version: 0.7.16
     devDependencies:
-      '@types/libsodium-wrappers':
-        specifier: 'catalog:'
-        version: 0.7.14
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -1265,6 +1265,18 @@ packages:
     cpu: [x64]
     os: [linux]
 
+  '@noble/ciphers@2.3.0':
+    resolution: {integrity: sha512-Clu/xdfgVTf9o7ngLOURaxePwR0j8sjclKEtVij10/jGulwFsPWCvvRgG/XjUVf8Nei+jLG6uwyXzUTGY1DQrw==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/curves@2.3.0':
+    resolution: {integrity: sha512-v7cY+4oWYPQszRj6ZFGzTVL7uP2TaLo1xMhWHzYC5wj0ZhOXQ5x+sBre8rF3hi8cAoi0bh1qXoovoOkdFtvqEg==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.3.0':
+    resolution: {integrity: sha512-oN+QwyX7VSHotibwubG3kpzbwKrfnyR6OOO+3Nk/53ADL7FmgHHz4TgrbaYKvvOw09u6QTx0oiH1cNCIOuN0CQ==}
+    engines: {node: '>= 20.19.0'}
+
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
     engines: {node: '>= 8'}
@@ -1856,9 +1868,6 @@ packages:
 
   '@types/istanbul-reports@3.0.4':
     resolution: {integrity: sha512-pk2B1NWalF9toCRu6gjBzR69syFjP4Od8WRAX+0mmf9lAjCRicLOWc+ZrxZHx/0XRjotgkF9t6iaMJ+aXcOdZQ==}
-
-  '@types/libsodium-wrappers@0.7.14':
-    resolution: {integrity: sha512-5Kv68fXuXK0iDuUir1WPGw2R9fOZUlYlSAa0ztMcL0s0BfIDTqg9GXz8K30VJpPP3sxWhbolnQma2x+/TfkzDQ==}
 
   '@types/node@12.20.55':
     resolution: {integrity: sha512-J8xLz7q2OFulZ2cyGTLE1TbbZcjpno7FaN6zdJNrgAdrJ+DZzh/uFR6YrTb4C+nXakvud8Q4+rbhoIWlYQbUFQ==}
@@ -2940,12 +2949,6 @@ packages:
   leven@3.1.0:
     resolution: {integrity: sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==}
     engines: {node: '>=6'}
-
-  libsodium-wrappers@0.7.16:
-    resolution: {integrity: sha512-Gtr/WBx4dKjvRL1pvfwZqu7gO6AfrQ0u9vFL+kXihtHf6NfkROR8pjYWn98MFDI3jN19Ii1ZUfPR9afGiPyfHg==}
-
-  libsodium@0.7.16:
-    resolution: {integrity: sha512-3HrzSPuzm6Yt9aTYCDxYEG8x8/6C0+ag655Y7rhhWZM9PT4NpdnbqlzXhGZlDnkgR6MeSTnOt/VIyHLs9aSf+Q==}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -5539,6 +5542,14 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
+  '@noble/ciphers@2.3.0': {}
+
+  '@noble/curves@2.3.0':
+    dependencies:
+      '@noble/hashes': 2.3.0
+
+  '@noble/hashes@2.3.0': {}
+
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
       '@nodelib/fs.stat': 2.0.5
@@ -6070,8 +6081,6 @@ snapshots:
   '@types/istanbul-reports@3.0.4':
     dependencies:
       '@types/istanbul-lib-report': 3.0.3
-
-  '@types/libsodium-wrappers@0.7.14': {}
 
   '@types/node@12.20.55': {}
 
@@ -7206,12 +7215,6 @@ snapshots:
   lan-network@0.2.1: {}
 
   leven@3.1.0: {}
-
-  libsodium-wrappers@0.7.16:
-    dependencies:
-      libsodium: 0.7.16
-
-  libsodium@0.7.16: {}
 
   light-my-request@6.6.0:
     dependencies:

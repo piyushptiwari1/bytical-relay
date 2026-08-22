@@ -1,6 +1,6 @@
 import { getRandomValues } from "expo-crypto";
 
-// uuid + libsodium need WebCrypto RNG; Hermes lacks it natively
+// uuid + @noble crypto need WebCrypto RNG; Hermes lacks it natively
 const g = globalThis as { crypto?: { getRandomValues?: typeof getRandomValues } };
 if (!g.crypto) g.crypto = {};
 if (!g.crypto.getRandomValues) g.crypto.getRandomValues = getRandomValues;

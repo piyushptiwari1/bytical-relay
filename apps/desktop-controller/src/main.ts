@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { SqliteEventStore } from "@rdc/event-store";
 import { detectProjects, FilesystemService, FsIndex } from "@rdc/filesystem";
-import { initSodium } from "@rdc/security";
 import { Command } from "commander";
 import pino from "pino";
 import { configDir, loadOrCreateConfig } from "./config.ts";
@@ -31,7 +30,6 @@ async function start(): Promise<void> {
   );
 
   const releaseLock = acquireSingleInstanceLock(dir);
-  await initSodium();
   const keys = loadOrCreateKeys(dir);
   const devices = new DeviceStore(path.join(dir, "devices.db"));
   const pairing = new PairingCoordinator({

@@ -1,9 +1,8 @@
-import { beforeAll, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   emojiFingerprint,
   fromB64,
   generateKxKeypair,
-  initSodium,
   openBox,
   PairingSession,
   SecureChannel,
@@ -11,11 +10,7 @@ import {
   toB64,
 } from "../src/index.ts";
 
-beforeAll(async () => {
-  await initSodium();
-});
-
-describe("SecureChannel (crypto_kx + secretstream)", () => {
+describe("SecureChannel (x25519 kx + XChaCha20-Poly1305)", () => {
   function establishedPair(): { client: SecureChannel; server: SecureChannel } {
     const serverKp = generateKxKeypair();
     const clientKp = generateKxKeypair();
@@ -53,6 +48,19 @@ describe("SecureChannel (crypto_kx + secretstream)", () => {
     const intercepted = realClient.encrypt(new TextEncoder().encode("top secret"));
     eve.acceptHeader(realServer.createHeader());
     expect(() => eve.decrypt(intercepted)).toThrow();
+  });
+
+  test("replayed and reordered ciphertexts are rejected", () => {
+    const { client, server } = establishedPair();
+    const first = client.encrypt(new TextEncoder().encode("one"));
+    const second = client.encrypt(new TextEncoder().encode("two"));
+    expect(new TextDecoder().decode(server.decrypt(first))).toBe("one");
+    expect(() => server.decrypt(first)).toThrow(/replayed|reordered/);
+    expect(new TextDecoder().decode(server.decrypt(second))).toBe("two");
+    const third = client.encrypt(new TextEncoder().encode("three"));
+    const fourth = client.encrypt(new TextEncoder().encode("four"));
+    expect(new TextDecoder().decode(server.decrypt(fourth))).toBe("four");
+    expect(() => server.decrypt(third)).toThrow(/replayed|reordered/);
   });
 
   test("sealBox/openBox authenticated grant delivery + b64 helpers", () => {

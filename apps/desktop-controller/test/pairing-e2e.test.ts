@@ -1,7 +1,7 @@
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { FileChanged, fsStream, type KnownMessage, ProjectList } from "@rdc/protocol";
-import { emojiFingerprint, fromB64, generateKxKeypair, initSodium } from "@rdc/security";
+import { emojiFingerprint, fromB64, generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { ControllerClient, pairWithController } from "@rdc/transport";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -18,7 +18,6 @@ let port: number;
 const closers: Array<() => Promise<unknown> | unknown> = [];
 
 beforeAll(async () => {
-  await initSodium();
   const fsIndex = new FsIndex(":memory:");
   const eventStore = new MemoryEventStore();
   const fsService = new FilesystemService(fsIndex, eventStore);
