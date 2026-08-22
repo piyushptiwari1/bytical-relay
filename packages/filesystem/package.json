@@ -1,0 +1,26 @@
+{
+  "name": "@rdc/filesystem",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@parcel/watcher": "catalog:",
+    "@rdc/event-store": "workspace:*",
+    "@rdc/protocol": "workspace:*",
+    "@rdc/shared": "workspace:*",
+    "execa": "catalog:",
+    "ignore": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

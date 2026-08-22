@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>rdc — controller dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 ui-monospace, Consolas, monospace; background: #0d1117; color: #e6edf3; }
+  header { padding: 12px 20px; border-bottom: 1px solid #21262d; display: flex; gap: 12px; align-items: center; }
+  header h1 { font-size: 15px; margin: 0; }
+  #status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #21262d; }
+  #status.ok { color: #3fb950; } #status.bad { color: #f85149; }
+  main { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 49px); }
+  #projects { border-right: 1px solid #21262d; padding: 12px; }
+  #projects .proj { padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+  #projects .proj:hover, #projects .proj.active { background: #161b22; }
+  #projects .meta { color: #8b949e; font-size: 11px; }
+  #tree { padding: 12px 20px; overflow: auto; }
+  ul.tree { list-style: none; padding-left: 18px; margin: 2px 0; }
+  ul.tree.root { padding-left: 0; }
+  .node { cursor: default; white-space: nowrap; }
+  .node.dir { cursor: pointer; color: #79c0ff; }
+  .node .size { color: #8b949e; font-size: 11px; margin-left: 8px; }
+  .flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { background: #1f6feb44; } to { background: transparent; } }
+  #log { position: fixed; bottom: 0; right: 0; max-width: 46%; max-height: 30%; overflow: auto;
+         font-size: 11px; color: #8b949e; padding: 8px 12px; background: #0d1117dd; }
+</style>
+</head>
+<body>
+<header>
+  <h1>rdc controller</h1>
+  <span id="status">connecting…</span>
+  <span id="machine" style="color:#8b949e;font-size:12px"></span>
+</header>
+<main>
+  <div id="projects"></div>
+  <div id="tree"><em style="color:#8b949e">Select a project</em></div>
+</main>
+<div id="log"></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const uuid = () => crypto.randomUUID();
+  const pending = new Map(); // command_id -> resolve
+  let ws;
+  let activeProject = null;
+  const expanded = new Map(); // parent_id(null="root") -> <ul> element
+
+  const log = (line) => {
+    const el = document.createElement("div");
+    el.textContent = line;
+    $("log").prepend(el);
+    while ($("log").children.length > 60) $("log").lastChild.remove();
+  };
+
+  const send = (msg) => ws.send(JSON.stringify(msg));
+  const command = (type, payload) =>
+    new Promise((resolve, reject) => {
+      const command_id = uuid();
+      pending.set(command_id, { resolve, reject });
+      send({ id: uuid(), type, version: 1, ts: new Date().toISOString(), command_id, payload });
+    });
+
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = () => {
+      send({ id: uuid(), type: "hello", version: 1, ts: new Date().toISOString(),
+             payload: { protocol: { min: 1, max: 1 }, device_id: "dashboard" } });
+    };
+    ws.onclose = () => {
+      $("status").textContent = "disconnected — retrying";
+      $("status").className = "bad";
+      setTimeout(connect, 1500);
+    };
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "hello_ack") {
+        $("status").textContent = "connected";
+        $("status").className = "ok";
+        $("machine").textContent = msg.payload.machine_id;
+        void loadProjects();
+        return;
+      }
+      if (msg.command_id && pending.has(msg.command_id)) {
+        const { resolve, reject } = pending.get(msg.command_id);
+        pending.delete(msg.command_id);
+        msg.payload.status === "ok" ? resolve(msg.payload.result) : reject(new Error(msg.payload.error.message));
+        return;
+      }
+      if (msg.type === "file.changed") onFileChanged(msg);
+    };
+  }
+
+  async function loadProjects() {
+    const { projects } = await command("project.list", {});
+    const box = $("projects");
+    box.innerHTML = "";
+    for (const p of projects) {
+      const el = document.createElement("div");
+      el.className = "proj";
+      el.innerHTML = `<div>${p.name} ${p.vcs === "git" ? "⎇" : ""}</div>
+        <div class="meta">${p.root_path}</div>
+        <div class="meta">v${p.version}${p.wsl ? " · WSL" : ""}</div>`;
+      el.onclick = () => selectProject(p, el);
+      box.appendChild(el);
+    }
+    if (projects.length === 0) box.innerHTML = '<em style="color:#8b949e">No projects detected</em>';
+  }
+
+  async function selectProject(project, el) {
+    for (const n of document.querySelectorAll(".proj")) n.classList.remove("active");
+    el.classList.add("active");
+    activeProject = project;
+    expanded.clear();
+    $("tree").innerHTML = "";
+    const rootUl = document.createElement("ul");
+    rootUl.className = "tree root";
+    $("tree").appendChild(rootUl);
+    expanded.set("root", rootUl);
+    await renderChildren(null, rootUl);
+    await command("sync.subscribe", { streams: [`fs:${project.project_id}`] });
+    log(`subscribed fs:${project.project_id}`);
+  }
+
+  async function renderChildren(parentId, ul) {
+    const { entries } = await command("file.list", { project_id: activeProject.project_id, parent_id: parentId });
+    ul.innerHTML = "";
+    for (const entry of entries) {
+      const li = document.createElement("li");
+      const span = document.createElement("span");
+      span.className = `node ${entry.kind}`;
+      span.textContent = (entry.kind === "dir" ? "▸ " : "  ") + entry.name;
+      if (entry.kind === "file") {
+        const size = document.createElement("span");
+        size.className = "size";
+        size.textContent = `${entry.size} B`;
+        span.appendChild(size);
+      }
+      li.appendChild(span);
+      if (entry.kind === "dir") {
+        span.onclick = async () => {
+          if (expanded.has(entry.file_id)) {
+            expanded.get(entry.file_id).remove();
+            expanded.delete(entry.file_id);
+            span.textContent = `▸ ${entry.name}`;
+            return;
+          }
+          const childUl = document.createElement("ul");
+          childUl.className = "tree";
+          li.appendChild(childUl);
+          expanded.set(entry.file_id, childUl);
+          span.textContent = `▾ ${entry.name}`;
+          await renderChildren(entry.file_id, childUl);
+        };
+      }
+      ul.appendChild(li);
+    }
+  }
+
+  let refreshTimer = null;
+  function onFileChanged(msg) {
+    const c = msg.payload;
+    log(`${c.change}: ${c.relative_path} (v${msg.seq})`);
+    document.querySelector(".proj.active .meta:last-child")?.replaceChildren(
+      document.createTextNode(`v${msg.seq} · live`),
+    );
+    // throttle: re-render currently expanded folders (simple + correct for S1)
+    if (refreshTimer) return;
+    refreshTimer = setTimeout(async () => {
+      refreshTimer = null;
+      for (const [key, ul] of [...expanded.entries()]) {
+        if (!ul.isConnected) { expanded.delete(key); continue; }
+        await renderChildren(key === "root" ? null : key, ul);
+      }
+      document.getElementById("tree").classList.add("flash");
+      setTimeout(() => document.getElementById("tree").classList.remove("flash"), 1200);
+    }, 400);
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

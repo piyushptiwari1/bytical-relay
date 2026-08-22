@@ -1,7 +1,9 @@
 import { err, ok, type Result, safeJsonParse } from "@rdc/shared";
 import { z } from "zod";
+import { FileChangeSchema, FileEntrySchema, ProjectSchema } from "./entities.ts";
 import { defineCommand, defineEvent, defineMessage } from "./envelope.ts";
 import { type ProtocolError, ProtocolErrorSchema, protocolError } from "./errors.ts";
+import { PROTOCOL_VERSION } from "./version.ts";
 
 /** Structural twin of the event store's StoredEvent — protocol stays store-agnostic. */
 export const EventRecordSchema = z.object({
@@ -67,6 +69,27 @@ export const SyncReplay = defineCommand(
   }),
 );
 
+export const SyncSubscribe = defineCommand(
+  "sync.subscribe",
+  z.object({ streams: z.array(z.string().min(1)).max(64) }),
+  z.object({ subscribed: z.array(z.string()) }),
+);
+
+// ── Project / file domain (S1) ───────────────────────────────────────────────
+export const ProjectList = defineCommand(
+  "project.list",
+  z.object({}),
+  z.object({ projects: z.array(ProjectSchema) }),
+);
+
+export const FileList = defineCommand(
+  "file.list",
+  z.object({ project_id: z.string().min(1), parent_id: z.uuid().nullable() }),
+  z.object({ entries: z.array(FileEntrySchema) }),
+);
+
+export const FileChanged = defineEvent("file.changed", FileChangeSchema);
+
 // ── Inbound parsing ──────────────────────────────────────────────────────────
 export const KnownMessageSchema = z.discriminatedUnion("type", [
   Hello.schema,
@@ -76,9 +99,29 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   DebugEcho.response,
   SyncReplay.request,
   SyncReplay.response,
+  SyncSubscribe.request,
+  SyncSubscribe.response,
+  ProjectList.request,
+  ProjectList.response,
+  FileList.request,
+  FileList.response,
   DebugEchoed.schema,
+  FileChanged.schema,
 ]);
 export type KnownMessage = z.infer<typeof KnownMessageSchema>;
+
+/** Rebuild the wire envelope for a stored journal record (id/ts preserved). */
+export function eventEnvelopeFromRecord(record: EventRecord): Result<KnownMessage, ProtocolError> {
+  return parseInbound({
+    id: record.event_id,
+    type: record.type,
+    version: PROTOCOL_VERSION,
+    ts: record.ts,
+    stream: record.stream,
+    seq: record.seq,
+    payload: record.payload,
+  });
+}
 
 /** Validate any inbound wire data (JSON string or already-parsed value). */
 export function parseInbound(raw: unknown): Result<KnownMessage, ProtocolError> {

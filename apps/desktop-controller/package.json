@@ -1,0 +1,31 @@
+{
+  "name": "@rdc/desktop-controller",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts start",
+    "doctor": "tsx src/main.ts doctor",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/websocket": "catalog:",
+    "@parcel/watcher": "catalog:",
+    "@rdc/event-store": "workspace:*",
+    "@rdc/filesystem": "workspace:*",
+    "@rdc/protocol": "workspace:*",
+    "@rdc/security": "workspace:*",
+    "@rdc/shared": "workspace:*",
+    "commander": "catalog:",
+    "fastify": "catalog:",
+    "pino": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
