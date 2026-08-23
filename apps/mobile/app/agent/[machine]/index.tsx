@@ -2,7 +2,14 @@ import type { AgentSession } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { agentList, agentStart, useApp, watchAgentStatus } from "../../../src/machines.ts";
+import {
+  agentList,
+  agentResume,
+  agentStart,
+  type ExternalSession,
+  useApp,
+  watchAgentStatus,
+} from "../../../src/machines.ts";
 import {
   Button,
   Card,
@@ -41,6 +48,8 @@ export default function AgentsHome() {
   const router = useRouter();
   const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [external, setExternal] = useState<ExternalSession[]>([]);
+  const [resuming, setResuming] = useState<string | null>(null);
   const [providers, setProviders] = useState<
     Array<{ id: string; available: boolean; detail: string }>
   >([]);
@@ -55,6 +64,7 @@ export default function AgentsHome() {
       const result = await agentList(machine);
       setSessions(result.sessions);
       setProviders(result.providers);
+      setExternal(result.external);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -93,6 +103,18 @@ export default function AgentsHome() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const resume = async (item: ExternalSession) => {
+    setResuming(item.native_id);
+    try {
+      const { session } = await agentResume(machine, item.provider, item.native_id);
+      router.push(`/agent/${machine}/${session.session_id}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setResuming(null);
     }
   };
 
@@ -207,6 +229,39 @@ export default function AgentsHome() {
         <>
           <SectionLabel>Ongoing · {ongoing.length}</SectionLabel>
           {ongoing.map((s) => sessionCard(s, true))}
+        </>
+      ) : null}
+
+      {external.length > 0 ? (
+        <>
+          <SectionLabel>From your laptop</SectionLabel>
+          {external.map((item) => {
+            const resumable = item.project_id !== null && copilot?.available;
+            return (
+              <Card
+                key={item.native_id}
+                onPress={resumable ? () => void resume(item) : undefined}
+                style={{ marginBottom: space.sm, gap: 6, opacity: resumable ? 1 : 0.55 }}
+              >
+                <Text style={{ ...type_.body, fontWeight: "600" }} numberOfLines={1}>
+                  💻 {item.title}
+                </Text>
+                <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
+                  <Pill tone={resumable ? "accent" : "dim"}>
+                    {resuming === item.native_id
+                      ? "resuming…"
+                      : resumable
+                        ? "continue here ›"
+                        : "project not indexed"}
+                  </Pill>
+                  <Text style={type_.caption}>
+                    {item.project_id ? projectName(item.project_id) : "—"} ·{" "}
+                    {relativeTime(item.updated_at)}
+                  </Text>
+                </View>
+              </Card>
+            );
+          })}
         </>
       ) : null}
 

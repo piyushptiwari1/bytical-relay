@@ -300,7 +300,24 @@ export const AgentList = defineCommand(
   z.object({
     sessions: z.array(AgentSessionSchema),
     providers: z.array(z.object({ id: z.string(), available: z.boolean(), detail: z.string() })),
+    /** Provider-native history (laptop CLI conversations) not yet attached to an rdc session. */
+    external: z.array(
+      z.object({
+        provider: z.string(),
+        native_id: z.string(),
+        title: z.string(),
+        project_id: z.string().nullable(),
+        updated_at: z.string(),
+      }),
+    ),
   }),
+);
+
+/** Continue a provider-native (laptop) conversation with full context. */
+export const AgentResume = defineCommand(
+  "agent.resume",
+  z.object({ provider: z.string().min(1), native_id: z.string().min(1) }),
+  z.object({ session: AgentSessionSchema }),
 );
 
 export const ApprovalRespond = defineCommand(
@@ -382,6 +399,8 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   AgentCancel.response,
   AgentList.request,
   AgentList.response,
+  AgentResume.request,
+  AgentResume.response,
   ApprovalRespond.request,
   ApprovalRespond.response,
   DebugEchoed.schema,

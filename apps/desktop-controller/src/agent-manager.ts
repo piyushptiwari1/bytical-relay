@@ -1,4 +1,9 @@
-import { type AgentAdapter, type AgentSessionHandle, ApprovalBridge } from "@rdc/agent-core";
+import {
+  type AgentAdapter,
+  type AgentSessionHandle,
+  ApprovalBridge,
+  type PermissionAsk,
+} from "@rdc/agent-core";
 import type { EventStore, StoredEvent } from "@rdc/event-store";
 import type { FsIndex } from "@rdc/filesystem";
 import {
@@ -18,6 +23,9 @@ interface ManagedSession {
   session: AgentSession;
   handle: AgentSessionHandle | null;
 }
+
+const normalizePath = (p: string): string =>
+  p.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
 
 /**
  * Agent lifecycle owner (IMPLEMENTATION-PLAN S4.1): sessions are controller-
@@ -75,45 +83,127 @@ export class AgentManager {
     const root = this.deps.fsIndex.getProjectRoot(projectId);
     if (!root) throw new Error(`unknown project: ${projectId}`);
 
-    const sessionId = `ses_${newEventId().slice(0, 13)}`;
+    const managed = this.#createManaged(
+      projectId,
+      providerId,
+      prompt.split("\n", 1)[0]?.slice(0, 80) ?? "session",
+    );
+    managed.handle = await adapter.createSession({
+      cwd: root,
+      callbacks: this.#callbacksFor(managed),
+    });
+    this.deps.sessions?.setNativeId(managed.session.session_id, managed.handle.providerSessionId);
+    this.#runTurn(managed, prompt);
+    return managed.session;
+  }
+
+  /** Continue a provider-native (laptop CLI) conversation — full context replays. */
+  async resume(providerId: string, nativeId: string): Promise<AgentSession> {
+    const adapter = this.#adapters.get(providerId);
+    if (!adapter?.resumeSession || !adapter.listNativeSessions) {
+      throw new Error(`${providerId} does not support resuming native sessions`);
+    }
+    const native = (await adapter.listNativeSessions()).find((s) => s.native_id === nativeId);
+    if (!native) throw new Error(`unknown ${providerId} session: ${nativeId}`);
+    const projectId = this.#projectIdForCwd(native.cwd);
+    if (!projectId) throw new Error(`no indexed project for ${native.cwd}`);
+
+    const managed = this.#createManaged(projectId, providerId, native.title.slice(0, 80));
+    managed.handle = await adapter.resumeSession({
+      nativeId,
+      cwd: native.cwd,
+      callbacks: this.#callbacksFor(managed),
+    });
+    this.deps.sessions?.setNativeId(managed.session.session_id, nativeId);
+    // session/load replayed the history into the journal; ready for follow-ups
+    this.#setStatus(managed, "idle");
+    return managed.session;
+  }
+
+  /** Provider-native history (laptop chats) mapped onto indexed projects. */
+  async externalSessions(): Promise<
+    Array<{
+      provider: string;
+      native_id: string;
+      title: string;
+      project_id: string | null;
+      updated_at: string;
+    }>
+  > {
+    const results: Array<{
+      provider: string;
+      native_id: string;
+      title: string;
+      project_id: string | null;
+      updated_at: string;
+    }> = [];
+    const known = this.deps.sessions?.knownNativeIds() ?? new Set<string>();
+    for (const adapter of this.#adapters.values()) {
+      if (!adapter.listNativeSessions) continue;
+      try {
+        for (const native of await adapter.listNativeSessions()) {
+          if (known.has(native.native_id)) continue;
+          results.push({
+            provider: adapter.id,
+            native_id: native.native_id,
+            title: native.title,
+            project_id: this.#projectIdForCwd(native.cwd),
+            updated_at: native.updated_at,
+          });
+        }
+      } catch {
+        // provider store unreadable — skip silently
+      }
+    }
+    return results.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }
+
+  #createManaged(projectId: string, providerId: string, title: string): ManagedSession {
     const session: AgentSession = {
-      session_id: sessionId,
+      session_id: `ses_${newEventId().slice(0, 13)}`,
       project_id: projectId,
       provider: providerId,
-      title: prompt.split("\n", 1)[0]?.slice(0, 80) ?? "session",
+      title,
       status: "starting",
       created_at: nowIso(),
       updated_at: nowIso(),
     };
     const managed: ManagedSession = { session, handle: null };
-    this.#sessions.set(sessionId, managed);
+    this.#sessions.set(session.session_id, managed);
     this.#announce(managed);
+    return managed;
+  }
 
-    const handle = await adapter.createSession({
-      cwd: root,
-      callbacks: {
-        onUpdate: (update) => this.#journalUpdate(sessionId, update),
-        onPermission: async (ask) => {
-          const { request, answer } = this.approvals.create(sessionId, ask);
-          this.#journal(sessionId, ApprovalRequested.type, request);
-          this.#setStatus(managed, "awaiting_approval");
-          const result = await answer;
-          this.#setStatus(managed, "running");
-          return result;
-        },
-        onExit: (error) => {
-          if (managed.session.status === "completed" || managed.session.status === "cancelled")
-            return;
-          if (error) {
-            this.#journalUpdate(sessionId, { kind: "error", message: error });
-            this.#setStatus(managed, "failed");
-          }
-        },
+  #callbacksFor(managed: ManagedSession) {
+    const sessionId = managed.session.session_id;
+    return {
+      onUpdate: (update: AgentUpdate) => this.#journalUpdate(sessionId, update),
+      onPermission: async (ask: PermissionAsk) => {
+        const { request, answer } = this.approvals.create(sessionId, ask);
+        this.#journal(sessionId, ApprovalRequested.type, request);
+        this.#setStatus(managed, "awaiting_approval");
+        const result = await answer;
+        this.#setStatus(managed, "running");
+        return result;
       },
-    });
-    managed.handle = handle;
-    this.#runTurn(managed, prompt);
-    return managed.session;
+      onExit: (error: string | null) => {
+        if (managed.session.status === "completed" || managed.session.status === "cancelled")
+          return;
+        if (error) {
+          this.#journalUpdate(sessionId, { kind: "error", message: error });
+          this.#setStatus(managed, "failed");
+        }
+      },
+    };
+  }
+
+  #projectIdForCwd(cwd: string): string | null {
+    const normalized = normalizePath(cwd);
+    for (const project of this.deps.fsIndex.listProjects()) {
+      const root = normalizePath(project.root_path);
+      if (normalized === root || normalized.startsWith(`${root}/`)) return project.project_id;
+    }
+    return null;
   }
 
   async prompt(sessionId: string, text: string): Promise<boolean> {

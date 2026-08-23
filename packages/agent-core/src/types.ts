@@ -23,9 +23,25 @@ export interface AgentSessionHandle {
   dispose(): Promise<void>;
 }
 
+/** A conversation that lives in the provider's own store (laptop CLI history). */
+export interface NativeSession {
+  native_id: string;
+  title: string;
+  cwd: string;
+  updated_at: string;
+}
+
 /** One per agent product (PLAN §8) — copilot, opencode, claude… */
 export interface AgentAdapter {
   readonly id: string;
   detect(): Promise<{ available: boolean; detail: string }>;
   createSession(opts: { cwd: string; callbacks: AdapterCallbacks }): Promise<AgentSessionHandle>;
+  /** Resume a provider-native session with full context (ACP session/load). */
+  resumeSession?(opts: {
+    nativeId: string;
+    cwd: string;
+    callbacks: AdapterCallbacks;
+  }): Promise<AgentSessionHandle>;
+  /** Conversations from the provider's own history (both laptop- and phone-started). */
+  listNativeSessions?(): Promise<NativeSession[]>;
 }

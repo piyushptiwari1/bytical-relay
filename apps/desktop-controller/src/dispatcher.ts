@@ -8,6 +8,7 @@ import {
   AgentCancel,
   AgentList,
   AgentPrompt,
+  AgentResume,
   AgentStart,
   ApprovalRespond,
   DebugEcho,
@@ -230,6 +231,13 @@ export class ControllerDispatcher {
           await this.#tryRun(msg.command_id, AgentList, async () => ({
             sessions: this.deps.agents.list(),
             providers: await this.deps.agents.providers(),
+            external: await this.deps.agents.externalSessions(),
+          })),
+        ];
+      case "agent.resume":
+        return [
+          await this.#tryRun(msg.command_id, AgentResume, async () => ({
+            session: await this.deps.agents.resume(msg.payload.provider, msg.payload.native_id),
           })),
         ];
       case "approval.respond":

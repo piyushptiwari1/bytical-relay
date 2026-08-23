@@ -25,6 +25,25 @@ export class SessionStore {
         updated_at TEXT NOT NULL
       );
     `);
+    try {
+      this.#db.exec("ALTER TABLE agent_sessions ADD COLUMN native_id TEXT");
+    } catch {
+      // column already exists
+    }
+  }
+
+  /** Provider-native ids already represented by an rdc session (dedupe). */
+  knownNativeIds(): Set<string> {
+    const rows = this.#db
+      .prepare("SELECT native_id FROM agent_sessions WHERE native_id IS NOT NULL")
+      .all() as Array<{ native_id: string }>;
+    return new Set(rows.map((r) => r.native_id));
+  }
+
+  setNativeId(sessionId: string, nativeId: string): void {
+    this.#db
+      .prepare("UPDATE agent_sessions SET native_id = ? WHERE session_id = ?")
+      .run(nativeId, sessionId);
   }
 
   /** Sessions a previous controller left "live" are dead now. */

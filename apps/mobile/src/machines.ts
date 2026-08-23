@@ -2,6 +2,7 @@ import {
   AgentCancel,
   AgentList,
   AgentPrompt,
+  AgentResume,
   type AgentSession,
   AgentStart,
   ApprovalRespond,
@@ -261,12 +262,32 @@ export const openInEditor = (
 
 // ── agent helpers (S4) ──────────────────────────────────────────────────────────
 
+export interface ExternalSession {
+  provider: string;
+  native_id: string;
+  title: string;
+  project_id: string | null;
+  updated_at: string;
+}
+
 export const agentList = (
   machineId: string,
 ): Promise<{
   sessions: AgentSession[];
   providers: Array<{ id: string; available: boolean; detail: string }>;
+  external: ExternalSession[];
 }> => requireClient(machineId).command(AgentList, {});
+
+export const agentResume = (
+  machineId: string,
+  provider: string,
+  nativeId: string,
+): Promise<{ session: AgentSession }> =>
+  requireClient(machineId).command(
+    AgentResume,
+    { provider, native_id: nativeId },
+    { timeoutMs: 120_000 },
+  );
 
 export const agentStart = (
   machineId: string,

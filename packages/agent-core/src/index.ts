@@ -3,6 +3,7 @@ export type {
   AdapterCallbacks,
   AgentAdapter,
   AgentSessionHandle,
+  NativeSession,
   PermissionAnswer,
   PermissionAsk,
 } from "./types.ts";

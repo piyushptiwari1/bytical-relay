@@ -102,8 +102,34 @@ export class AcpAdapter implements AgentAdapter {
     cwd: string;
     callbacks: AdapterCallbacks;
   }): Promise<AgentSessionHandle> {
-    const child = spawnAgent(this.config, this.config.argsFor(opts.cwd), {
-      cwd: opts.cwd,
+    return this.#boot(opts.cwd, opts.callbacks, (rpc) =>
+      rpc.request<{ sessionId: string }>("session/new", { cwd: opts.cwd, mcpServers: [] }),
+    );
+  }
+
+  /** ACP session/load: the agent replays the full conversation as updates, then we can prompt. */
+  async resumeSession(opts: {
+    nativeId: string;
+    cwd: string;
+    callbacks: AdapterCallbacks;
+  }): Promise<AgentSessionHandle> {
+    return this.#boot(opts.cwd, opts.callbacks, async (rpc) => {
+      await rpc.request("session/load", {
+        sessionId: opts.nativeId,
+        cwd: opts.cwd,
+        mcpServers: [],
+      });
+      return { sessionId: opts.nativeId };
+    });
+  }
+
+  async #boot(
+    cwd: string,
+    callbacks: AdapterCallbacks,
+    establish: (rpc: NdjsonRpc) => Promise<{ sessionId: string }>,
+  ): Promise<AgentSessionHandle> {
+    const child = spawnAgent(this.config, this.config.argsFor(cwd), {
+      cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
     child.stderr?.setEncoding("utf8");
@@ -117,19 +143,19 @@ export class AcpAdapter implements AgentAdapter {
     child.on("exit", (code) => {
       if (exited) return;
       exited = true;
-      opts.callbacks.onExit(
+      callbacks.onExit(
         code === 0 || code === null ? null : `agent exited ${code}: ${stderrTail.trim()}`,
       );
     });
 
     rpc.onNotification("session/update", (params) => {
       const mapped = mapUpdate(params as AcpUpdateParams);
-      if (mapped) opts.callbacks.onUpdate(mapped);
+      if (mapped) callbacks.onUpdate(mapped);
     });
 
     rpc.onRequest("session/request_permission", async (params) => {
       const ask = mapPermission(params as AcpPermissionParams);
-      const answer = await opts.callbacks.onPermission(ask);
+      const answer = await callbacks.onPermission(ask);
       if ("cancelled" in answer) {
         return { outcome: { outcome: "cancelled" } };
       }
@@ -141,10 +167,7 @@ export class AcpAdapter implements AgentAdapter {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
     });
-    const session = (await rpc.request("session/new", {
-      cwd: opts.cwd,
-      mcpServers: [],
-    })) as { sessionId: string };
+    const session = await establish(rpc);
 
     return {
       providerSessionId: session.sessionId,

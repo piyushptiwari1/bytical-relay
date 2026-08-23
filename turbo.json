@@ -1,5 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "APPDATA",
+    "LOCALAPPDATA",
+    "USERPROFILE",
+    "RDC_COPILOT_PATH",
+    "RDC_CONFIG_DIR"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
