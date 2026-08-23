@@ -1,11 +1,12 @@
 import type { ApprovalRequest } from "@rdc/protocol";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import {
   agentCancel,
   agentPrompt,
   approvalRespond,
+  useApp,
   watchAgentSession,
   watchAgentStatus,
 } from "../../../src/machines.ts";
@@ -41,12 +42,25 @@ const statusTone: Record<string, PillTone> = {
   failed: "bad",
   cancelled: "dim",
 };
+const ENDED = new Set(["completed", "failed", "cancelled"]);
+
+/** VS Code-style labels for ACP permission option kinds. */
+function optionLabel(kind: string, name: string): string {
+  if (kind === "allow_once") return "Allow";
+  if (kind === "allow_always") return "Always allow";
+  if (kind === "reject_once") return "Skip";
+  if (kind === "reject_always") return "Never";
+  return name;
+}
 
 export default function AgentSessionScreen() {
   const { machine, session } = useLocalSearchParams<{ machine: string; session: string }>();
+  const router = useRouter();
+  const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [status, setStatus] = useState<string>("running");
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(0);
@@ -71,7 +85,7 @@ export default function AgentSessionScreen() {
             entries?: Array<{ content: string; status: string }>;
           };
           approval_id?: string;
-          session?: { status: string };
+          session?: { status: string; project_id?: string };
         };
       };
       if (message.type === "agent.updated" && message.payload.update) {
@@ -133,6 +147,7 @@ export default function AgentSessionScreen() {
       }
       if (message.type === "agent.status_changed" && message.payload.session) {
         setStatus(message.payload.session.status);
+        if (message.payload.session.project_id) setProjectId(message.payload.session.project_id);
         return blocksNow;
       }
       return blocksNow;
@@ -143,7 +158,10 @@ export default function AgentSessionScreen() {
       setBlocks((prev) => apply(prev, msg));
     });
     const unsubStatus = watchAgentStatus(machine, (s) => {
-      if (s.session_id === session) setStatus(s.status);
+      if (s.session_id === session) {
+        setStatus(s.status);
+        setProjectId(s.project_id);
+      }
     });
     return () => {
       unsubEvents();
@@ -152,7 +170,9 @@ export default function AgentSessionScreen() {
   }, [machine, session]);
 
   if (!machine || !session) return null;
-  const canPrompt = status === "idle" || status === "completed";
+  const canPrompt = status === "idle";
+  const ended = ENDED.has(status);
+  const project = projects.find((p) => p.project_id === projectId);
 
   const send = async () => {
     if (prompt.trim().length === 0) return;
@@ -167,6 +187,7 @@ export default function AgentSessionScreen() {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* context bar: project · provider · status · changes shortcut */}
       <View
         style={{
           flexDirection: "row",
@@ -178,20 +199,31 @@ export default function AgentSessionScreen() {
           borderBottomColor: colors.borderSoft,
         }}
       >
-        <Pill tone={statusTone[status] ?? "dim"}>{status.replaceAll("_", " ")}</Pill>
-        {error ? (
-          <Text style={{ ...type_.caption, color: colors.bad, flex: 1 }} numberOfLines={1}>
-            {error}
-          </Text>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
+        <Text style={{ ...type_.caption, color: colors.text, fontWeight: "600" }} numberOfLines={1}>
+          📁 {project?.name ?? "…"}
+        </Text>
+        <Pill tone={statusTone[status] ?? "dim"}>
+          {status === "awaiting_approval" ? "needs approval" : status.replaceAll("_", " ")}
+        </Pill>
+        <View style={{ flex: 1 }} />
+        {project ? (
+          <Pressable
+            onPress={() => router.push(`/git/${machine}/${encodeURIComponent(project.project_id)}`)}
+          >
+            <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>⎇ Changes</Text>
+          </Pressable>
+        ) : null}
         {status === "running" || status === "awaiting_approval" ? (
           <Pressable onPress={() => void agentCancel(machine, session).catch(() => {})}>
             <Text style={{ color: colors.bad, fontSize: 13, fontWeight: "600" }}>Stop</Text>
           </Pressable>
         ) : null}
       </View>
+      {error ? (
+        <Text style={{ ...type_.caption, color: colors.bad, paddingHorizontal: space.lg }}>
+          {error}
+        </Text>
+      ) : null}
 
       <FlatList
         ref={listRef}
@@ -243,13 +275,7 @@ export default function AgentSessionScreen() {
             );
           if (item.kind === "thought")
             return (
-              <Text
-                style={{
-                  ...type_.caption,
-                  fontStyle: "italic",
-                  paddingHorizontal: space.xs,
-                }}
-              >
+              <Text style={{ ...type_.caption, fontStyle: "italic", paddingHorizontal: space.xs }}>
                 {item.text}
               </Text>
             );
@@ -265,12 +291,16 @@ export default function AgentSessionScreen() {
                   paddingHorizontal: 12,
                   paddingVertical: 8,
                   alignSelf: "flex-start",
+                  maxWidth: "92%",
                 }}
               >
                 <Text style={{ color: toolColor[item.status] ?? colors.dim, fontSize: 13 }}>
                   {toolGlyph[item.status] ?? "○"}
                 </Text>
-                <Text style={{ ...type_.caption, color: colors.text, ...mono }} numberOfLines={1}>
+                <Text
+                  style={{ ...type_.caption, color: colors.text, ...mono, flexShrink: 1 }}
+                  numberOfLines={1}
+                >
                   {item.title || item.toolId}
                 </Text>
                 <Text style={{ ...type_.caption, color: toolColor[item.status] ?? colors.dim }}>
@@ -319,105 +349,149 @@ export default function AgentSessionScreen() {
       {approval ? (
         <View
           style={{
-            backgroundColor: colors.card,
-            borderColor: colors.bad,
+            backgroundColor: colors.cardRaised,
+            borderColor: colors.border,
             borderWidth: 1,
             borderRadius: 16,
             marginHorizontal: space.lg,
             marginBottom: space.md,
             padding: space.lg,
-            gap: space.md,
+            gap: space.sm,
+            shadowColor: "#000",
+            shadowOpacity: 0.5,
+            shadowRadius: 16,
+            elevation: 8,
           }}
         >
-          <Text style={type_.micro}>Approval required</Text>
-          <Text style={type_.heading}>{approval.title}</Text>
-          <Text style={type_.caption}>tool · {approval.tool_kind}</Text>
-          <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-            {approval.options.map((option) => {
-              const allow = option.option_kind.startsWith("allow");
-              return (
-                <Pressable
-                  key={option.option_id}
-                  onPress={() =>
-                    void approvalRespond(machine, approval.approval_id, option.option_id).catch(
-                      (cause) => setError(String(cause)),
-                    )
-                  }
-                  style={({ pressed }) => ({
-                    backgroundColor: allow ? colors.ok : colors.badSoft,
-                    borderRadius: 10,
-                    paddingHorizontal: 18,
-                    paddingVertical: 10,
-                    opacity: pressed ? 0.85 : 1,
-                  })}
-                >
-                  <Text
-                    style={{
-                      color: allow ? "#0A0C10" : colors.bad,
-                      fontWeight: "700",
-                      fontSize: 14,
-                    }}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Text style={{ fontSize: 16 }}>🛡️</Text>
+            <Text style={{ ...type_.caption, flex: 1 }}>
+              Copilot wants to run · {approval.tool_kind}
+            </Text>
+          </View>
+          <Text style={{ ...type_.body, fontWeight: "600", ...mono, fontSize: 13 }}>
+            {approval.title}
+          </Text>
+          <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.xs }}>
+            {[...approval.options]
+              .sort((a) => (a.option_kind.startsWith("allow") ? -1 : 1))
+              .map((option) => {
+                const allow = option.option_kind.startsWith("allow");
+                const primary = option.option_kind === "allow_once";
+                return (
+                  <Pressable
+                    key={option.option_id}
+                    onPress={() =>
+                      void approvalRespond(machine, approval.approval_id, option.option_id).catch(
+                        (cause) => setError(String(cause)),
+                      )
+                    }
+                    style={({ pressed }) => ({
+                      flex: primary ? 1 : undefined,
+                      backgroundColor: primary
+                        ? colors.accent
+                        : allow
+                          ? colors.accentSoft
+                          : "transparent",
+                      borderColor: allow ? "transparent" : colors.border,
+                      borderWidth: allow ? 0 : 1,
+                      borderRadius: 10,
+                      paddingHorizontal: 16,
+                      paddingVertical: 11,
+                      alignItems: "center",
+                      opacity: pressed ? 0.85 : 1,
+                    })}
                   >
-                    {option.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
+                    <Text
+                      style={{
+                        color: primary ? "#0A0C10" : allow ? colors.accent : colors.dim,
+                        fontWeight: "600",
+                        fontSize: 14,
+                      }}
+                    >
+                      {optionLabel(option.option_kind, option.name)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
           </View>
         </View>
       ) : null}
 
-      <View
-        style={{
-          flexDirection: "row",
-          padding: space.md,
-          gap: space.sm,
-          borderTopWidth: 1,
-          borderTopColor: colors.borderSoft,
-        }}
-      >
-        <TextInput
-          value={prompt}
-          onChangeText={setPrompt}
-          editable={canPrompt}
-          placeholder={canPrompt ? "Follow-up prompt…" : `agent is ${status.replaceAll("_", " ")}…`}
-          placeholderTextColor={colors.faint}
+      {ended ? (
+        <View
           style={{
-            flex: 1,
-            backgroundColor: colors.card,
-            borderColor: colors.borderSoft,
-            borderWidth: 1,
-            borderRadius: 22,
-            color: colors.text,
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            fontSize: 14,
-          }}
-        />
-        <Pressable
-          disabled={!canPrompt || prompt.trim().length === 0}
-          onPress={() => void send()}
-          style={({ pressed }) => ({
-            backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
-            borderRadius: 22,
-            width: 44,
-            height: 44,
+            padding: space.lg,
+            borderTopWidth: 1,
+            borderTopColor: colors.borderSoft,
             alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? 0.85 : 1,
-          })}
+            gap: space.xs,
+          }}
         >
-          <Text
-            style={{
-              color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
-              fontSize: 17,
-              fontWeight: "700",
-            }}
-          >
-            ↑
+          <Text style={type_.caption}>
+            This session has {status === "cancelled" ? "been stopped" : status}.
           </Text>
-        </Pressable>
-      </View>
+          <Pressable onPress={() => router.replace(`/agent/${machine}`)}>
+            <Text style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>
+              Start a new session ›
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View
+          style={{
+            flexDirection: "row",
+            padding: space.md,
+            gap: space.sm,
+            borderTopWidth: 1,
+            borderTopColor: colors.borderSoft,
+          }}
+        >
+          <TextInput
+            value={prompt}
+            onChangeText={setPrompt}
+            editable={canPrompt}
+            placeholder={
+              canPrompt ? "Follow-up prompt…" : `agent is ${status.replaceAll("_", " ")}…`
+            }
+            placeholderTextColor={colors.faint}
+            style={{
+              flex: 1,
+              backgroundColor: colors.card,
+              borderColor: colors.borderSoft,
+              borderWidth: 1,
+              borderRadius: 22,
+              color: colors.text,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              fontSize: 14,
+            }}
+          />
+          <Pressable
+            disabled={!canPrompt || prompt.trim().length === 0}
+            onPress={() => void send()}
+            style={({ pressed }) => ({
+              backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
+              borderRadius: 22,
+              width: 44,
+              height: 44,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Text
+              style={{
+                color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
+                fontSize: 17,
+                fontWeight: "700",
+              }}
+            >
+              ↑
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }

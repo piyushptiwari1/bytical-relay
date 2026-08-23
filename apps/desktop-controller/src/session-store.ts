@@ -1,0 +1,78 @@
+import { DatabaseSync } from "node:sqlite";
+import type { AgentSession } from "@rdc/protocol";
+
+/**
+ * Persistent session index (chat history). Transcripts live in the event
+ * store (`agent:<id>` streams); this table is the browsable list that
+ * survives controller restarts. Sessions left in a live state by a dead
+ * controller are marked cancelled on boot.
+ */
+export class SessionStore {
+  readonly #db: DatabaseSync;
+
+  constructor(dbPath = ":memory:") {
+    this.#db = new DatabaseSync(dbPath);
+    this.#db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA busy_timeout = 5000;
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        session_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  }
+
+  /** Sessions a previous controller left "live" are dead now. */
+  markInterrupted(): number {
+    const result = this.#db
+      .prepare(
+        `UPDATE agent_sessions SET status = 'cancelled'
+         WHERE status IN ('starting', 'running', 'awaiting_approval', 'idle')`,
+      )
+      .run();
+    return Number(result.changes);
+  }
+
+  upsert(session: AgentSession): void {
+    this.#db
+      .prepare(
+        `INSERT INTO agent_sessions (session_id, project_id, provider, title, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           title = excluded.title, status = excluded.status, updated_at = excluded.updated_at`,
+      )
+      .run(
+        session.session_id,
+        session.project_id,
+        session.provider,
+        session.title,
+        session.status,
+        session.created_at,
+        session.updated_at,
+      );
+  }
+
+  list(limit = 100): AgentSession[] {
+    const rows = this.#db
+      .prepare("SELECT * FROM agent_sessions ORDER BY updated_at DESC LIMIT ?")
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      session_id: r.session_id as string,
+      project_id: r.project_id as string,
+      provider: r.provider as string,
+      title: r.title as string,
+      status: r.status as AgentSession["status"],
+      created_at: r.created_at as string,
+      updated_at: r.updated_at as string,
+    }));
+  }
+
+  close(): void {
+    this.#db.close();
+  }
+}

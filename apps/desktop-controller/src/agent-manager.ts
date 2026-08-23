@@ -12,6 +12,7 @@ import {
   agentStream,
 } from "@rdc/protocol";
 import { newEventId, nowIso, TypedEmitter } from "@rdc/shared";
+import type { SessionStore } from "./session-store.ts";
 
 interface ManagedSession {
   session: AgentSession;
@@ -35,10 +36,11 @@ export class AgentManager {
   #detectCache: Array<{ id: string; available: boolean; detail: string }> | null = null;
 
   constructor(
-    private readonly deps: { eventStore: EventStore; fsIndex: FsIndex },
+    private readonly deps: { eventStore: EventStore; fsIndex: FsIndex; sessions?: SessionStore },
     adapters: AgentAdapter[],
   ) {
     for (const adapter of adapters) this.#adapters.set(adapter.id, adapter);
+    this.deps.sessions?.markInterrupted();
   }
 
   async providers(): Promise<Array<{ id: string; available: boolean; detail: string }>> {
@@ -57,9 +59,14 @@ export class AgentManager {
   }
 
   list(): AgentSession[] {
-    return [...this.#sessions.values()]
-      .map((m) => m.session)
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    // persisted history (survives restarts) overlaid with live in-memory state
+    const live = new Map(
+      [...this.#sessions.values()].map((m) => [m.session.session_id, m.session]),
+    );
+    if (!this.deps.sessions) {
+      return [...live.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    }
+    return this.deps.sessions.list().map((row) => live.get(row.session_id) ?? row);
   }
 
   async start(projectId: string, providerId: string, prompt: string): Promise<AgentSession> {
@@ -186,6 +193,7 @@ export class AgentManager {
   }
 
   #announce(managed: ManagedSession): void {
+    this.deps.sessions?.upsert(managed.session);
     this.emitter.emit("status", managed.session);
   }
 }

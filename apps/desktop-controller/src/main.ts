@@ -17,6 +17,7 @@ import { loadOrCreateKeys } from "./keys.ts";
 import { HealthMonitor } from "./machine-health.ts";
 import { PairingCoordinator } from "./pairing-coordinator.ts";
 import { buildServer } from "./server.ts";
+import { SessionStore } from "./session-store.ts";
 import { acquireSingleInstanceLock } from "./single-instance.ts";
 
 const RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
@@ -70,7 +71,10 @@ async function start(): Promise<void> {
   } catch {
     // no saved state
   }
-  const agents = new AgentManager({ eventStore, fsIndex }, [copilotAdapter()]);
+  const agents = new AgentManager(
+    { eventStore, fsIndex, sessions: new SessionStore(path.join(dir, "sessions.db")) },
+    [copilotAdapter()],
+  );
 
   logger.info({ roots: config.project_roots }, "detecting projects");
   const git = new GitService();

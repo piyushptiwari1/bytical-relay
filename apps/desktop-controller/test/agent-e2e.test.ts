@@ -6,6 +6,7 @@ import { FsIndex } from "@rdc/filesystem";
 import { agentStream } from "@rdc/protocol";
 import { describe, expect, test } from "vitest";
 import { AgentManager } from "../src/agent-manager.ts";
+import { SessionStore } from "../src/session-store.ts";
 
 const fixture = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -92,3 +93,31 @@ async function waitFor(check: () => boolean, timeoutMs = 15_000): Promise<void> 
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }
+
+describe("SessionStore persistence across controller restarts", () => {
+  test("history survives; live sessions become cancelled on boot", () => {
+    const store = new SessionStore(":memory:");
+    const base = {
+      project_id: "git_agent",
+      provider: "fake",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    store.upsert({ ...base, session_id: "ses_done", title: "finished work", status: "completed" });
+    store.upsert({ ...base, session_id: "ses_live", title: "was running", status: "running" });
+    store.upsert({
+      ...base,
+      session_id: "ses_wait",
+      title: "was waiting",
+      status: "awaiting_approval",
+    });
+
+    // simulated restart
+    expect(store.markInterrupted()).toBe(2);
+    const sessions = store.list();
+    expect(sessions.find((s) => s.session_id === "ses_done")?.status).toBe("completed");
+    expect(sessions.find((s) => s.session_id === "ses_live")?.status).toBe("cancelled");
+    expect(sessions.find((s) => s.session_id === "ses_wait")?.status).toBe("cancelled");
+    store.close();
+  });
+});
