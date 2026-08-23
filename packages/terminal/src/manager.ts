@@ -1,14 +1,20 @@
+import { createRequire } from "node:module";
 import { spawn as ptySpawn } from "@lydell/node-pty";
 import type { TerminalInfo, TerminalSnapshot } from "@rdc/protocol";
 import { newEventId, nowIso, TypedEmitter } from "@rdc/shared";
-import { Terminal } from "@xterm/headless";
+import type { Terminal as XtermTerminal } from "@xterm/headless";
 import { detectShells, ptyEnv, type ShellOption } from "./shells.ts";
 import { snapshotBuffer } from "./snapshot.ts";
+
+// @xterm/headless ships CJS without ESM named exports — load via require.
+const { Terminal } = createRequire(import.meta.url)(
+  "@xterm/headless",
+) as typeof import("@xterm/headless");
 
 interface ManagedTerminal {
   info: TerminalInfo;
   pty: ReturnType<typeof ptySpawn>;
-  term: Terminal;
+  term: XtermTerminal;
   seq: number;
   notify: ReturnType<typeof setTimeout> | null;
 }
