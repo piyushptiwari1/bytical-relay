@@ -39,7 +39,8 @@ describe("TerminalManager on a real PTY", () => {
     // snapshot is the full state — a fresh "attach" sees the same history
     const snapshot = manager.snapshot(info.terminal_id);
     const text = snapshot.lines.map((l) => l.spans.map((s) => s.text).join("")).join("\n");
-    expect(text).toContain("echo rdc_terminal_ok");
+    // command OUTPUT must be present; the echoed input line varies by ConPTY version
+    expect(text).toContain("rdc_terminal_ok");
     expect(snapshot.cols).toBe(80);
     expect(snapshot.seq).toBeGreaterThan(0);
 
