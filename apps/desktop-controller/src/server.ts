@@ -17,8 +17,11 @@ import {
   GitStatusChanged,
   gitStream,
   MachineHealthEvent,
+  TerminalChanged,
+  TerminalClosed,
 } from "@rdc/protocol";
 import { fromB64, hashToken, type KxKeypair, SecureChannel } from "@rdc/security";
+import type { TerminalManager } from "@rdc/terminal";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
 import type { AgentManager } from "./agent-manager.ts";
@@ -44,6 +47,7 @@ export interface ServerDeps {
   git: GitService;
   editors: EditorRegistry;
   agents: AgentManager;
+  terminals: TerminalManager;
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -389,6 +393,23 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   deps.agents.emitter.on("status", (session) => {
     agentSeq += 1;
     const json = JSON.stringify(AgentStatusChanged.create("agent", agentSeq, { session }));
+    for (const [, client] of clients) {
+      if (client.ctx.helloDone) client.sendJson(json);
+    }
+  });
+
+  // Live push: terminal output pings + close events (ephemeral).
+  let terminalSeq = 0;
+  deps.terminals.emitter.on("changed", (event) => {
+    terminalSeq += 1;
+    const json = JSON.stringify(TerminalChanged.create("terminal", terminalSeq, event));
+    for (const [, client] of clients) {
+      if (client.ctx.helloDone) client.sendJson(json);
+    }
+  });
+  deps.terminals.emitter.on("closed", (event) => {
+    terminalSeq += 1;
+    const json = JSON.stringify(TerminalClosed.create("terminal", terminalSeq, event));
     for (const [, client] of clients) {
       if (client.ctx.helloDone) client.sendJson(json);
     }

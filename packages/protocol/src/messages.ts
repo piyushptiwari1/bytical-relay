@@ -11,6 +11,8 @@ import {
   KeepAwakeStateSchema,
   MachineHealthSchema,
   ProjectSchema,
+  TerminalInfoSchema,
+  TerminalSnapshotSchema,
 } from "./entities.ts";
 import { defineCommand, defineEvent, defineMessage } from "./envelope.ts";
 import { type ProtocolError, ProtocolErrorSchema, protocolError } from "./errors.ts";
@@ -352,6 +354,68 @@ export const ApprovalResolved = defineEvent(
   }),
 );
 
+// ── Terminal domain (S5) ─────────────────────────────────────────────────────
+export const TerminalList = defineCommand(
+  "terminal.list",
+  z.object({}),
+  z.object({
+    terminals: z.array(TerminalInfoSchema),
+    shells: z.array(z.object({ id: z.string(), label: z.string() })),
+  }),
+);
+
+export const TerminalCreate = defineCommand(
+  "terminal.create",
+  z.object({
+    project_id: z.string().min(1).optional(),
+    shell: z.string().optional(),
+    cols: z.number().int().min(20).max(400).optional(),
+    rows: z.number().int().min(5).max(200).optional(),
+  }),
+  z.object({ terminal: TerminalInfoSchema }),
+);
+
+export const TerminalWrite = defineCommand(
+  "terminal.write",
+  z.object({ terminal_id: z.string().min(1), data: z.string().max(16_384) }),
+  z.object({ written: z.boolean() }),
+);
+
+export const TerminalSnapshotCmd = defineCommand(
+  "terminal.snapshot",
+  z.object({
+    terminal_id: z.string().min(1),
+    max_lines: z.number().int().min(10).max(2000).default(400),
+  }),
+  TerminalSnapshotSchema,
+);
+
+export const TerminalResize = defineCommand(
+  "terminal.resize",
+  z.object({
+    terminal_id: z.string().min(1),
+    cols: z.number().int().min(20).max(400),
+    rows: z.number().int().min(5).max(200),
+  }),
+  z.object({ resized: z.boolean() }),
+);
+
+export const TerminalKill = defineCommand(
+  "terminal.kill",
+  z.object({ terminal_id: z.string().min(1) }),
+  z.object({ killed: z.boolean() }),
+);
+
+/** Ephemeral pings — the phone refetches a snapshot when viewing that terminal. */
+export const TerminalChanged = defineEvent(
+  "terminal.changed",
+  z.object({ terminal_id: z.string(), seq: z.number().int().nonnegative() }),
+);
+export const TerminalClosed = defineEvent(
+  "terminal.closed",
+  z.object({ terminal_id: z.string(), exit_code: z.number().int().nullable() }),
+);
+
 // ── Inbound parsing ──────────────────────────────────────────────────────────
 export const KnownMessageSchema = z.discriminatedUnion("type", [
   Hello.schema,
@@ -412,6 +476,18 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   AgentArchive.response,
   ApprovalRespond.request,
   ApprovalRespond.response,
+  TerminalList.request,
+  TerminalList.response,
+  TerminalCreate.request,
+  TerminalCreate.response,
+  TerminalWrite.request,
+  TerminalWrite.response,
+  TerminalSnapshotCmd.request,
+  TerminalSnapshotCmd.response,
+  TerminalResize.request,
+  TerminalResize.response,
+  TerminalKill.request,
+  TerminalKill.response,
   DebugEchoed.schema,
   FileChanged.schema,
   GitStatusChanged.schema,
@@ -422,6 +498,8 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   AgentStatusChanged.schema,
   ApprovalRequested.schema,
   ApprovalResolved.schema,
+  TerminalChanged.schema,
+  TerminalClosed.schema,
 ]);
 export type KnownMessage = z.infer<typeof KnownMessageSchema>;
 

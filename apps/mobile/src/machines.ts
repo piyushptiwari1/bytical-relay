@@ -30,6 +30,14 @@ import {
   type Project,
   ProjectList,
   SyncReplay,
+  TerminalCreate,
+  type TerminalInfo,
+  TerminalKill,
+  TerminalList,
+  TerminalResize,
+  type TerminalSnapshot,
+  TerminalSnapshotCmd,
+  TerminalWrite,
 } from "@rdc/protocol";
 import { fromB64 } from "@rdc/security/client";
 import { type ClientState, ControllerClient } from "@rdc/transport";
@@ -382,5 +390,61 @@ export function watchAgentStatus(
   if (!client) return () => {};
   return client.events.on("event", (msg) => {
     if (msg.type === "agent.status_changed") onSession(msg.payload.session);
+  });
+}
+
+// ── terminal helpers (S5) ──────────────────────────────────────────────────
+
+export const terminalList = (
+  machineId: string,
+): Promise<{ terminals: TerminalInfo[]; shells: Array<{ id: string; label: string }> }> =>
+  requireClient(machineId).command(TerminalList, {});
+
+export const terminalCreate = (
+  machineId: string,
+  opts: { projectId?: string; shell?: string },
+): Promise<{ terminal: TerminalInfo }> =>
+  requireClient(machineId).command(TerminalCreate, {
+    ...(opts.projectId !== undefined ? { project_id: opts.projectId } : {}),
+    ...(opts.shell !== undefined ? { shell: opts.shell } : {}),
+  });
+
+export const terminalWrite = (
+  machineId: string,
+  terminalId: string,
+  data: string,
+): Promise<{ written: boolean }> =>
+  requireClient(machineId).command(TerminalWrite, { terminal_id: terminalId, data });
+
+export const terminalSnapshot = (
+  machineId: string,
+  terminalId: string,
+): Promise<TerminalSnapshot> =>
+  requireClient(machineId).command(TerminalSnapshotCmd, { terminal_id: terminalId });
+
+export const terminalKill = (machineId: string, terminalId: string): Promise<{ killed: boolean }> =>
+  requireClient(machineId).command(TerminalKill, { terminal_id: terminalId });
+
+export const terminalResize = (
+  machineId: string,
+  terminalId: string,
+  cols: number,
+  rows: number,
+): Promise<{ resized: boolean }> =>
+  requireClient(machineId).command(TerminalResize, { terminal_id: terminalId, cols, rows });
+
+/** Output pings for one terminal; returns unsubscribe. */
+export function watchTerminal(
+  machineId: string,
+  terminalId: string,
+  onChanged: () => void,
+  onClosed?: (exitCode: number | null) => void,
+): () => void {
+  const client = clients.get(machineId);
+  if (!client) return () => {};
+  return client.events.on("event", (msg) => {
+    if (msg.type === "terminal.changed" && msg.payload.terminal_id === terminalId) onChanged();
+    if (msg.type === "terminal.closed" && msg.payload.terminal_id === terminalId)
+      onClosed?.(msg.payload.exit_code);
   });
 }

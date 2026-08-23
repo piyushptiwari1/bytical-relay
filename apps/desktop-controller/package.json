@@ -20,6 +20,7 @@
     "@rdc/protocol": "workspace:*",
     "@rdc/security": "workspace:*",
     "@rdc/shared": "workspace:*",
+    "@rdc/terminal": "workspace:*",
     "commander": "catalog:",
     "execa": "catalog:",
     "fastify": "catalog:",

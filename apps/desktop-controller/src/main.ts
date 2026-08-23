@@ -5,6 +5,7 @@ import { copilotAdapter } from "@rdc/agent-acp";
 import { SqliteEventStore } from "@rdc/event-store";
 import { detectProjects, FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
+import { TerminalManager } from "@rdc/terminal";
 import { Command } from "commander";
 import pino from "pino";
 import { AgentManager } from "./agent-manager.ts";
@@ -81,6 +82,7 @@ async function start(): Promise<void> {
     },
     [copilotAdapter()],
   );
+  const terminals = new TerminalManager();
 
   logger.info({ roots: config.project_roots }, "detecting projects");
   const git = new GitService();
@@ -122,6 +124,7 @@ async function start(): Promise<void> {
     git,
     editors: new EditorRegistry(),
     agents,
+    terminals,
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 
@@ -147,6 +150,7 @@ async function start(): Promise<void> {
       // best effort
     }
     await agents.stop();
+    await terminals.stop();
     await git.stop();
     await app.close();
     await fsService.stop();

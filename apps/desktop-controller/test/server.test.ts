@@ -5,6 +5,7 @@ import { GitService } from "@rdc/git";
 import { FileChanged, fsStream, Hello, SUPPORTED_VERSIONS, SyncSubscribe } from "@rdc/protocol";
 import { generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
+import { TerminalManager } from "@rdc/terminal";
 import { afterAll, describe, expect, test } from "vitest";
 import { AgentManager } from "../src/agent-manager.ts";
 import { DeviceStore } from "../src/device-store.ts";
@@ -50,6 +51,7 @@ function makeDeps() {
     keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
     git: new GitService(),
     editors: new EditorRegistry(),
+    terminals: new TerminalManager(),
     agents: new AgentManager({ eventStore, fsIndex }, []),
   };
 }

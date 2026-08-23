@@ -195,3 +195,35 @@ export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
 
 /** Journaled stream per agent session — replay = full transcript recovery. */
 export const agentStream = (sessionId: string): string => `agent:${sessionId}`;
+
+// ── Terminal domain (S5) ─────────────────────────────────────────────────
+export const TerminalInfoSchema = z.object({
+  terminal_id: z.string().min(1),
+  shell: z.string(),
+  title: z.string(),
+  cwd: z.string(),
+  cols: z.number().int().positive(),
+  rows: z.number().int().positive(),
+  alive: z.boolean(),
+  created_at: z.iso.datetime(),
+});
+export type TerminalInfo = z.infer<typeof TerminalInfoSchema>;
+
+export const TerminalSpanSchema = z.object({
+  text: z.string(),
+  fg: z.string().nullable(),
+  bg: z.string().nullable(),
+  bold: z.boolean(),
+});
+export const TerminalLineSchema = z.object({ spans: z.array(TerminalSpanSchema) });
+export type TerminalLine = z.infer<typeof TerminalLineSchema>;
+
+/** Server-side rendered styled buffer — the phone displays, never emulates. */
+export const TerminalSnapshotSchema = z.object({
+  lines: z.array(TerminalLineSchema),
+  cols: z.number().int().positive(),
+  rows: z.number().int().positive(),
+  cursor_row: z.number().int(),
+  seq: z.number().int().nonnegative(),
+});
+export type TerminalSnapshot = z.infer<typeof TerminalSnapshotSchema>;

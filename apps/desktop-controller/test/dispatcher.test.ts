@@ -19,6 +19,7 @@ import {
   SUPPORTED_VERSIONS,
   SyncSubscribe,
 } from "@rdc/protocol";
+import { TerminalManager } from "@rdc/terminal";
 import { describe, expect, test } from "vitest";
 import { AgentManager } from "../src/agent-manager.ts";
 import { ControllerDispatcher, newClientContext } from "../src/dispatcher.ts";
@@ -60,6 +61,7 @@ function makeDeps() {
     keepAwake: new KeepAwake(fakeAwakeStrategy),
     git: new GitService(),
     editors: new EditorRegistry(),
+    terminals: new TerminalManager(),
     agents: new AgentManager({ eventStore, fsIndex }, []),
   };
 }

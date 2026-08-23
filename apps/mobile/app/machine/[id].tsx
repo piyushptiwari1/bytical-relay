@@ -128,6 +128,14 @@ export default function MachineDetail() {
         </Card>
       ))}
 
+      <Card onPress={() => router.push(`/terminal/${id}`)} style={{ gap: 2 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text style={{ ...type_.heading, flex: 1 }}>⌨ Terminals</Text>
+          <Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>
+        </View>
+        <Text style={type_.caption}>Persistent shells on this machine</Text>
+      </Card>
+
       <SectionLabel>Projects — tap for chats</SectionLabel>
       {(rt?.projects ?? []).map((project) => (
         <Card

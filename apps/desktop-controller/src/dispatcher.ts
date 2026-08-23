@@ -39,8 +39,15 @@ import {
   SyncReplay,
   SyncSubscribe,
   SysPing,
+  TerminalCreate,
+  TerminalKill,
+  TerminalList,
+  TerminalResize,
+  TerminalSnapshotCmd,
+  TerminalWrite,
 } from "@rdc/protocol";
 import { nowIso } from "@rdc/shared";
+import type { TerminalManager } from "@rdc/terminal";
 import type { AgentManager } from "./agent-manager.ts";
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
@@ -68,6 +75,7 @@ export interface DispatcherDeps {
   git: GitService;
   editors: EditorRegistry;
   agents: AgentManager;
+  terminals: TerminalManager;
 }
 
 /**
@@ -251,6 +259,57 @@ export class ControllerDispatcher {
         return [
           await this.#tryRun(msg.command_id, ApprovalRespond, async () => ({
             resolved: this.deps.agents.respond(msg.payload.approval_id, msg.payload.option_id),
+          })),
+        ];
+      case "terminal.list":
+        return [
+          await this.#tryRun(msg.command_id, TerminalList, async () => ({
+            terminals: this.deps.terminals.list(),
+            shells: this.deps.terminals.shells().map((s) => ({ id: s.id, label: s.label })),
+          })),
+        ];
+      case "terminal.create":
+        return [
+          await this.#tryRun(msg.command_id, TerminalCreate, async () => {
+            const root = msg.payload.project_id
+              ? this.deps.fsIndex.getProjectRoot(msg.payload.project_id)
+              : undefined;
+            return {
+              terminal: this.deps.terminals.create({
+                cwd: root ?? process.env.USERPROFILE ?? process.env.HOME ?? process.cwd(),
+                ...(msg.payload.shell !== undefined ? { shell: msg.payload.shell } : {}),
+                ...(msg.payload.cols !== undefined ? { cols: msg.payload.cols } : {}),
+                ...(msg.payload.rows !== undefined ? { rows: msg.payload.rows } : {}),
+              }),
+            };
+          }),
+        ];
+      case "terminal.write":
+        return [
+          await this.#tryRun(msg.command_id, TerminalWrite, async () => ({
+            written: this.deps.terminals.write(msg.payload.terminal_id, msg.payload.data),
+          })),
+        ];
+      case "terminal.snapshot":
+        return [
+          await this.#tryRun(msg.command_id, TerminalSnapshotCmd, async () =>
+            this.deps.terminals.snapshot(msg.payload.terminal_id, msg.payload.max_lines),
+          ),
+        ];
+      case "terminal.resize":
+        return [
+          await this.#tryRun(msg.command_id, TerminalResize, async () => ({
+            resized: this.deps.terminals.resize(
+              msg.payload.terminal_id,
+              msg.payload.cols,
+              msg.payload.rows,
+            ),
+          })),
+        ];
+      case "terminal.kill":
+        return [
+          await this.#tryRun(msg.command_id, TerminalKill, async () => ({
+            killed: this.deps.terminals.kill(msg.payload.terminal_id),
           })),
         ];
       case "sync.subscribe": {

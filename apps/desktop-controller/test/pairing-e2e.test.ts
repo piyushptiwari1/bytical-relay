@@ -4,6 +4,7 @@ import { GitService } from "@rdc/git";
 import { FileChanged, fsStream, type KnownMessage, ProjectList } from "@rdc/protocol";
 import { emojiFingerprint, fromB64, generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
+import { TerminalManager } from "@rdc/terminal";
 import { ControllerClient, pairWithController } from "@rdc/transport";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AgentManager } from "../src/agent-manager.ts";
@@ -54,6 +55,7 @@ beforeAll(async () => {
     keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
     git: new GitService(),
     editors: new EditorRegistry(),
+    terminals: new TerminalManager(),
     agents: new AgentManager({ eventStore, fsIndex }, []),
   };
   const app = await buildServer(deps);
