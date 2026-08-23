@@ -7,7 +7,7 @@
     "start": "expo start",
     "android": "expo start --android",
     "typecheck": "tsc --noEmit",
-    "export:check": "expo export --platform android --output-dir dist-export"
+    "export:check": "expo export --platform android --output-dir node_modules/.cache/expo-export-check"
   },
   "dependencies": {
     "@rdc/protocol": "workspace:*",

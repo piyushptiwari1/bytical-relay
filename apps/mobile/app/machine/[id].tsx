@@ -60,6 +60,48 @@ export default function MachineDetail() {
         ) : null}
       </View>
 
+      {(rt?.editors ?? []).map((editor) => (
+        <View
+          key={editor.editor_id}
+          style={{
+            backgroundColor: colors.card,
+            borderColor: colors.accent,
+            borderWidth: 1,
+            borderRadius: 10,
+            padding: 14,
+            gap: 4,
+          }}
+        >
+          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
+            ✎ VS Code{editor.workspace ? ` — ${editor.workspace}` : ""}
+          </Text>
+          {editor.active_file ? (
+            <Text style={{ color: colors.accent, fontSize: 13 }}>
+              editing {editor.active_file.name}
+              {editor.active_file.line ? `:${editor.active_file.line}` : ""}
+            </Text>
+          ) : (
+            <Text style={{ color: colors.dim, fontSize: 13 }}>no file focused</Text>
+          )}
+          <Text style={{ color: colors.dim, fontSize: 12 }}>
+            {editor.diagnostics.errors > 0 ? `⛔ ${editor.diagnostics.errors} ` : ""}
+            {editor.diagnostics.warnings > 0 ? `⚠ ${editor.diagnostics.warnings} ` : ""}
+            {editor.diagnostics.errors === 0 && editor.diagnostics.warnings === 0
+              ? "no problems "
+              : ""}
+            {editor.running_tasks.length > 0 ? `· running: ${editor.running_tasks.join(", ")}` : ""}
+          </Text>
+          {editor.last_command ? (
+            <Text style={{ color: colors.dim, fontSize: 11 }} numberOfLines={1}>
+              $ {editor.last_command.command}
+              {editor.last_command.exit_code !== null
+                ? ` → ${editor.last_command.exit_code}`
+                : " …"}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+
       <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>Projects</Text>
       {(rt?.projects ?? []).map((project) => (
         <View

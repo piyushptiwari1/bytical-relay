@@ -9,6 +9,7 @@ import type { FilesystemService, FsIndex } from "@rdc/filesystem";
 import type { GitService } from "@rdc/git";
 import {
   decodeFrame,
+  EditorStateChanged,
   encodeFrame,
   eventEnvelopeFromRecord,
   FrameKind,
@@ -21,6 +22,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
 import type { DeviceRecord, DeviceStore } from "./device-store.ts";
 import { type ClientContext, ControllerDispatcher, newClientContext } from "./dispatcher.ts";
+import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
 import type { PairingCoordinator } from "./pairing-coordinator.ts";
@@ -38,6 +40,7 @@ export interface ServerDeps {
   health: HealthMonitor;
   keepAwake: KeepAwake;
   git: GitService;
+  editors: EditorRegistry;
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -239,6 +242,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       }
     };
     clients.set(socket, { ctx, sendJson });
+    deps.editors.attach(ctx, sendJson);
 
     const afterDispatch = () => {
       // server's secretstream header goes out right after the hello exchange
@@ -306,7 +310,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       }
       socket.close(1008, "unsupported frame kind");
     });
-    socket.on("close", () => clients.delete(socket));
+    socket.on("close", () => {
+      clients.delete(socket);
+      deps.editors.detach(ctx);
+    });
   });
 
   // Live push: journaled events → sockets subscribed to that stream (encrypted per client).
@@ -347,6 +354,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const json = JSON.stringify(
       GitStatusChanged.create(gitStream(state.project_id), gitSeq, state),
     );
+    for (const [, client] of clients) {
+      if (client.ctx.helloDone) client.sendJson(json);
+    }
+  });
+
+  // Live push: editors snapshot on any window state change (ephemeral, not journaled).
+  let editorSeq = 0;
+  deps.editors.emitter.on("changed", (editors) => {
+    editorSeq += 1;
+    const json = JSON.stringify(EditorStateChanged.create("editor", editorSeq, { editors }));
     for (const [, client] of clients) {
       if (client.ctx.helloDone) client.sendJson(json);
     }

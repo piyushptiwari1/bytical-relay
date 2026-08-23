@@ -6,6 +6,9 @@ import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
 import {
   DebugEcho,
+  EditorList,
+  EditorOpenFile,
+  EditorPublishState,
   FileList,
   FileRead,
   Hello,
@@ -18,6 +21,7 @@ import {
 } from "@rdc/protocol";
 import { describe, expect, test } from "vitest";
 import { ControllerDispatcher, newClientContext } from "../src/dispatcher.ts";
+import { EditorRegistry } from "../src/editors.ts";
 import { KeepAwake } from "../src/keep-awake.ts";
 import { HealthMonitor } from "../src/machine-health.ts";
 
@@ -54,6 +58,7 @@ function makeDeps() {
     health: new HealthMonitor(),
     keepAwake: new KeepAwake(fakeAwakeStrategy),
     git: new GitService(),
+    editors: new EditorRegistry(),
   };
 }
 
@@ -81,6 +86,75 @@ describe("ControllerDispatcher", () => {
       expect(refused.payload.error.code).toBe("FORBIDDEN");
     } else {
       throw new Error("expected FORBIDDEN error result");
+    }
+  });
+
+  test("editor: publish → list → open_file routed to matching window", async () => {
+    const deps = makeDeps();
+    const dispatcher = new ControllerDispatcher(deps);
+
+    const extCtx = newClientContext();
+    const extInbox: string[] = [];
+    deps.editors.attach(extCtx, (json) => extInbox.push(json));
+    await send(
+      dispatcher,
+      extCtx,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "ext" }),
+    );
+    const published = await send(
+      dispatcher,
+      extCtx,
+      EditorPublishState.createRequest({
+        state: {
+          editor_id: "vscode_test",
+          app: "vscode",
+          workspace: "x",
+          project_ids: ["git_x"],
+          active_file: null,
+          diagnostics: { errors: 2, warnings: 1, infos: 0 },
+          running_tasks: ["build"],
+          last_command: null,
+          updated_at: new Date().toISOString(),
+        },
+      }),
+    );
+    expect(published?.type).toBe("editor.publish_state.result");
+
+    const phoneCtx = newClientContext();
+    deps.editors.attach(phoneCtx, () => {});
+    await send(
+      dispatcher,
+      phoneCtx,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "ph" }),
+    );
+    const listed = await send(dispatcher, phoneCtx, EditorList.createRequest({}));
+    if (listed?.type === "editor.list.result" && listed.payload.status === "ok") {
+      expect(listed.payload.result.editors).toHaveLength(1);
+      expect(listed.payload.result.editors[0]?.diagnostics.errors).toBe(2);
+    } else {
+      throw new Error("editor.list failed");
+    }
+
+    const opened = await send(
+      dispatcher,
+      phoneCtx,
+      EditorOpenFile.createRequest({ project_id: "git_x", relative_path: "src/a.ts", line: 7 }),
+    );
+    if (opened?.type === "editor.open_file.result" && opened.payload.status === "ok") {
+      expect(opened.payload.result.delivered).toBe(1);
+    } else {
+      throw new Error("editor.open_file failed");
+    }
+    const routed = parse(extInbox[0] ?? "");
+    expect(routed.type).toBe("editor.open_requested");
+    if (routed.type === "editor.open_requested") {
+      expect(routed.payload).toMatchObject({ relative_path: "src/a.ts", line: 7 });
+    }
+
+    deps.editors.detach(extCtx);
+    const after = await send(dispatcher, phoneCtx, EditorList.createRequest({}));
+    if (after?.type === "editor.list.result" && after.payload.status === "ok") {
+      expect(after.payload.result.editors).toHaveLength(0);
     }
   });
 

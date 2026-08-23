@@ -1,6 +1,7 @@
 import { err, ok, type Result, safeJsonParse } from "@rdc/shared";
 import { z } from "zod";
 import {
+  EditorStateSchema,
   FileChangeSchema,
   FileEntrySchema,
   GitStateSchema,
@@ -223,6 +224,54 @@ export const GitCommit = defineCommand(
 /** Ephemeral push on real status change — stream `git:<project_id>`, not journaled. */
 export const GitStatusChanged = defineEvent("git.status_changed", GitStateSchema);
 
+// ── Editor domain (S6: VS Code extension) ─────────────────────────────
+/** Extension → controller: full-state upsert for this editor window. */
+export const EditorPublishState = defineCommand(
+  "editor.publish_state",
+  z.object({ state: EditorStateSchema }),
+  z.object({ accepted: z.boolean() }),
+);
+
+/** Phone → controller: current editors snapshot. */
+export const EditorList = defineCommand(
+  "editor.list",
+  z.object({}),
+  z.object({ editors: z.array(EditorStateSchema) }),
+);
+
+/** Phone → controller → matching editor(s): open a file on the desktop. */
+export const EditorOpenFile = defineCommand(
+  "editor.open_file",
+  projectRef.extend({
+    relative_path: z.string().min(1),
+    line: z.number().int().positive().optional(),
+  }),
+  z.object({ delivered: z.number().int().nonnegative() }),
+);
+
+/** Phone → controller → matching editor(s): fire-and-forget chat prompt (no readback). */
+export const EditorAskChat = defineCommand(
+  "editor.ask_chat",
+  projectRef.extend({ query: z.string().min(1).max(4000) }),
+  z.object({ delivered: z.number().int().nonnegative() }),
+);
+
+/** Controller → phones: editors snapshot changed (ephemeral, stream "editor"). */
+export const EditorStateChanged = defineEvent(
+  "editor.state_changed",
+  z.object({ editors: z.array(EditorStateSchema) }),
+);
+
+/** Controller → extension: act on the desktop. */
+export const EditorOpenRequested = defineEvent(
+  "editor.open_requested",
+  projectRef.extend({ relative_path: z.string(), line: z.number().int().positive().nullable() }),
+);
+export const EditorChatRequested = defineEvent(
+  "editor.chat_requested",
+  projectRef.extend({ query: z.string() }),
+);
+
 // ── Inbound parsing ──────────────────────────────────────────────────────────
 export const KnownMessageSchema = z.discriminatedUnion("type", [
   Hello.schema,
@@ -261,9 +310,20 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   GitUnstage.response,
   GitCommit.request,
   GitCommit.response,
+  EditorPublishState.request,
+  EditorPublishState.response,
+  EditorList.request,
+  EditorList.response,
+  EditorOpenFile.request,
+  EditorOpenFile.response,
+  EditorAskChat.request,
+  EditorAskChat.response,
   DebugEchoed.schema,
   FileChanged.schema,
   GitStatusChanged.schema,
+  EditorStateChanged.schema,
+  EditorOpenRequested.schema,
+  EditorChatRequested.schema,
 ]);
 export type KnownMessage = z.infer<typeof KnownMessageSchema>;
 

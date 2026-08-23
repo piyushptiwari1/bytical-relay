@@ -7,6 +7,7 @@ import { generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { afterAll, describe, expect, test } from "vitest";
 import { DeviceStore } from "../src/device-store.ts";
+import { EditorRegistry } from "../src/editors.ts";
 import { KeepAwake } from "../src/keep-awake.ts";
 import { HealthMonitor } from "../src/machine-health.ts";
 import { PairingCoordinator } from "../src/pairing-coordinator.ts";
@@ -47,6 +48,7 @@ function makeDeps() {
     health: new HealthMonitor(),
     keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
     git: new GitService(),
+    editors: new EditorRegistry(),
   };
 }
 

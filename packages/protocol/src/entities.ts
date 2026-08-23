@@ -101,3 +101,34 @@ export type GitState = z.infer<typeof GitStateSchema>;
 
 /** Stream naming convention for ephemeral git pushes. */
 export const gitStream = (projectId: string): string => `git:${projectId}`;
+
+// ── Editor domain (S6: VS Code extension) ─────────────────────────────
+export const EditorDiagnosticsSchema = z.object({
+  errors: nonNegInt,
+  warnings: nonNegInt,
+  infos: nonNegInt,
+});
+export type EditorDiagnostics = z.infer<typeof EditorDiagnosticsSchema>;
+
+/** Live state of one editor window, published by its extension. */
+export const EditorStateSchema = z.object({
+  editor_id: z.string().min(1),
+  app: z.string().min(1),
+  workspace: z.string().nullable(),
+  project_ids: z.array(z.string()),
+  active_file: z
+    .object({
+      project_id: z.string().nullable(),
+      relative_path: z.string().nullable(),
+      name: z.string(),
+      line: z.number().int().positive().nullable(),
+    })
+    .nullable(),
+  diagnostics: EditorDiagnosticsSchema,
+  running_tasks: z.array(z.string()),
+  last_command: z
+    .object({ command: z.string(), exit_code: z.number().int().nullable() })
+    .nullable(),
+  updated_at: z.iso.datetime(),
+});
+export type EditorState = z.infer<typeof EditorStateSchema>;

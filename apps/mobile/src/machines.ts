@@ -1,4 +1,7 @@
 import {
+  EditorList,
+  EditorOpenFile,
+  type EditorState,
   type FileEntry,
   FileList,
   FileRead,
@@ -28,6 +31,7 @@ export interface MachineRuntime {
   state: ClientState | "unreachable";
   health?: MachineStatusResult;
   projects?: Project[];
+  editors?: EditorState[];
 }
 
 // client instances live outside React state — they are not serializable
@@ -94,6 +98,8 @@ export const useApp = create<AppState>((set, get) => {
           client.events.on("state", (state) => patchRuntime(machineId, { state }));
           client.events.on("event", (msg) => {
             if (msg.type === "machine.health") patchRuntime(machineId, { health: msg.payload });
+            if (msg.type === "editor.state_changed")
+              patchRuntime(machineId, { editors: msg.payload.editors });
           });
           patchRuntime(machineId, { state: client.state });
           await get().refreshMachine(machineId);
@@ -108,11 +114,12 @@ export const useApp = create<AppState>((set, get) => {
     async refreshMachine(machineId) {
       const client = clients.get(machineId);
       if (!client) return;
-      const [health, projects] = await Promise.all([
+      const [health, projects, editors] = await Promise.all([
         client.command(MachineStatus, {}),
         client.command(ProjectList, {}),
+        client.command(EditorList, {}),
       ]);
-      patchRuntime(machineId, { health, projects: projects.projects });
+      patchRuntime(machineId, { health, projects: projects.projects, editors: editors.editors });
     },
 
     async toggleAwake(machineId) {
@@ -231,3 +238,16 @@ export function watchGit(
       onStatus(msg.payload);
   });
 }
+
+/** Ask the desktop editor(s) with this project open to reveal a file. */
+export const openInEditor = (
+  machineId: string,
+  projectId: string,
+  relativePath: string,
+  line?: number,
+): Promise<{ delivered: number }> =>
+  requireClient(machineId).command(EditorOpenFile, {
+    project_id: projectId,
+    relative_path: relativePath,
+    ...(line !== undefined ? { line } : {}),
+  });

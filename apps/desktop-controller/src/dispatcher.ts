@@ -6,6 +6,12 @@ import { isSensitivePath, resolveInsideProject } from "@rdc/filesystem";
 import type { GitService } from "@rdc/git";
 import {
   DebugEcho,
+  EditorAskChat,
+  EditorChatRequested,
+  EditorList,
+  EditorOpenFile,
+  EditorOpenRequested,
+  EditorPublishState,
   FileList,
   FileRead,
   GitCommit,
@@ -28,6 +34,7 @@ import {
   SysPing,
 } from "@rdc/protocol";
 import { nowIso } from "@rdc/shared";
+import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
 
@@ -51,6 +58,7 @@ export interface DispatcherDeps {
   health: HealthMonitor;
   keepAwake: KeepAwake;
   git: GitService;
+  editors: EditorRegistry;
 }
 
 /**
@@ -155,6 +163,39 @@ export class ControllerDispatcher {
             this.deps.git.commit(msg.payload.project_id, msg.payload.message),
           ),
         ];
+      case "editor.publish_state":
+        return [
+          EditorPublishState.createOk(msg.command_id, {
+            accepted: this.deps.editors.publish(ctx, msg.payload.state),
+          }),
+        ];
+      case "editor.list":
+        return [EditorList.createOk(msg.command_id, { editors: this.deps.editors.list() })];
+      case "editor.open_file": {
+        const delivered = this.deps.editors.deliver(
+          msg.payload.project_id,
+          JSON.stringify(
+            EditorOpenRequested.create("editor", 0, {
+              project_id: msg.payload.project_id,
+              relative_path: msg.payload.relative_path,
+              line: msg.payload.line ?? null,
+            }),
+          ),
+        );
+        return [EditorOpenFile.createOk(msg.command_id, { delivered })];
+      }
+      case "editor.ask_chat": {
+        const delivered = this.deps.editors.deliver(
+          msg.payload.project_id,
+          JSON.stringify(
+            EditorChatRequested.create("editor", 0, {
+              project_id: msg.payload.project_id,
+              query: msg.payload.query,
+            }),
+          ),
+        );
+        return [EditorAskChat.createOk(msg.command_id, { delivered })];
+      }
       case "sync.subscribe": {
         for (const stream of msg.payload.streams) ctx.subscriptions.add(stream);
         return [SyncSubscribe.createOk(msg.command_id, { subscribed: [...ctx.subscriptions] })];

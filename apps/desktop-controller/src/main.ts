@@ -9,6 +9,7 @@ import pino from "pino";
 import { configDir, loadOrCreateConfig } from "./config.ts";
 import { DeviceStore } from "./device-store.ts";
 import { runDoctor } from "./doctor.ts";
+import { EditorRegistry } from "./editors.ts";
 import { KeepAwake } from "./keep-awake.ts";
 import { loadOrCreateKeys } from "./keys.ts";
 import { HealthMonitor } from "./machine-health.ts";
@@ -84,6 +85,7 @@ async function start(): Promise<void> {
     health,
     keepAwake,
     git,
+    editors: new EditorRegistry(),
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 
