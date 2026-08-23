@@ -36,6 +36,34 @@ rl.on("line", async (line) => {
     out({ jsonrpc: "2.0", id: msg.id, result: { sessionId: "fake-session-1" } });
     return;
   }
+  if (msg.method === "session/load") {
+    const sessionId = msg.params.sessionId;
+    // spec: replay the conversation as updates, then respond
+    out({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "earlier question" },
+        },
+      },
+    });
+    out({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "earlier answer" },
+        },
+      },
+    });
+    out({ jsonrpc: "2.0", id: msg.id, result: {} });
+    return;
+  }
   if (msg.method === "session/prompt") {
     const sessionId = msg.params.sessionId;
     const update = (u) =>

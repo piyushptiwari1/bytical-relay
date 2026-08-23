@@ -1,8 +1,9 @@
 import type { AgentSession } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
+  agentArchive,
   agentList,
   agentResume,
   agentStart,
@@ -32,7 +33,7 @@ const statusTone: Record<string, PillTone> = {
   failed: "bad",
   cancelled: "dim",
 };
-const LIVE = new Set(["starting", "running", "awaiting_approval", "idle"]);
+const LIVE = new Set(["starting", "running", "awaiting_approval"]);
 
 function relativeTime(iso: string): string {
   const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
@@ -130,6 +131,22 @@ export default function AgentsHome() {
     <Card
       key={session.session_id}
       onPress={() => router.push(`/agent/${machine}/${session.session_id}`)}
+      onLongPress={() => {
+        Alert.alert("Archive chat?", session.title, [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Archive",
+            style: "destructive",
+            onPress: () => {
+              void agentArchive(machine, session.session_id)
+                .then(() =>
+                  setSessions((prev) => prev.filter((s) => s.session_id !== session.session_id)),
+                )
+                .catch((cause) => setError(String(cause)));
+            },
+          },
+        ]);
+      }}
       accent={session.status === "awaiting_approval"}
       style={{ marginBottom: space.sm, gap: 6 }}
     >

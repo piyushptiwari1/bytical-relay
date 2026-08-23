@@ -120,4 +120,69 @@ describe("SessionStore persistence across controller restarts", () => {
     expect(sessions.find((s) => s.session_id === "ses_wait")?.status).toBe("cancelled");
     store.close();
   });
+
+  test("VS Code chat model: dead session auto-reattaches on prompt, no duplicate journal", async () => {
+    const eventStore = new MemoryEventStore();
+    const store = new SessionStore(":memory:");
+    const fsIndex = new FsIndex(":memory:");
+    fsIndex.upsertProject({
+      project_id: "git_agent",
+      name: "agent-proj",
+      root_path: process.cwd(),
+      vcs: "git",
+      fingerprint: "a".repeat(40),
+      wsl: false,
+    });
+    const adapter = new AcpAdapter({
+      id: "fake",
+      command: process.execPath,
+      argsFor: () => [fixture],
+    });
+    const managerA = new AgentManager({ eventStore, fsIndex, sessions: store }, [adapter]);
+    const session = await managerA.start("git_agent", "fake", "first task");
+    await waitFor(() => managerA.approvals.pendingFor(session.session_id).length === 1);
+    managerA.respond(
+      managerA.approvals.pendingFor(session.session_id)[0]?.approval_id as string,
+      "allow",
+    );
+    await waitFor(() => managerA.list()[0]?.status === "idle");
+    await managerA.stop();
+    const journalBefore = eventStore.read(agentStream(session.session_id), 0, 500).length;
+
+    // "controller restart": fresh manager, same stores — old session has no live handle
+    const managerB = new AgentManager({ eventStore, fsIndex, sessions: store }, [adapter]);
+    expect(managerB.list().find((s) => s.session_id === session.session_id)?.status).toBe(
+      "cancelled",
+    );
+    const accepted = await managerB.prompt(session.session_id, "continue please");
+    expect(accepted).toBe(true);
+    await waitFor(() => managerB.list()[0]?.status === "awaiting_approval");
+    managerB.respond(
+      managerB.approvals.pendingFor(session.session_id)[0]?.approval_id as string,
+      "reject",
+    );
+    await waitFor(() => managerB.list()[0]?.status === "idle");
+
+    const journal = eventStore.read(agentStream(session.session_id), 0, 500);
+    const updates = journal
+      .filter((r) => r.type === "agent.updated")
+      .map((r) => (r.payload as { update: { kind: string; text?: string } }).update);
+    // session/load replay must NOT re-journal old turns
+    expect(updates.filter((u) => u.text === "earlier question")).toHaveLength(0);
+    expect(
+      updates.filter((u) => u.kind === "user_message" && u.text === "continue please"),
+    ).toHaveLength(1);
+    expect(journal.length).toBeGreaterThan(journalBefore);
+
+    // resume() with the same native id must reuse, not duplicate
+    const again = await managerB.resume("fake", "fake-session-1");
+    expect(again.session_id).toBe(session.session_id);
+    expect(managerB.list().filter((s) => s.session_id === session.session_id)).toHaveLength(1);
+
+    // archive removes it from the list
+    expect(await managerB.archive(session.session_id)).toBe(true);
+    expect(managerB.list().find((s) => s.session_id === session.session_id)).toBeUndefined();
+    await managerB.stop();
+    store.close();
+  });
 });

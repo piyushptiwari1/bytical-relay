@@ -23,6 +23,7 @@ import type { VsCodeChatReader } from "./vscode-chats.ts";
 interface ManagedSession {
   session: AgentSession;
   handle: AgentSessionHandle | null;
+  muteUpdates?: boolean;
 }
 
 const normalizePath = (p: string): string =>
@@ -124,6 +125,12 @@ export class AgentManager {
   /** Continue a provider-native (laptop CLI) conversation — full context replays. */
   async resume(providerId: string, nativeId: string): Promise<AgentSession> {
     if (providerId === "vscode-chat") return this.#resumeVsCodeChat(nativeId);
+    // one conversation = one session: if we already track this native id, reattach it
+    const existing = this.deps.sessions?.findByNativeId(nativeId);
+    if (existing) {
+      await this.#reattach(existing, nativeId);
+      return this.#sessions.get(existing.session_id)?.session ?? existing;
+    }
     const adapter = this.#adapters.get(providerId);
     if (!adapter?.resumeSession || !adapter.listNativeSessions) {
       throw new Error(`${providerId} does not support resuming native sessions`);
@@ -143,6 +150,52 @@ export class AgentManager {
     // session/load replayed the history into the journal; ready for follow-ups
     this.#setStatus(managed, "idle");
     return managed.session;
+  }
+
+  /**
+   * VS Code chat model: opening any old conversation continues it. A session
+   * whose agent process died (controller restart, cancel) is transparently
+   * reattached via ACP session/load — replayed updates are NOT journaled again
+   * (the journal already has them), only new turns are.
+   */
+  async #reattach(session: AgentSession, nativeId: string): Promise<void> {
+    const live = this.#sessions.get(session.session_id);
+    if (live?.handle) return; // already attached
+    const adapter = this.#adapters.get(session.provider);
+    if (!adapter?.resumeSession) {
+      throw new Error(`${session.provider} cannot resume this conversation`);
+    }
+    const root = this.deps.fsIndex.getProjectRoot(session.project_id);
+    if (!root) throw new Error(`unknown project: ${session.project_id}`);
+
+    const managed: ManagedSession = {
+      session: { ...session, status: "starting", updated_at: nowIso() },
+      handle: null,
+      muteUpdates: true,
+    };
+    this.#sessions.set(session.session_id, managed);
+    this.#announce(managed);
+    try {
+      managed.handle = await adapter.resumeSession({
+        nativeId,
+        cwd: root,
+        callbacks: this.#callbacksFor(managed),
+      });
+    } finally {
+      managed.muteUpdates = false;
+    }
+    this.#setStatus(managed, "idle");
+  }
+
+  /** Remove a conversation from the list (journal is kept; CLI history untouched). */
+  async archive(sessionId: string): Promise<boolean> {
+    const managed = this.#sessions.get(sessionId);
+    if (managed) {
+      this.approvals.cancelForSession(sessionId);
+      await managed.handle?.dispose().catch(() => {});
+      this.#sessions.delete(sessionId);
+    }
+    return this.deps.sessions?.delete(sessionId) ?? managed !== undefined;
   }
 
   /** Provider-native history (laptop chats) mapped onto indexed projects. */
@@ -256,7 +309,10 @@ export class AgentManager {
   #callbacksFor(managed: ManagedSession) {
     const sessionId = managed.session.session_id;
     return {
-      onUpdate: (update: AgentUpdate) => this.#journalUpdate(sessionId, update),
+      onUpdate: (update: AgentUpdate) => {
+        if (managed.muteUpdates) return; // reattach replay — journal already has it
+        this.#journalUpdate(sessionId, update);
+      },
       onPermission: async (ask: PermissionAsk) => {
         const { request, answer } = this.approvals.create(sessionId, ask);
         this.#journal(sessionId, ApprovalRequested.type, request);
@@ -286,8 +342,16 @@ export class AgentManager {
   }
 
   async prompt(sessionId: string, text: string): Promise<boolean> {
-    const managed = this.#sessions.get(sessionId);
-    if (!managed?.handle) return false;
+    let managed = this.#sessions.get(sessionId);
+    if (!managed?.handle) {
+      // VS Code chat model: continuing an old conversation reattaches it on demand
+      const stored = this.deps.sessions?.get(sessionId);
+      const nativeId = this.deps.sessions?.nativeIdOf(sessionId);
+      if (!stored || !nativeId) return false;
+      await this.#reattach(stored, nativeId);
+      managed = this.#sessions.get(sessionId);
+      if (!managed?.handle) return false;
+    }
     if (managed.session.status === "running" || managed.session.status === "awaiting_approval")
       return false;
     this.#runTurn(managed, text);

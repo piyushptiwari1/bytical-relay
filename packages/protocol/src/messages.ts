@@ -320,6 +320,13 @@ export const AgentResume = defineCommand(
   z.object({ session: AgentSessionSchema }),
 );
 
+/** Remove a conversation from the list (journal kept, CLI history untouched). */
+export const AgentArchive = defineCommand(
+  "agent.archive",
+  z.object({ session_id: z.string().min(1) }),
+  z.object({ archived: z.boolean() }),
+);
+
 export const ApprovalRespond = defineCommand(
   "approval.respond",
   z.object({ approval_id: z.string().min(1), option_id: z.string().min(1) }),
@@ -401,6 +408,8 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   AgentList.response,
   AgentResume.request,
   AgentResume.response,
+  AgentArchive.request,
+  AgentArchive.response,
   ApprovalRespond.request,
   ApprovalRespond.response,
   DebugEchoed.schema,

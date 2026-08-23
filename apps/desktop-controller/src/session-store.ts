@@ -46,6 +46,34 @@ export class SessionStore {
       .run(nativeId, sessionId);
   }
 
+  nativeIdOf(sessionId: string): string | null {
+    const row = this.#db
+      .prepare("SELECT native_id FROM agent_sessions WHERE session_id = ?")
+      .get(sessionId) as { native_id: string | null } | undefined;
+    return row?.native_id ?? null;
+  }
+
+  findByNativeId(nativeId: string): AgentSession | undefined {
+    const row = this.#db
+      .prepare("SELECT * FROM agent_sessions WHERE native_id = ?")
+      .get(nativeId) as Record<string, unknown> | undefined;
+    return row ? this.#toSession(row) : undefined;
+  }
+
+  get(sessionId: string): AgentSession | undefined {
+    const row = this.#db
+      .prepare("SELECT * FROM agent_sessions WHERE session_id = ?")
+      .get(sessionId) as Record<string, unknown> | undefined;
+    return row ? this.#toSession(row) : undefined;
+  }
+
+  delete(sessionId: string): boolean {
+    const result = this.#db
+      .prepare("DELETE FROM agent_sessions WHERE session_id = ?")
+      .run(sessionId);
+    return Number(result.changes) > 0;
+  }
+
   /** Sessions a previous controller left "live" are dead now. */
   markInterrupted(): number {
     const result = this.#db
@@ -80,7 +108,11 @@ export class SessionStore {
     const rows = this.#db
       .prepare("SELECT * FROM agent_sessions ORDER BY updated_at DESC LIMIT ?")
       .all(limit) as Array<Record<string, unknown>>;
-    return rows.map((r) => ({
+    return rows.map((r) => this.#toSession(r));
+  }
+
+  #toSession(r: Record<string, unknown>): AgentSession {
+    return {
       session_id: r.session_id as string,
       project_id: r.project_id as string,
       provider: r.provider as string,
@@ -88,7 +120,7 @@ export class SessionStore {
       status: r.status as AgentSession["status"],
       created_at: r.created_at as string,
       updated_at: r.updated_at as string,
-    }));
+    };
   }
 
   close(): void {

@@ -1,4 +1,5 @@
 import {
+  AgentArchive,
   AgentCancel,
   AgentList,
   AgentPrompt,
@@ -317,6 +318,12 @@ export const agentCancel = (
   sessionId: string,
 ): Promise<{ cancelled: boolean }> =>
   requireClient(machineId).command(AgentCancel, { session_id: sessionId });
+
+export const agentArchive = (
+  machineId: string,
+  sessionId: string,
+): Promise<{ archived: boolean }> =>
+  requireClient(machineId).command(AgentArchive, { session_id: sessionId });
 
 export const approvalRespond = (
   machineId: string,

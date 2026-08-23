@@ -206,7 +206,8 @@ export default function AgentSessionScreen() {
   }, [machine, session]);
 
   if (!machine || !session) return null;
-  const canPrompt = status === "idle";
+  const busy = status === "running" || status === "awaiting_approval" || status === "starting";
+  const canPrompt = !busy;
   const ended = ENDED.has(status);
   const project = projects.find((p) => p.project_id === projectId);
 
@@ -454,80 +455,63 @@ export default function AgentSessionScreen() {
         </View>
       ) : null}
 
-      {ended ? (
-        <View
+      <View
+        style={{
+          flexDirection: "row",
+          padding: space.md,
+          gap: space.sm,
+          borderTopWidth: 1,
+          borderTopColor: colors.borderSoft,
+        }}
+      >
+        <TextInput
+          value={prompt}
+          onChangeText={setPrompt}
+          editable={canPrompt}
+          placeholder={
+            !canPrompt
+              ? `agent is ${status.replaceAll("_", " ")}…`
+              : ended
+                ? "Continue this conversation…"
+                : "Follow-up prompt…"
+          }
+          placeholderTextColor={colors.faint}
           style={{
-            padding: space.lg,
-            borderTopWidth: 1,
-            borderTopColor: colors.borderSoft,
+            flex: 1,
+            backgroundColor: colors.card,
+            borderColor: colors.borderSoft,
+            borderWidth: 1,
+            borderRadius: 22,
+            color: colors.text,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            fontSize: 14,
+          }}
+        />
+        <Pressable
+          disabled={!canPrompt || prompt.trim().length === 0}
+          onPress={() => void send()}
+          style={({ pressed }) => ({
+            backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
+            borderRadius: 22,
+            width: 44,
+            height: 44,
             alignItems: "center",
-            gap: space.xs,
-          }}
+            justifyContent: "center",
+            opacity: pressed ? 0.85 : 1,
+          })}
         >
-          <Text style={type_.caption}>
-            This session has {status === "cancelled" ? "been stopped" : status}.
-          </Text>
-          <Pressable onPress={() => router.replace(`/agent/${machine}`)}>
-            <Text style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>
-              Start a new session ›
-            </Text>
-          </Pressable>
-        </View>
-      ) : (
-        <View
-          style={{
-            flexDirection: "row",
-            padding: space.md,
-            gap: space.sm,
-            borderTopWidth: 1,
-            borderTopColor: colors.borderSoft,
-          }}
-        >
-          <TextInput
-            value={prompt}
-            onChangeText={setPrompt}
-            editable={canPrompt}
-            placeholder={
-              canPrompt ? "Follow-up prompt…" : `agent is ${status.replaceAll("_", " ")}…`
-            }
-            placeholderTextColor={colors.faint}
+          <Text
             style={{
-              flex: 1,
-              backgroundColor: colors.card,
-              borderColor: colors.borderSoft,
-              borderWidth: 1,
-              borderRadius: 22,
-              color: colors.text,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              fontSize: 14,
+              color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
+              fontSize: 17,
+              fontWeight: "700",
             }}
-          />
-          <Pressable
-            disabled={!canPrompt || prompt.trim().length === 0}
-            onPress={() => void send()}
-            style={({ pressed }) => ({
-              backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
-              borderRadius: 22,
-              width: 44,
-              height: 44,
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: pressed ? 0.85 : 1,
-            })}
           >
-            <Text
-              style={{
-                color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
-                fontSize: 17,
-                fontWeight: "700",
-              }}
-            >
-              ↑
-            </Text>
-          </Pressable>
-        </View>
-      )}
+            ↑
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }

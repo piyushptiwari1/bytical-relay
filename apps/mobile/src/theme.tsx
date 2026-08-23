@@ -48,6 +48,7 @@ export function formatGb(bytes: number): string {
 export function Card(props: {
   children: ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   accent?: boolean;
   style?: ViewStyle;
 }) {
@@ -60,10 +61,11 @@ export function Card(props: {
     gap: space.sm,
     ...props.style,
   };
-  if (!props.onPress) return <View style={base}>{props.children}</View>;
+  if (!props.onPress && !props.onLongPress) return <View style={base}>{props.children}</View>;
   return (
     <Pressable
       onPress={props.onPress}
+      onLongPress={props.onLongPress}
       style={({ pressed }) => ({
         ...base,
         backgroundColor: pressed ? colors.cardRaised : colors.card,

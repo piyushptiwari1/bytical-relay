@@ -5,6 +5,7 @@ import type { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { isSensitivePath, resolveInsideProject } from "@rdc/filesystem";
 import type { GitService } from "@rdc/git";
 import {
+  AgentArchive,
   AgentCancel,
   AgentList,
   AgentPrompt,
@@ -238,6 +239,12 @@ export class ControllerDispatcher {
         return [
           await this.#tryRun(msg.command_id, AgentResume, async () => ({
             session: await this.deps.agents.resume(msg.payload.provider, msg.payload.native_id),
+          })),
+        ];
+      case "agent.archive":
+        return [
+          await this.#tryRun(msg.command_id, AgentArchive, async () => ({
+            archived: await this.deps.agents.archive(msg.payload.session_id),
           })),
         ];
       case "approval.respond":
