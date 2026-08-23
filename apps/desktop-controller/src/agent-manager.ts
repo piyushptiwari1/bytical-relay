@@ -18,6 +18,7 @@ import {
 } from "@rdc/protocol";
 import { newEventId, nowIso, TypedEmitter } from "@rdc/shared";
 import type { SessionStore } from "./session-store.ts";
+import type { VsCodeChatReader } from "./vscode-chats.ts";
 
 interface ManagedSession {
   session: AgentSession;
@@ -26,6 +27,24 @@ interface ManagedSession {
 
 const normalizePath = (p: string): string =>
   p.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+
+const SEED_CAP = 24_000;
+
+/** Transcript → context prompt for continuing an imported chat in the CLI. */
+function seedPrompt(turns: Array<{ role: "user" | "assistant"; text: string }>): string {
+  let body = turns
+    .map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.text}`)
+    .join("\n\n");
+  if (body.length > SEED_CAP) body = `…(earlier turns truncated)\n\n${body.slice(-SEED_CAP)}`;
+  return [
+    "You are continuing a conversation the user previously had in VS Code Copilot Chat about this same project.",
+    "Transcript of that conversation:",
+    "---",
+    body,
+    "---",
+    "Briefly confirm you have the context (one sentence), then wait for the user's next instruction.",
+  ].join("\n");
+}
 
 /**
  * Agent lifecycle owner (IMPLEMENTATION-PLAN S4.1): sessions are controller-
@@ -44,7 +63,12 @@ export class AgentManager {
   #detectCache: Array<{ id: string; available: boolean; detail: string }> | null = null;
 
   constructor(
-    private readonly deps: { eventStore: EventStore; fsIndex: FsIndex; sessions?: SessionStore },
+    private readonly deps: {
+      eventStore: EventStore;
+      fsIndex: FsIndex;
+      sessions?: SessionStore;
+      vscodeChats?: VsCodeChatReader;
+    },
     adapters: AgentAdapter[],
   ) {
     for (const adapter of adapters) this.#adapters.set(adapter.id, adapter);
@@ -99,6 +123,7 @@ export class AgentManager {
 
   /** Continue a provider-native (laptop CLI) conversation — full context replays. */
   async resume(providerId: string, nativeId: string): Promise<AgentSession> {
+    if (providerId === "vscode-chat") return this.#resumeVsCodeChat(nativeId);
     const adapter = this.#adapters.get(providerId);
     if (!adapter?.resumeSession || !adapter.listNativeSessions) {
       throw new Error(`${providerId} does not support resuming native sessions`);
@@ -155,7 +180,61 @@ export class AgentManager {
         // provider store unreadable — skip silently
       }
     }
+    // VS Code Copilot Chat panel history (read-only files → continue via Copilot CLI)
+    if (this.deps.vscodeChats && this.#adapters.has("copilot")) {
+      try {
+        for (const chat of this.deps.vscodeChats.list()) {
+          if (known.has(chat.id)) continue;
+          results.push({
+            provider: "vscode-chat",
+            native_id: chat.id,
+            title: chat.title,
+            project_id: this.#projectIdForCwd(chat.workspace_path),
+            updated_at: chat.updated_at,
+          });
+        }
+      } catch {
+        // storage unreadable — skip silently
+      }
+    }
     return results.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }
+
+  /** Import a VS Code panel chat: journal its turns, then seed a Copilot CLI session with them. */
+  async #resumeVsCodeChat(nativeId: string): Promise<AgentSession> {
+    const adapter = this.#adapters.get("copilot");
+    if (!adapter) throw new Error("copilot adapter unavailable");
+    if (!this.deps.vscodeChats) throw new Error("vscode chat reader unavailable");
+    this.deps.vscodeChats.list();
+    const chat = this.deps.vscodeChats.transcript(nativeId);
+    if (!chat) throw new Error("VS Code chat not found or unreadable");
+    const projectId = this.#projectIdForCwd(chat.workspacePath);
+    if (!projectId) throw new Error(`no indexed project for ${chat.workspacePath}`);
+    const root = this.deps.fsIndex.getProjectRoot(projectId);
+    if (!root) throw new Error(`unknown project: ${projectId}`);
+
+    const firstUser = chat.turns.find((t) => t.role === "user")?.text ?? "VS Code chat";
+    const managed = this.#createManaged(projectId, "copilot", firstUser.slice(0, 80));
+    const sessionId = managed.session.session_id;
+    // make the old conversation visible on the phone transcript
+    for (const turn of chat.turns) {
+      this.#journalUpdate(
+        sessionId,
+        turn.role === "user"
+          ? { kind: "user_message", text: turn.text }
+          : { kind: "message_chunk", text: turn.text },
+      );
+    }
+    this.#journalUpdate(sessionId, { kind: "turn_ended", stop_reason: "imported from VS Code" });
+
+    managed.handle = await adapter.createSession({
+      cwd: root,
+      callbacks: this.#callbacksFor(managed),
+    });
+    this.deps.sessions?.setNativeId(sessionId, nativeId);
+    // seed the CLI session with the transcript (capped) — not journaled as a user message
+    this.#runTurn(managed, seedPrompt(chat.turns), { journalUser: false });
+    return managed.session;
   }
 
   #createManaged(projectId: string, providerId: string, title: string): ManagedSession {
@@ -242,9 +321,11 @@ export class AgentManager {
     }
   }
 
-  #runTurn(managed: ManagedSession, prompt: string): void {
+  #runTurn(managed: ManagedSession, prompt: string, opts: { journalUser?: boolean } = {}): void {
     const sessionId = managed.session.session_id;
-    this.#journalUpdate(sessionId, { kind: "user_message", text: prompt });
+    if (opts.journalUser !== false) {
+      this.#journalUpdate(sessionId, { kind: "user_message", text: prompt });
+    }
     this.#setStatus(managed, "running");
     managed.handle
       ?.prompt(prompt)

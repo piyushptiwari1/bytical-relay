@@ -19,6 +19,7 @@ import { PairingCoordinator } from "./pairing-coordinator.ts";
 import { buildServer } from "./server.ts";
 import { SessionStore } from "./session-store.ts";
 import { acquireSingleInstanceLock } from "./single-instance.ts";
+import { VsCodeChatReader } from "./vscode-chats.ts";
 
 const RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -72,7 +73,12 @@ async function start(): Promise<void> {
     // no saved state
   }
   const agents = new AgentManager(
-    { eventStore, fsIndex, sessions: new SessionStore(path.join(dir, "sessions.db")) },
+    {
+      eventStore,
+      fsIndex,
+      sessions: new SessionStore(path.join(dir, "sessions.db")),
+      vscodeChats: new VsCodeChatReader(),
+    },
     [copilotAdapter()],
   );
 

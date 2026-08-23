@@ -237,6 +237,7 @@ export default function AgentsHome() {
           <SectionLabel>From your laptop</SectionLabel>
           {external.map((item) => {
             const resumable = item.project_id !== null && copilot?.available;
+            const isVsCode = item.provider === "vscode-chat";
             return (
               <Card
                 key={item.native_id}
@@ -244,17 +245,20 @@ export default function AgentsHome() {
                 style={{ marginBottom: space.sm, gap: 6, opacity: resumable ? 1 : 0.55 }}
               >
                 <Text style={{ ...type_.body, fontWeight: "600" }} numberOfLines={1}>
-                  💻 {item.title}
+                  {isVsCode ? "🧩" : "💻"} {item.title}
                 </Text>
                 <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
                   <Pill tone={resumable ? "accent" : "dim"}>
                     {resuming === item.native_id
-                      ? "resuming…"
+                      ? "importing…"
                       : resumable
-                        ? "continue here ›"
+                        ? isVsCode
+                          ? "continue with Copilot ›"
+                          : "continue here ›"
                         : "project not indexed"}
                   </Pill>
                   <Text style={type_.caption}>
+                    {isVsCode ? "VS Code chat · " : ""}
                     {item.project_id ? projectName(item.project_id) : "—"} ·{" "}
                     {relativeTime(item.updated_at)}
                   </Text>
