@@ -6,7 +6,16 @@ import { fileURLToPath } from "node:url";
 import websocket from "@fastify/websocket";
 import type { EventStore } from "@rdc/event-store";
 import type { FilesystemService, FsIndex } from "@rdc/filesystem";
-import { decodeFrame, encodeFrame, eventEnvelopeFromRecord, FrameKind } from "@rdc/protocol";
+import type { GitService } from "@rdc/git";
+import {
+  decodeFrame,
+  encodeFrame,
+  eventEnvelopeFromRecord,
+  FrameKind,
+  GitStatusChanged,
+  gitStream,
+  MachineHealthEvent,
+} from "@rdc/protocol";
 import { fromB64, hashToken, type KxKeypair, SecureChannel } from "@rdc/security";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
@@ -28,6 +37,7 @@ export interface ServerDeps {
   eventStore: EventStore;
   health: HealthMonitor;
   keepAwake: KeepAwake;
+  git: GitService;
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -310,6 +320,45 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
           client.sendJson(json);
       }
     }
+  });
+
+  // Live push: health telemetry every 5s to every connected client (ephemeral, not journaled).
+  let healthSeq = 0;
+  const healthTimer = setInterval(() => {
+    if (clients.size === 0) return;
+    healthSeq += 1;
+    const json = JSON.stringify(
+      MachineHealthEvent.create("machine", healthSeq, {
+        ...deps.health.quickSnapshot(),
+        keep_awake: deps.keepAwake.state(),
+      }),
+    );
+    for (const [, client] of clients) {
+      if (client.ctx.helloDone) client.sendJson(json);
+    }
+  }, 5_000);
+  (healthTimer as { unref?: () => void }).unref?.();
+  app.addHook("onClose", async () => clearInterval(healthTimer));
+
+  // Live push: git status changes (branch switch, stage, commit…) — ephemeral, not journaled.
+  let gitSeq = 0;
+  deps.git.emitter.on("status", (state) => {
+    gitSeq += 1;
+    const json = JSON.stringify(
+      GitStatusChanged.create(gitStream(state.project_id), gitSeq, state),
+    );
+    for (const [, client] of clients) {
+      if (client.ctx.helloDone) client.sendJson(json);
+    }
+  });
+
+  // Worktree edits invalidate git status too (index/HEAD changes come from the .git watcher).
+  deps.fsService.emitter.on("events", (stored) => {
+    const touched = new Set<string>();
+    for (const record of stored) {
+      if (record.stream.startsWith("fs:")) touched.add(record.stream.slice(3));
+    }
+    for (const projectId of touched) deps.git.scheduleRefresh(projectId);
   });
 
   return app;

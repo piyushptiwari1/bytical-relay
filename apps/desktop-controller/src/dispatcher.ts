@@ -3,10 +3,16 @@ import path from "node:path";
 import type { EventStore } from "@rdc/event-store";
 import type { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { isSensitivePath, resolveInsideProject } from "@rdc/filesystem";
+import type { GitService } from "@rdc/git";
 import {
   DebugEcho,
   FileList,
   FileRead,
+  GitCommit,
+  GitDiffFile,
+  GitStage,
+  GitStatus,
+  GitUnstage,
   HelloAck,
   HelloReject,
   type KnownMessage,
@@ -44,6 +50,7 @@ export interface DispatcherDeps {
   eventStore: EventStore;
   health: HealthMonitor;
   keepAwake: KeepAwake;
+  git: GitService;
 }
 
 /**
@@ -118,6 +125,36 @@ export class ControllerDispatcher {
       }
       case "file.read":
         return [await this.#readFile(msg)];
+      case "git.status":
+        return [
+          await this.#git(msg.command_id, GitStatus, () =>
+            this.deps.git.status(msg.payload.project_id),
+          ),
+        ];
+      case "git.diff_file":
+        return [
+          await this.#git(msg.command_id, GitDiffFile, () =>
+            this.deps.git.diffFile(msg.payload.project_id, msg.payload.path, msg.payload.staged),
+          ),
+        ];
+      case "git.stage":
+        return [
+          await this.#git(msg.command_id, GitStage, () =>
+            this.deps.git.stage(msg.payload.project_id, msg.payload.paths),
+          ),
+        ];
+      case "git.unstage":
+        return [
+          await this.#git(msg.command_id, GitUnstage, () =>
+            this.deps.git.unstage(msg.payload.project_id, msg.payload.paths),
+          ),
+        ];
+      case "git.commit":
+        return [
+          await this.#git(msg.command_id, GitCommit, () =>
+            this.deps.git.commit(msg.payload.project_id, msg.payload.message),
+          ),
+        ];
       case "sync.subscribe": {
         for (const stream of msg.payload.streams) ctx.subscriptions.add(stream);
         return [SyncSubscribe.createOk(msg.command_id, { subscribed: [...ctx.subscriptions] })];
@@ -159,6 +196,23 @@ export class ControllerDispatcher {
       }
       default:
         return []; // events/results from peers are not commands — nothing to answer
+    }
+  }
+
+  /** Uniform wrapper: git failures surface as GIT_ERROR command errors, never crash the socket. */
+  async #git<TResult>(
+    commandId: string,
+    def: {
+      createOk(id: string, result: TResult): unknown;
+      createError(id: string, error: ReturnType<typeof protocolError>): unknown;
+    },
+    run: () => Promise<TResult>,
+  ): Promise<unknown> {
+    try {
+      return def.createOk(commandId, await run());
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return def.createError(commandId, protocolError("GIT_ERROR", message));
     }
   }
 

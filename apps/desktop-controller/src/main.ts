@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { SqliteEventStore } from "@rdc/event-store";
 import { detectProjects, FilesystemService, FsIndex } from "@rdc/filesystem";
+import { GitService } from "@rdc/git";
 import { Command } from "commander";
 import pino from "pino";
 import { configDir, loadOrCreateConfig } from "./config.ts";
@@ -46,10 +47,17 @@ async function start(): Promise<void> {
   const keepAwake = new KeepAwake();
 
   logger.info({ roots: config.project_roots }, "detecting projects");
+  const git = new GitService();
   const detected = await detectProjects(config.project_roots);
   for (const project of detected) {
     const files = await fsService.addProject(project);
     await fsService.startWatching(project.project_id);
+    if (project.vcs === "git") {
+      git.register({ project_id: project.project_id, root_path: project.root_path });
+      git
+        .watch(project.project_id)
+        .catch((cause) => logger.warn({ cause: String(cause) }, "git watch failed"));
+    }
     logger.info({ project: project.name, files, id: project.project_id }, "indexed + watching");
   }
 
@@ -75,6 +83,7 @@ async function start(): Promise<void> {
     eventStore,
     health,
     keepAwake,
+    git,
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 
@@ -91,6 +100,7 @@ async function start(): Promise<void> {
     clearInterval(reconcileTimer);
     health.stop();
     keepAwake.disable();
+    await git.stop();
     await app.close();
     await fsService.stop();
     eventStore.close();

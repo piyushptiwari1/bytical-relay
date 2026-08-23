@@ -70,3 +70,34 @@ export const MachineHealthSchema = z.object({
   sampled_at: z.iso.datetime(),
 });
 export type MachineHealth = z.infer<typeof MachineHealthSchema>;
+
+// ── Git domain (S3) ──────────────────────────────────────────────────────────
+/** One changed path from `git status --porcelain=v2` ("." = unmodified column). */
+export const GitFileStatusSchema = z.object({
+  path: z.string().min(1),
+  orig_path: z.string().nullable(),
+  /** staged (index) status char: M A D R C U . */
+  index: z.string().length(1),
+  /** worktree status char */
+  worktree: z.string().length(1),
+  untracked: z.boolean(),
+  conflicted: z.boolean(),
+});
+export type GitFileStatus = z.infer<typeof GitFileStatusSchema>;
+
+/** One schema, any producer (controller system-git today, VS Code git ext later). */
+export const GitStateSchema = z.object({
+  project_id: z.string().min(1),
+  branch: z.string().nullable(),
+  upstream: z.string().nullable(),
+  ahead: nonNegInt,
+  behind: nonNegInt,
+  detached: z.boolean(),
+  /** null on an unborn branch (no commits yet) */
+  oid: z.string().nullable(),
+  files: z.array(GitFileStatusSchema),
+});
+export type GitState = z.infer<typeof GitStateSchema>;
+
+/** Stream naming convention for ephemeral git pushes. */
+export const gitStream = (projectId: string): string => `git:${projectId}`;

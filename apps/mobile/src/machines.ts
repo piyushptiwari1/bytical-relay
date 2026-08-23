@@ -3,6 +3,12 @@ import {
   FileList,
   FileRead,
   fsStream,
+  GitCommit,
+  GitDiffFile,
+  GitStage,
+  type GitState,
+  GitStatus,
+  GitUnstage,
   type KeepAwakeState,
   type KnownMessage,
   type MachineHealth,
@@ -86,6 +92,9 @@ export const useApp = create<AppState>((set, get) => {
           await client.connect(6000);
           clients.set(machineId, client);
           client.events.on("state", (state) => patchRuntime(machineId, { state }));
+          client.events.on("event", (msg) => {
+            if (msg.type === "machine.health") patchRuntime(machineId, { health: msg.payload });
+          });
           patchRuntime(machineId, { state: client.state });
           await get().refreshMachine(machineId);
           return;
@@ -162,5 +171,63 @@ export function watchProject(
   client.subscribe(fsStream(projectId));
   return client.events.on("event", (msg) => {
     if (msg.type === "file.changed" && msg.payload.project_id === projectId) onChange(msg);
+  });
+}
+
+// ── git helpers (S3) ─────────────────────────────────────────────────────────────
+
+function requireClient(machineId: string) {
+  const client = clients.get(machineId);
+  if (!client) throw new Error("not connected");
+  return client;
+}
+
+export const gitStatus = (machineId: string, projectId: string): Promise<GitState> =>
+  requireClient(machineId).command(GitStatus, { project_id: projectId });
+
+export const gitDiffFile = (
+  machineId: string,
+  projectId: string,
+  filePath: string,
+  staged: boolean,
+): Promise<{ path: string; patch: string; binary: boolean; truncated: boolean }> =>
+  requireClient(machineId).command(GitDiffFile, {
+    project_id: projectId,
+    path: filePath,
+    staged,
+  });
+
+export const gitStage = (
+  machineId: string,
+  projectId: string,
+  paths: string[],
+): Promise<GitState> =>
+  requireClient(machineId).command(GitStage, { project_id: projectId, paths });
+
+export const gitUnstage = (
+  machineId: string,
+  projectId: string,
+  paths: string[],
+): Promise<GitState> =>
+  requireClient(machineId).command(GitUnstage, { project_id: projectId, paths });
+
+export const gitCommit = (
+  machineId: string,
+  projectId: string,
+  message: string,
+): Promise<{ oid: string; summary: string }> =>
+  requireClient(machineId).command(GitCommit, { project_id: projectId, message });
+
+/** Live git status pushes for one project; returns unsubscribe. */
+export function watchGit(
+  machineId: string,
+  projectId: string,
+  onStatus: (state: GitState) => void,
+): () => void {
+  const client = clients.get(machineId);
+  if (!client) return () => {};
+  return client.events.on("event", (msg) => {
+    if (msg.type === "git.status_changed" && msg.payload.project_id === projectId)
+      onStatus(msg.payload);
   });
 }

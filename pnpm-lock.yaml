@@ -95,6 +95,9 @@ importers:
       '@rdc/filesystem':
         specifier: workspace:*
         version: link:../../packages/filesystem
+      '@rdc/git':
+        specifier: workspace:*
+        version: link:../../packages/git
       '@rdc/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -254,6 +257,31 @@ importers:
       ignore:
         specifier: 'catalog:'
         version: 7.0.6
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.7(@types/node@24.13.3)(lightningcss@1.33.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/git:
+    dependencies:
+      '@parcel/watcher':
+        specifier: 'catalog:'
+        version: 2.6.0
+      '@rdc/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@rdc/shared':
+        specifier: workspace:*
+        version: link:../shared
+      execa:
+        specifier: 'catalog:'
+        version: 9.6.1
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

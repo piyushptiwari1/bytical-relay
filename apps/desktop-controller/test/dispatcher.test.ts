@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
+import { GitService } from "@rdc/git";
 import {
   DebugEcho,
   FileList,
@@ -52,6 +53,7 @@ function makeDeps() {
     eventStore,
     health: new HealthMonitor(),
     keepAwake: new KeepAwake(fakeAwakeStrategy),
+    git: new GitService(),
   };
 }
 

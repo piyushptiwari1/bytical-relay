@@ -1,6 +1,7 @@
 import net from "node:net";
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
+import { GitService } from "@rdc/git";
 import { FileChanged, fsStream, Hello, SUPPORTED_VERSIONS, SyncSubscribe } from "@rdc/protocol";
 import { generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
@@ -45,6 +46,7 @@ function makeDeps() {
     eventStore,
     health: new HealthMonitor(),
     keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
+    git: new GitService(),
   };
 }
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   FileChangeSchema,
   FileEntrySchema,
+  GitStateSchema,
   KeepAwakeStateSchema,
   MachineHealthSchema,
   ProjectSchema,
@@ -109,6 +110,12 @@ export const MachineKeepAwake = defineCommand(
   KeepAwakeStateSchema,
 );
 
+/** Ephemeral telemetry push (not journaled) — stream "machine", seq = broadcast counter. */
+export const MachineHealthEvent = defineEvent(
+  "machine.health",
+  MachineHealthSchema.extend({ keep_awake: KeepAwakeStateSchema }),
+);
+
 // ── Debug domain (S0 round-trip proof; pattern for all future domains) ──────
 export const DebugEcho = defineCommand(
   "debug.echo",
@@ -178,6 +185,44 @@ export const FileRead = defineCommand(
 
 export const FileChanged = defineEvent("file.changed", FileChangeSchema);
 
+// ── Git domain (S3) ─────────────────────────────────────────────────────────
+const projectRef = z.object({ project_id: z.string().min(1) });
+const gitPaths = z.array(z.string().min(1)).min(1).max(200);
+
+export const GitStatus = defineCommand("git.status", projectRef, GitStateSchema);
+
+export const GitDiffFile = defineCommand(
+  "git.diff_file",
+  projectRef.extend({ path: z.string().min(1), staged: z.boolean().default(false) }),
+  z.object({
+    path: z.string(),
+    patch: z.string(),
+    binary: z.boolean(),
+    truncated: z.boolean(),
+  }),
+);
+
+export const GitStage = defineCommand(
+  "git.stage",
+  projectRef.extend({ paths: gitPaths }),
+  GitStateSchema,
+);
+
+export const GitUnstage = defineCommand(
+  "git.unstage",
+  projectRef.extend({ paths: gitPaths }),
+  GitStateSchema,
+);
+
+export const GitCommit = defineCommand(
+  "git.commit",
+  projectRef.extend({ message: z.string().min(1).max(5000) }),
+  z.object({ oid: z.string(), summary: z.string() }),
+);
+
+/** Ephemeral push on real status change — stream `git:<project_id>`, not journaled. */
+export const GitStatusChanged = defineEvent("git.status_changed", GitStateSchema);
+
 // ── Inbound parsing ──────────────────────────────────────────────────────────
 export const KnownMessageSchema = z.discriminatedUnion("type", [
   Hello.schema,
@@ -193,6 +238,7 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   MachineStatus.response,
   MachineKeepAwake.request,
   MachineKeepAwake.response,
+  MachineHealthEvent.schema,
   DebugEcho.request,
   DebugEcho.response,
   SyncReplay.request,
@@ -205,8 +251,19 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   FileList.response,
   FileRead.request,
   FileRead.response,
+  GitStatus.request,
+  GitStatus.response,
+  GitDiffFile.request,
+  GitDiffFile.response,
+  GitStage.request,
+  GitStage.response,
+  GitUnstage.request,
+  GitUnstage.response,
+  GitCommit.request,
+  GitCommit.response,
   DebugEchoed.schema,
   FileChanged.schema,
+  GitStatusChanged.schema,
 ]);
 export type KnownMessage = z.infer<typeof KnownMessageSchema>;
 

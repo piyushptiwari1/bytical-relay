@@ -41,6 +41,8 @@ export default function RootLayout() {
       <Stack.Screen name="pair" options={{ title: "Pair device", presentation: "modal" }} />
       <Stack.Screen name="machine/[id]" options={{ title: "Machine" }} />
       <Stack.Screen name="project/[machine]/[project]" options={{ title: "Files" }} />
+      <Stack.Screen name="git/[machine]/[project]" options={{ title: "Git" }} />
+      <Stack.Screen name="gitdiff" options={{ title: "Diff", presentation: "modal" }} />
       <Stack.Screen name="viewer" options={{ title: "File", presentation: "modal" }} />
     </Stack>
   );

@@ -10,6 +10,7 @@ export const ErrorCodeSchema = z.enum([
   "CONFLICT",
   "TIMEOUT",
   "UNSUPPORTED",
+  "GIT_ERROR",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;

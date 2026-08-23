@@ -1,5 +1,6 @@
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
+import { GitService } from "@rdc/git";
 import { FileChanged, fsStream, type KnownMessage, ProjectList } from "@rdc/protocol";
 import { emojiFingerprint, fromB64, generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
@@ -49,6 +50,7 @@ beforeAll(async () => {
     eventStore,
     health: new HealthMonitor(),
     keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
+    git: new GitService(),
   };
   const app = await buildServer(deps);
   closers.push(() => app.close());

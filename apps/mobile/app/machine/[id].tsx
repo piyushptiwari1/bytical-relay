@@ -62,25 +62,53 @@ export default function MachineDetail() {
 
       <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>Projects</Text>
       {(rt?.projects ?? []).map((project) => (
-        <Pressable
+        <View
           key={project.project_id}
-          onPress={() => router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)}
           style={{
             backgroundColor: colors.card,
             borderColor: colors.border,
             borderWidth: 1,
             borderRadius: 10,
             padding: 14,
-            gap: 2,
+            gap: 6,
           }}
         >
-          <Text style={{ color: colors.accent, fontSize: 15 }}>
-            {project.name} {project.vcs === "git" ? "⎇" : ""}
+          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
+            {project.name}
             {project.wsl ? " · WSL" : ""}
           </Text>
           <Text style={{ color: colors.dim, fontSize: 11 }}>{project.root_path}</Text>
-          <Text style={{ color: colors.dim, fontSize: 11 }}>v{project.version}</Text>
-        </Pressable>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+            <Pressable
+              onPress={() =>
+                router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)
+              }
+              style={{
+                borderColor: colors.border,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+              }}
+            >
+              <Text style={{ color: colors.accent }}>Files</Text>
+            </Pressable>
+            {project.vcs === "git" ? (
+              <Pressable
+                onPress={() => router.push(`/git/${id}/${encodeURIComponent(project.project_id)}`)}
+                style={{
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                }}
+              >
+                <Text style={{ color: colors.accent }}>⎇ Git</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
       ))}
       {rt?.projects?.length === 0 ? (
         <Text style={{ color: colors.dim }}>No projects detected on this machine.</Text>
