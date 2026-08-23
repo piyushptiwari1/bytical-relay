@@ -8,6 +8,7 @@ import type { EventStore } from "@rdc/event-store";
 import type { FilesystemService, FsIndex } from "@rdc/filesystem";
 import type { GitService } from "@rdc/git";
 import {
+  AgentStatusChanged,
   decodeFrame,
   EditorStateChanged,
   encodeFrame,
@@ -20,6 +21,7 @@ import {
 import { fromB64, hashToken, type KxKeypair, SecureChannel } from "@rdc/security";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
+import type { AgentManager } from "./agent-manager.ts";
 import type { DeviceRecord, DeviceStore } from "./device-store.ts";
 import { type ClientContext, ControllerDispatcher, newClientContext } from "./dispatcher.ts";
 import type { EditorRegistry } from "./editors.ts";
@@ -41,6 +43,7 @@ export interface ServerDeps {
   keepAwake: KeepAwake;
   git: GitService;
   editors: EditorRegistry;
+  agents: AgentManager;
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -364,6 +367,28 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   deps.editors.emitter.on("changed", (editors) => {
     editorSeq += 1;
     const json = JSON.stringify(EditorStateChanged.create("editor", editorSeq, { editors }));
+    for (const [, client] of clients) {
+      if (client.ctx.helloDone) client.sendJson(json);
+    }
+  });
+
+  // Live push: journaled agent events → subscribers of that agent stream;
+  // status changes additionally broadcast to everyone (session list liveness).
+  deps.agents.emitter.on("journaled", (stored) => {
+    for (const record of stored) {
+      const envelope = eventEnvelopeFromRecord(record);
+      if (!envelope.ok) continue;
+      const json = JSON.stringify(envelope.value);
+      for (const [, client] of clients) {
+        if (client.ctx.helloDone && client.ctx.subscriptions.has(record.stream))
+          client.sendJson(json);
+      }
+    }
+  });
+  let agentSeq = 0;
+  deps.agents.emitter.on("status", (session) => {
+    agentSeq += 1;
+    const json = JSON.stringify(AgentStatusChanged.create("agent", agentSeq, { session }));
     for (const [, client] of clients) {
       if (client.ctx.helloDone) client.sendJson(json);
     }

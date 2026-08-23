@@ -1,4 +1,11 @@
 import {
+  AgentCancel,
+  AgentList,
+  AgentPrompt,
+  type AgentSession,
+  AgentStart,
+  ApprovalRespond,
+  agentStream,
   EditorList,
   EditorOpenFile,
   type EditorState,
@@ -251,3 +258,75 @@ export const openInEditor = (
     relative_path: relativePath,
     ...(line !== undefined ? { line } : {}),
   });
+
+// ── agent helpers (S4) ──────────────────────────────────────────────────────────
+
+export const agentList = (
+  machineId: string,
+): Promise<{
+  sessions: AgentSession[];
+  providers: Array<{ id: string; available: boolean; detail: string }>;
+}> => requireClient(machineId).command(AgentList, {});
+
+export const agentStart = (
+  machineId: string,
+  projectId: string,
+  provider: string,
+  prompt: string,
+): Promise<{ session: AgentSession }> =>
+  requireClient(machineId).command(
+    AgentStart,
+    { project_id: projectId, provider, prompt },
+    {
+      timeoutMs: 60_000,
+    },
+  );
+
+export const agentPrompt = (
+  machineId: string,
+  sessionId: string,
+  prompt: string,
+): Promise<{ accepted: boolean }> =>
+  requireClient(machineId).command(AgentPrompt, { session_id: sessionId, prompt });
+
+export const agentCancel = (
+  machineId: string,
+  sessionId: string,
+): Promise<{ cancelled: boolean }> =>
+  requireClient(machineId).command(AgentCancel, { session_id: sessionId });
+
+export const approvalRespond = (
+  machineId: string,
+  approvalId: string,
+  optionId: string,
+): Promise<{ resolved: boolean }> =>
+  requireClient(machineId).command(ApprovalRespond, {
+    approval_id: approvalId,
+    option_id: optionId,
+  });
+
+/** Subscribe to a session's journaled stream; events replay from seq 0. */
+export function watchAgentSession(
+  machineId: string,
+  sessionId: string,
+  onEvent: (msg: KnownMessage) => void,
+): () => void {
+  const client = clients.get(machineId);
+  if (!client) return () => {};
+  client.subscribe(agentStream(sessionId));
+  return client.events.on("event", (msg) => {
+    if ("stream" in msg && msg.stream === agentStream(sessionId)) onEvent(msg);
+  });
+}
+
+/** Ephemeral broadcast of any session status change on the machine. */
+export function watchAgentStatus(
+  machineId: string,
+  onSession: (session: AgentSession) => void,
+): () => void {
+  const client = clients.get(machineId);
+  if (!client) return () => {};
+  return client.events.on("event", (msg) => {
+    if (msg.type === "agent.status_changed") onSession(msg.payload.session);
+  });
+}

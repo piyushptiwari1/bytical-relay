@@ -43,6 +43,8 @@ export default function RootLayout() {
       <Stack.Screen name="project/[machine]/[project]" options={{ title: "Files" }} />
       <Stack.Screen name="git/[machine]/[project]" options={{ title: "Git" }} />
       <Stack.Screen name="gitdiff" options={{ title: "Diff", presentation: "modal" }} />
+      <Stack.Screen name="agent/[machine]/index" options={{ title: "Agents" }} />
+      <Stack.Screen name="agent/[machine]/[session]" options={{ title: "Session" }} />
       <Stack.Screen name="viewer" options={{ title: "File", presentation: "modal" }} />
     </Stack>
   );

@@ -1,11 +1,13 @@
 import { mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { copilotAdapter } from "@rdc/agent-acp";
 import { SqliteEventStore } from "@rdc/event-store";
 import { detectProjects, FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
 import { Command } from "commander";
 import pino from "pino";
+import { AgentManager } from "./agent-manager.ts";
 import { configDir, loadOrCreateConfig } from "./config.ts";
 import { DeviceStore } from "./device-store.ts";
 import { runDoctor } from "./doctor.ts";
@@ -46,6 +48,7 @@ async function start(): Promise<void> {
   const health = new HealthMonitor({ projectRoots: config.project_roots });
   health.start();
   const keepAwake = new KeepAwake();
+  const agents = new AgentManager({ eventStore, fsIndex }, [copilotAdapter()]);
 
   logger.info({ roots: config.project_roots }, "detecting projects");
   const git = new GitService();
@@ -86,6 +89,7 @@ async function start(): Promise<void> {
     keepAwake,
     git,
     editors: new EditorRegistry(),
+    agents,
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 
@@ -102,6 +106,7 @@ async function start(): Promise<void> {
     clearInterval(reconcileTimer);
     health.stop();
     keepAwake.disable();
+    await agents.stop();
     await git.stop();
     await app.close();
     await fsService.stop();

@@ -89,6 +89,12 @@ importers:
       '@parcel/watcher':
         specifier: 'catalog:'
         version: 2.6.0
+      '@rdc/agent-acp':
+        specifier: workspace:*
+        version: link:../../packages/agent-acp
+      '@rdc/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
       '@rdc/event-store':
         specifier: workspace:*
         version: link:../../packages/event-store
@@ -239,6 +245,47 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+
+  packages/agent-acp:
+    dependencies:
+      '@rdc/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@rdc/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@rdc/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.7(@types/node@24.13.3)(lightningcss@1.33.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
+
+  packages/agent-core:
+    dependencies:
+      '@rdc/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@rdc/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.7(@types/node@24.13.3)(lightningcss@1.33.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
 
   packages/event-store:
     dependencies:

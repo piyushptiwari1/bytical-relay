@@ -1,0 +1,23 @@
+{
+  "name": "@rdc/agent-acp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rdc/agent-core": "workspace:*",
+    "@rdc/protocol": "workspace:*",
+    "@rdc/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,6 +1,9 @@
 import { err, ok, type Result, safeJsonParse } from "@rdc/shared";
 import { z } from "zod";
 import {
+  AgentSessionSchema,
+  AgentUpdateSchema,
+  ApprovalRequestSchema,
   EditorStateSchema,
   FileChangeSchema,
   FileEntrySchema,
@@ -272,6 +275,59 @@ export const EditorChatRequested = defineEvent(
   projectRef.extend({ query: z.string() }),
 );
 
+// ── Agent domain (S4) ─────────────────────────────────────────────────────
+export const AgentStart = defineCommand(
+  "agent.start",
+  projectRef.extend({ provider: z.string().min(1), prompt: z.string().min(1).max(32_000) }),
+  z.object({ session: AgentSessionSchema }),
+);
+
+export const AgentPrompt = defineCommand(
+  "agent.prompt",
+  z.object({ session_id: z.string().min(1), prompt: z.string().min(1).max(32_000) }),
+  z.object({ accepted: z.boolean() }),
+);
+
+export const AgentCancel = defineCommand(
+  "agent.cancel",
+  z.object({ session_id: z.string().min(1) }),
+  z.object({ cancelled: z.boolean() }),
+);
+
+export const AgentList = defineCommand(
+  "agent.list",
+  z.object({}),
+  z.object({
+    sessions: z.array(AgentSessionSchema),
+    providers: z.array(z.object({ id: z.string(), available: z.boolean(), detail: z.string() })),
+  }),
+);
+
+export const ApprovalRespond = defineCommand(
+  "approval.respond",
+  z.object({ approval_id: z.string().min(1), option_id: z.string().min(1) }),
+  z.object({ resolved: z.boolean() }),
+);
+
+/** Journaled to `agent:<session_id>` — replayable transcript. */
+export const AgentUpdated = defineEvent(
+  "agent.updated",
+  z.object({ session_id: z.string().min(1), update: AgentUpdateSchema }),
+);
+export const AgentStatusChanged = defineEvent(
+  "agent.status_changed",
+  z.object({ session: AgentSessionSchema }),
+);
+export const ApprovalRequested = defineEvent("approval.requested", ApprovalRequestSchema);
+export const ApprovalResolved = defineEvent(
+  "approval.resolved",
+  z.object({
+    approval_id: z.string().min(1),
+    session_id: z.string().min(1),
+    option_id: z.string(),
+  }),
+);
+
 // ── Inbound parsing ──────────────────────────────────────────────────────────
 export const KnownMessageSchema = z.discriminatedUnion("type", [
   Hello.schema,
@@ -318,12 +374,26 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   EditorOpenFile.response,
   EditorAskChat.request,
   EditorAskChat.response,
+  AgentStart.request,
+  AgentStart.response,
+  AgentPrompt.request,
+  AgentPrompt.response,
+  AgentCancel.request,
+  AgentCancel.response,
+  AgentList.request,
+  AgentList.response,
+  ApprovalRespond.request,
+  ApprovalRespond.response,
   DebugEchoed.schema,
   FileChanged.schema,
   GitStatusChanged.schema,
   EditorStateChanged.schema,
   EditorOpenRequested.schema,
   EditorChatRequested.schema,
+  AgentUpdated.schema,
+  AgentStatusChanged.schema,
+  ApprovalRequested.schema,
+  ApprovalResolved.schema,
 ]);
 export type KnownMessage = z.infer<typeof KnownMessageSchema>;
 

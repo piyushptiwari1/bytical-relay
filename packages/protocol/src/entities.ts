@@ -132,3 +132,66 @@ export const EditorStateSchema = z.object({
   updated_at: z.iso.datetime(),
 });
 export type EditorState = z.infer<typeof EditorStateSchema>;
+
+// ── Agent domain (S4) ────────────────────────────────────────────────────────
+export const AgentSessionStatusSchema = z.enum([
+  "starting",
+  "running",
+  "awaiting_approval",
+  "idle",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export type AgentSessionStatus = z.infer<typeof AgentSessionStatusSchema>;
+
+export const AgentSessionSchema = z.object({
+  session_id: z.string().min(1),
+  project_id: z.string().min(1),
+  provider: z.string().min(1),
+  title: z.string(),
+  status: AgentSessionStatusSchema,
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
+});
+export type AgentSession = z.infer<typeof AgentSessionSchema>;
+
+/** Normalized agent output — every adapter maps its native stream into this. */
+export const AgentUpdateSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("user_message"), text: z.string() }),
+  z.object({ kind: z.literal("message_chunk"), text: z.string() }),
+  z.object({ kind: z.literal("thought_chunk"), text: z.string() }),
+  z.object({
+    kind: z.literal("tool_call"),
+    tool_id: z.string(),
+    title: z.string(),
+    tool_kind: z.string(),
+    status: z.enum(["pending", "in_progress", "completed", "failed"]),
+  }),
+  z.object({
+    kind: z.literal("plan"),
+    entries: z.array(z.object({ content: z.string(), status: z.string() })),
+  }),
+  z.object({ kind: z.literal("turn_ended"), stop_reason: z.string() }),
+  z.object({ kind: z.literal("error"), message: z.string() }),
+]);
+export type AgentUpdate = z.infer<typeof AgentUpdateSchema>;
+
+export const ApprovalOptionSchema = z.object({
+  option_id: z.string().min(1),
+  name: z.string().min(1),
+  /** allow_once | allow_always | reject_once | reject_always */
+  option_kind: z.string().min(1),
+});
+export const ApprovalRequestSchema = z.object({
+  approval_id: z.string().min(1),
+  session_id: z.string().min(1),
+  title: z.string(),
+  tool_kind: z.string(),
+  options: z.array(ApprovalOptionSchema).min(1),
+  requested_at: z.iso.datetime(),
+});
+export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
+
+/** Journaled stream per agent session — replay = full transcript recovery. */
+export const agentStream = (sessionId: string): string => `agent:${sessionId}`;

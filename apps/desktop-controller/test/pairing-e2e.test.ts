@@ -6,6 +6,7 @@ import { emojiFingerprint, fromB64, generateKxKeypair } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { ControllerClient, pairWithController } from "@rdc/transport";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { AgentManager } from "../src/agent-manager.ts";
 import { DeviceStore } from "../src/device-store.ts";
 import { EditorRegistry } from "../src/editors.ts";
 import { KeepAwake } from "../src/keep-awake.ts";
@@ -53,6 +54,7 @@ beforeAll(async () => {
     keepAwake: new KeepAwake({ supported: true, activate() {}, deactivate() {} }),
     git: new GitService(),
     editors: new EditorRegistry(),
+    agents: new AgentManager({ eventStore, fsIndex }, []),
   };
   const app = await buildServer(deps);
   closers.push(() => app.close());

@@ -5,6 +5,11 @@ import type { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { isSensitivePath, resolveInsideProject } from "@rdc/filesystem";
 import type { GitService } from "@rdc/git";
 import {
+  AgentCancel,
+  AgentList,
+  AgentPrompt,
+  AgentStart,
+  ApprovalRespond,
   DebugEcho,
   EditorAskChat,
   EditorChatRequested,
@@ -34,6 +39,7 @@ import {
   SysPing,
 } from "@rdc/protocol";
 import { nowIso } from "@rdc/shared";
+import type { AgentManager } from "./agent-manager.ts";
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
@@ -59,6 +65,7 @@ export interface DispatcherDeps {
   keepAwake: KeepAwake;
   git: GitService;
   editors: EditorRegistry;
+  agents: AgentManager;
 }
 
 /**
@@ -196,6 +203,41 @@ export class ControllerDispatcher {
         );
         return [EditorAskChat.createOk(msg.command_id, { delivered })];
       }
+      case "agent.start":
+        return [
+          await this.#tryRun(msg.command_id, AgentStart, async () => ({
+            session: await this.deps.agents.start(
+              msg.payload.project_id,
+              msg.payload.provider,
+              msg.payload.prompt,
+            ),
+          })),
+        ];
+      case "agent.prompt":
+        return [
+          await this.#tryRun(msg.command_id, AgentPrompt, async () => ({
+            accepted: await this.deps.agents.prompt(msg.payload.session_id, msg.payload.prompt),
+          })),
+        ];
+      case "agent.cancel":
+        return [
+          await this.#tryRun(msg.command_id, AgentCancel, async () => ({
+            cancelled: await this.deps.agents.cancel(msg.payload.session_id),
+          })),
+        ];
+      case "agent.list":
+        return [
+          await this.#tryRun(msg.command_id, AgentList, async () => ({
+            sessions: this.deps.agents.list(),
+            providers: await this.deps.agents.providers(),
+          })),
+        ];
+      case "approval.respond":
+        return [
+          await this.#tryRun(msg.command_id, ApprovalRespond, async () => ({
+            resolved: this.deps.agents.respond(msg.payload.approval_id, msg.payload.option_id),
+          })),
+        ];
       case "sync.subscribe": {
         for (const stream of msg.payload.streams) ctx.subscriptions.add(stream);
         return [SyncSubscribe.createOk(msg.command_id, { subscribed: [...ctx.subscriptions] })];
@@ -237,6 +279,23 @@ export class ControllerDispatcher {
       }
       default:
         return []; // events/results from peers are not commands — nothing to answer
+    }
+  }
+
+  /** Uniform wrapper: domain failures surface as command errors, never crash the socket. */
+  async #tryRun<TResult>(
+    commandId: string,
+    def: {
+      createOk(id: string, result: TResult): unknown;
+      createError(id: string, error: ReturnType<typeof protocolError>): unknown;
+    },
+    run: () => Promise<TResult>,
+  ): Promise<unknown> {
+    try {
+      return def.createOk(commandId, await run());
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return def.createError(commandId, protocolError("INTERNAL", message));
     }
   }
 

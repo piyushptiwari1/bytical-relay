@@ -103,6 +103,20 @@ export default function MachineDetail() {
       ))}
 
       <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>Projects</Text>
+      <Pressable
+        onPress={() => router.push(`/agent/${id}`)}
+        style={{
+          backgroundColor: colors.card,
+          borderColor: colors.accent,
+          borderWidth: 1,
+          borderRadius: 10,
+          padding: 14,
+        }}
+      >
+        <Text style={{ color: colors.accent, fontSize: 15, fontWeight: "600" }}>
+          🤖 Agents — run Copilot on this machine
+        </Text>
+      </Pressable>
       {(rt?.projects ?? []).map((project) => (
         <View
           key={project.project_id}

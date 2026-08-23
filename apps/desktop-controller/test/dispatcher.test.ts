@@ -20,6 +20,7 @@ import {
   SyncSubscribe,
 } from "@rdc/protocol";
 import { describe, expect, test } from "vitest";
+import { AgentManager } from "../src/agent-manager.ts";
 import { ControllerDispatcher, newClientContext } from "../src/dispatcher.ts";
 import { EditorRegistry } from "../src/editors.ts";
 import { KeepAwake } from "../src/keep-awake.ts";
@@ -59,6 +60,7 @@ function makeDeps() {
     keepAwake: new KeepAwake(fakeAwakeStrategy),
     git: new GitService(),
     editors: new EditorRegistry(),
+    agents: new AgentManager({ eventStore, fsIndex }, []),
   };
 }
 
