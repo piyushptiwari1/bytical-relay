@@ -1,5 +1,5 @@
 import { type PairGrant, PairGrantSchema, PairRequest, parseInbound } from "@rdc/protocol";
-import { type KxKeypair, openBox, toB64 } from "@rdc/security/client";
+import { emojiFingerprint, type KxKeypair, openBox, toB64 } from "@rdc/security/client";
 import { defaultWebSocketFactory, type WebSocketFactory } from "./websocket.ts";
 
 export interface PairOptions {
@@ -62,7 +62,14 @@ export function pairWithController(options: PairOptions): Promise<PairGrant> {
       if (!parsed.ok) return;
       const msg = parsed.value;
       if (msg.type === "pair.pending") {
-        options.onPending?.(msg.payload.fingerprint);
+        // Real SAS: compute the fingerprint locally from the QR-trusted controller
+        // key + our own key; never display a string the network chose for us.
+        const local = emojiFingerprint(options.controllerKxPub, options.keypair.publicKey);
+        if (msg.payload.fingerprint !== local) {
+          fail(new Error("fingerprint mismatch — possible interception, pairing aborted"));
+          return;
+        }
+        options.onPending?.(local);
         return;
       }
       if (msg.type === "pair.reject") {
