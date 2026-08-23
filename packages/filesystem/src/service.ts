@@ -60,11 +60,21 @@ export class FilesystemService {
     return this.#applyAndJournal(projectId, changes);
   }
 
+  /** Most-recently-active first (last fs journal event ts), idle projects alphabetical. */
   projectsWithVersion(): Project[] {
-    return this.index.listProjects().map((p) => ({
-      ...p,
-      version: this.events.headSeq(fsStream(p.project_id)),
-    }));
+    const withActivity = this.index.listProjects().map((p) => {
+      const stream = fsStream(p.project_id);
+      const head = this.events.headSeq(stream);
+      const last = head > 0 ? this.events.read(stream, head - 1, 1)[0] : undefined;
+      return {
+        project: { ...p, version: head },
+        lastTs: last ? Date.parse(last.ts) : 0,
+      };
+    });
+    withActivity.sort(
+      (a, b) => b.lastTs - a.lastTs || a.project.name.localeCompare(b.project.name),
+    );
+    return withActivity.map((entry) => entry.project);
   }
 
   async stop(): Promise<void> {
