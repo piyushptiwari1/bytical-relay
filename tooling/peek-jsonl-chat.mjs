@@ -30,7 +30,9 @@ for (const line of lines) {
     "KIND2 sample:",
     Array.isArray(v) ? `array[${v.length}]` : typeof v,
     "keys:",
-    Object.keys(first ?? {}).join(",").slice(0, 140),
+    Object.keys(first ?? {})
+      .join(",")
+      .slice(0, 140),
   );
   if (first?.message?.text) console.log("  msg:", JSON.stringify(first.message.text).slice(0, 90));
   shown++;

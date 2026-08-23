@@ -11,6 +11,7 @@
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
     "format": "biome format --write .",
+    "probe": "node tooling/probe.mjs",
     "changeset": "changeset"
   },
   "devDependencies": {
