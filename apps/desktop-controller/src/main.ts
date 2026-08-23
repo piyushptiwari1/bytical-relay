@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { copilotAdapter } from "@rdc/agent-acp";
@@ -48,6 +48,28 @@ async function start(): Promise<void> {
   const health = new HealthMonitor({ projectRoots: config.project_roots });
   health.start();
   const keepAwake = new KeepAwake();
+  // survive controller restarts: restore the user's keep-awake intent
+  const awakeFile = path.join(dir, "keepawake.json");
+  keepAwake.onChange((state) => {
+    try {
+      writeFileSync(awakeFile, JSON.stringify({ enabled: state.enabled, until: state.until }));
+    } catch {
+      // best effort
+    }
+  });
+  try {
+    const saved = JSON.parse(readFileSync(awakeFile, "utf8")) as {
+      enabled?: boolean;
+      until?: string | null;
+    };
+    if (saved.enabled) {
+      const remaining = saved.until ? (Date.parse(saved.until) - Date.now()) / 60_000 : undefined;
+      if (remaining === undefined) keepAwake.enable();
+      else if (remaining > 0) keepAwake.enable(Math.ceil(remaining));
+    }
+  } catch {
+    // no saved state
+  }
   const agents = new AgentManager({ eventStore, fsIndex }, [copilotAdapter()]);
 
   logger.info({ roots: config.project_roots }, "detecting projects");
@@ -105,7 +127,15 @@ async function start(): Promise<void> {
     logger.info({ signal }, "shutting down");
     clearInterval(reconcileTimer);
     health.stop();
+    // preserve the user's intent across restarts: disable the OS assertion
+    // (auto-cleared anyway) but re-save the pre-shutdown desired state
+    const desired = keepAwake.state();
     keepAwake.disable();
+    try {
+      writeFileSync(awakeFile, JSON.stringify({ enabled: desired.enabled, until: desired.until }));
+    } catch {
+      // best effort
+    }
     await agents.stop();
     await git.stop();
     await app.close();

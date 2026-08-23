@@ -4,9 +4,9 @@ import { pairWithController } from "@rdc/transport";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { useApp } from "../src/machines.ts";
-import { colors } from "../src/theme.ts";
+import { Button, Card, colors, space, type_ } from "../src/theme.tsx";
 
 type Phase =
   | { step: "scan" }
@@ -59,30 +59,20 @@ export default function Pair() {
       setPhase({ step: "error", message: lastError });
       scanning.current = false;
     } catch {
-      setPhase({ step: "error", message: "that QR is not an rdc pairing code" });
+      setPhase({ step: "error", message: "That QR code is not an rdc pairing code." });
       scanning.current = false;
     }
   }
 
   if (!permission?.granted) {
     return (
-      <View
-        style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 }}
-      >
-        <Text style={{ color: colors.text, textAlign: "center" }}>
-          Camera access is needed to scan the pairing QR code.
+      <View style={{ flex: 1, justifyContent: "center", padding: space.xl, gap: space.lg }}>
+        <Text style={{ fontSize: 34, textAlign: "center" }}>📷</Text>
+        <Text style={{ ...type_.heading, textAlign: "center" }}>Camera access needed</Text>
+        <Text style={{ ...type_.caption, textAlign: "center" }}>
+          The camera is only used to scan the pairing QR code shown on your computer.
         </Text>
-        <Pressable
-          onPress={() => void requestPermission()}
-          style={{
-            backgroundColor: colors.accent,
-            borderRadius: 8,
-            paddingHorizontal: 24,
-            paddingVertical: 12,
-          }}
-        >
-          <Text style={{ color: colors.bg, fontWeight: "600" }}>Allow camera</Text>
-        </Pressable>
+        <Button label="Allow camera" onPress={() => void requestPermission()} />
       </View>
     );
   }
@@ -90,42 +80,40 @@ export default function Pair() {
   return (
     <View style={{ flex: 1 }}>
       {phase.step === "scan" ? (
-        <CameraView
-          style={{ flex: 1 }}
-          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-          onBarcodeScanned={({ data }) => void handleScan(data)}
-        />
+        <>
+          <CameraView
+            style={{ flex: 1 }}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={({ data }) => void handleScan(data)}
+          />
+          <View style={{ padding: space.lg }}>
+            <Text style={{ ...type_.caption, textAlign: "center" }}>
+              Point at the QR code in the rdc dashboard → “Pair device”.
+            </Text>
+          </View>
+        </>
       ) : (
-        <View
-          style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 }}
-        >
+        <View style={{ flex: 1, justifyContent: "center", padding: space.xl, gap: space.lg }}>
           {phase.step === "connecting" ? (
-            <Text style={{ color: colors.text }}>Connecting to {phase.name}…</Text>
+            <Text style={{ ...type_.heading, textAlign: "center" }}>
+              Connecting to {phase.name}…
+            </Text>
           ) : null}
           {phase.step === "confirm" ? (
-            <>
-              <Text style={{ color: colors.text, fontSize: 16 }}>Compare with {phase.name}:</Text>
-              <Text style={{ fontSize: 42 }}>{phase.fingerprint}</Text>
-              <Text style={{ color: colors.dim, textAlign: "center" }}>
-                If the emoji match, press Confirm on your computer.
+            <Card style={{ alignItems: "center", gap: space.lg, paddingVertical: space.xxl }}>
+              <Text style={type_.micro}>Verification code</Text>
+              <Text style={{ fontSize: 44, letterSpacing: 6 }}>{phase.fingerprint}</Text>
+              <Text style={{ ...type_.caption, textAlign: "center", maxWidth: 260 }}>
+                Compare with {phase.name}. If the emoji match, press Confirm on your computer.
               </Text>
-            </>
+            </Card>
           ) : null}
           {phase.step === "error" ? (
             <>
-              <Text style={{ color: colors.bad, textAlign: "center" }}>{phase.message}</Text>
-              <Pressable
-                onPress={() => setPhase({ step: "scan" })}
-                style={{
-                  borderColor: colors.border,
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  paddingHorizontal: 24,
-                  paddingVertical: 12,
-                }}
-              >
-                <Text style={{ color: colors.text }}>Scan again</Text>
-              </Pressable>
+              <Text style={{ ...type_.body, color: colors.bad, textAlign: "center" }}>
+                {phase.message}
+              </Text>
+              <Button label="Scan again" kind="ghost" onPress={() => setPhase({ step: "scan" })} />
             </>
           ) : null}
         </View>

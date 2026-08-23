@@ -85,7 +85,7 @@ export class AcpAdapter implements AgentAdapter {
       const timer = setTimeout(() => {
         child.kill();
         resolve({ available: false, detail: "detect timeout" });
-      }, 10_000);
+      }, 20_000);
       child.on("error", (cause) => {
         clearTimeout(timer);
         resolve({ available: false, detail: String(cause.message) });

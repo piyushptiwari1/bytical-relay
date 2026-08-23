@@ -1,8 +1,8 @@
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { openInEditor, readFile } from "../src/machines.ts";
-import { colors, mono } from "../src/theme.ts";
+import { Button, colors, mono, space, type_ } from "../src/theme.tsx";
 
 export default function Viewer() {
   const { machine, project, path, name } = useLocalSearchParams<{
@@ -39,53 +39,60 @@ export default function Viewer() {
   }, [machine, project, path]);
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
-      <Text style={{ color: colors.dim, fontSize: 12, marginBottom: 8 }}>{name ?? path}</Text>
-      {machine && project && path ? (
-        <Pressable
-          onPress={() => {
-            void openInEditor(machine, decodeURIComponent(project), path)
-              .then((r) =>
-                setOpenNote(r.delivered > 0 ? "opened in VS Code ✓" : "VS Code not open"),
-              )
-              .catch((cause) =>
-                setOpenNote(cause instanceof Error ? cause.message : String(cause)),
-              );
-          }}
-          style={{
-            borderColor: colors.border,
-            borderWidth: 1,
-            borderRadius: 8,
-            paddingVertical: 8,
-            alignItems: "center",
-            marginBottom: 10,
-          }}
-        >
-          <Text style={{ color: colors.accent, fontSize: 13 }}>
-            {openNote ?? "Open in VS Code on desktop"}
-          </Text>
-        </Pressable>
-      ) : null}
-      {state.status === "loading" ? <Text style={{ color: colors.dim }}>loading…</Text> : null}
-      {state.status === "error" ? <Text style={{ color: colors.bad }}>{state.message}</Text> : null}
-      {state.status === "ok" ? (
-        state.binary ? (
-          <Text style={{ color: colors.dim }}>Binary file · {state.size} bytes</Text>
-        ) : (
-          <>
-            {state.truncated ? (
-              <Text style={{ color: colors.warn, marginBottom: 8 }}>
-                showing first 256 KB of {state.size} bytes
-              </Text>
-            ) : null}
-            <ScrollView horizontal>
-              <Text style={{ color: colors.text, ...mono, fontSize: 12, lineHeight: 18 }}>
-                {state.content}
-              </Text>
-            </ScrollView>
-          </>
-        )
-      ) : null}
-    </ScrollView>
+    <View style={{ flex: 1 }}>
+      <View
+        style={{
+          paddingHorizontal: space.lg,
+          paddingVertical: space.md,
+          gap: space.sm,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.borderSoft,
+        }}
+      >
+        <Text style={{ ...type_.caption, ...mono }} numberOfLines={1}>
+          {path ?? name}
+        </Text>
+        {machine && project && path ? (
+          <Button
+            small
+            kind="ghost"
+            label={openNote ?? "Open in VS Code on desktop"}
+            onPress={() => {
+              void openInEditor(machine, decodeURIComponent(project), path)
+                .then((r) =>
+                  setOpenNote(r.delivered > 0 ? "Opened in VS Code ✓" : "VS Code isn’t open"),
+                )
+                .catch((cause) =>
+                  setOpenNote(cause instanceof Error ? cause.message : String(cause)),
+                );
+            }}
+          />
+        ) : null}
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: space.lg }}>
+        {state.status === "loading" ? <Text style={type_.caption}>loading…</Text> : null}
+        {state.status === "error" ? (
+          <Text style={{ ...type_.body, color: colors.bad }}>{state.message}</Text>
+        ) : null}
+        {state.status === "ok" ? (
+          state.binary ? (
+            <Text style={type_.caption}>Binary file · {state.size} bytes</Text>
+          ) : (
+            <>
+              {state.truncated ? (
+                <Text style={{ ...type_.caption, color: colors.warn, marginBottom: space.sm }}>
+                  Showing first 256 KB of {state.size} bytes
+                </Text>
+              ) : null}
+              <ScrollView horizontal>
+                <Text style={{ color: colors.text, ...mono, fontSize: 12, lineHeight: 18 }}>
+                  {state.content}
+                </Text>
+              </ScrollView>
+            </>
+          )
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }

@@ -2,14 +2,16 @@ import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { gitDiffFile } from "../src/machines.ts";
-import { colors, mono } from "../src/theme.ts";
+import { colors, mono, space, type_ } from "../src/theme.tsx";
 
-function lineColor(line: string): string {
-  if (line.startsWith("+") && !line.startsWith("+++")) return colors.ok;
-  if (line.startsWith("-") && !line.startsWith("---")) return colors.bad;
-  if (line.startsWith("@@")) return colors.accent;
-  if (line.startsWith("diff ") || line.startsWith("index ")) return colors.dim;
-  return colors.text;
+function lineStyle(line: string): { color: string; backgroundColor?: string } {
+  if (line.startsWith("+") && !line.startsWith("+++"))
+    return { color: colors.ok, backgroundColor: colors.okSoft };
+  if (line.startsWith("-") && !line.startsWith("---"))
+    return { color: colors.bad, backgroundColor: colors.badSoft };
+  if (line.startsWith("@@")) return { color: colors.accent, backgroundColor: colors.accentSoft };
+  if (line.startsWith("diff ") || line.startsWith("index ")) return { color: colors.faint };
+  return { color: colors.text };
 }
 
 export default function GitDiff() {
@@ -40,8 +42,8 @@ export default function GitDiff() {
 
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <Text style={{ color: colors.bad, textAlign: "center" }}>{error}</Text>
+      <View style={{ flex: 1, justifyContent: "center", padding: space.xl }}>
+        <Text style={{ ...type_.body, color: colors.bad, textAlign: "center" }}>{error}</Text>
       </View>
     );
   }
@@ -54,27 +56,47 @@ export default function GitDiff() {
   }
   return (
     <View style={{ flex: 1 }}>
-      <Text style={{ color: colors.dim, fontSize: 12, paddingHorizontal: 12, paddingTop: 8 }}>
-        {params.path}
-        {params.staged === "1" ? " · staged" : ""}
-      </Text>
-      {note ? (
-        <Text style={{ color: colors.warn, fontSize: 12, paddingHorizontal: 12 }}>{note}</Text>
-      ) : null}
+      <View
+        style={{
+          paddingHorizontal: space.lg,
+          paddingVertical: space.md,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.borderSoft,
+        }}
+      >
+        <Text style={{ ...type_.caption, ...mono }} numberOfLines={1}>
+          {params.path}
+          {params.staged === "1" ? "  ·  staged" : ""}
+        </Text>
+        {note ? (
+          <Text style={{ ...type_.caption, color: colors.warn, marginTop: 2 }}>{note}</Text>
+        ) : null}
+      </View>
       {lines.length === 0 && !note ? (
-        <Text style={{ color: colors.dim, padding: 12 }}>No changes.</Text>
+        <Text style={{ ...type_.caption, padding: space.lg }}>No changes.</Text>
       ) : null}
       <FlatList
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 12 }}
+        contentContainerStyle={{ paddingVertical: space.sm }}
         data={lines}
         keyExtractor={(_, i) => String(i)}
         initialNumToRender={60}
-        renderItem={({ item }) => (
-          <Text style={{ color: lineColor(item), ...mono, fontSize: 12, lineHeight: 17 }}>
-            {item.length === 0 ? " " : item}
-          </Text>
-        )}
+        renderItem={({ item }) => {
+          const style = lineStyle(item);
+          return (
+            <Text
+              style={{
+                ...style,
+                ...mono,
+                fontSize: 12,
+                lineHeight: 18,
+                paddingHorizontal: space.lg,
+              }}
+            >
+              {item.length === 0 ? " " : item}
+            </Text>
+          );
+        }}
       />
     </View>
   );

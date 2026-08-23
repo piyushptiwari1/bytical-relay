@@ -1,8 +1,18 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { useApp } from "../../src/machines.ts";
-import { colors, formatGb } from "../../src/theme.ts";
+import {
+  Button,
+  Card,
+  colors,
+  formatGb,
+  Pill,
+  SectionLabel,
+  StatusDot,
+  space,
+  type_,
+} from "../../src/theme.tsx";
 
 export default function MachineDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,167 +28,161 @@ export default function MachineDetail() {
   }, [id, refresh, connect]);
 
   if (!machine || !id)
-    return <Text style={{ color: colors.dim, padding: 20 }}>machine not found</Text>;
+    return <Text style={{ ...type_.caption, padding: space.xl }}>machine not found</Text>;
   const health = rt?.health;
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 12 }}>
-      <View
-        style={{
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-          borderWidth: 1,
-          borderRadius: 10,
-          padding: 14,
-          gap: 4,
-        }}
-      >
-        <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600" }}>{machine.name}</Text>
-        <Text style={{ color: colors.dim, fontSize: 12 }}>
-          {rt?.state ?? "idle"} · {machine.machine_id}
-        </Text>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
+    >
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text style={{ ...type_.title, flex: 1 }}>{machine.name}</Text>
+          <Pill tone={rt?.state === "ready" ? "ok" : "dim"}>{rt?.state ?? "idle"}</Pill>
+        </View>
         {health ? (
           <>
-            <Text style={{ color: colors.dim, fontSize: 12 }}>
+            <Text style={type_.caption}>
               {health.platform}/{health.arch} · up {Math.floor(health.uptime_s / 3600)}h ·{" "}
-              {health.cpu.model}
+              {health.cpu.cores} cores
             </Text>
-            <Text style={{ color: colors.dim, fontSize: 12 }}>
-              RAM {formatGb(health.memory.total_bytes - health.memory.free_bytes)}/
-              {formatGb(health.memory.total_bytes)}
-              {health.cpu.load_percent !== null ? ` · CPU ${health.cpu.load_percent}%` : ""}
-            </Text>
-            {health.disks.map((d) => (
-              <Text key={d.drive} style={{ color: colors.dim, fontSize: 12 }}>
-                {d.drive} {formatGb(d.free_bytes)} free of {formatGb(d.total_bytes)}
-              </Text>
-            ))}
-            {health.gpu ? (
-              <Text style={{ color: colors.dim, fontSize: 12 }}>GPU {health.gpu}</Text>
-            ) : null}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.lg, marginTop: 4 }}>
+              <Stat
+                label="CPU"
+                value={health.cpu.load_percent !== null ? `${health.cpu.load_percent}%` : "—"}
+              />
+              <Stat
+                label="Memory"
+                value={`${formatGb(health.memory.total_bytes - health.memory.free_bytes)} of ${formatGb(health.memory.total_bytes)}`}
+              />
+              {health.disks.map((d) => (
+                <Stat key={d.drive} label={d.drive} value={`${formatGb(d.free_bytes)} free`} />
+              ))}
+              {health.battery ? (
+                <Stat
+                  label="Battery"
+                  value={`${health.battery.percent}%${health.battery.charging ? " ⚡" : ""}`}
+                />
+              ) : null}
+              {health.network.latency_ms !== null ? (
+                <Stat label="Latency" value={`${health.network.latency_ms}ms`} />
+              ) : null}
+            </View>
+            {health.gpu ? <Text style={type_.caption}>GPU · {health.gpu}</Text> : null}
           </>
-        ) : null}
-      </View>
+        ) : (
+          <Text style={type_.caption}>waiting for telemetry…</Text>
+        )}
+      </Card>
+
+      <Card accent onPress={() => router.push(`/agent/${id}`)}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text style={{ fontSize: 20 }}>✦</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={type_.heading}>Agents</Text>
+            <Text style={type_.caption}>Run Copilot on this machine from your phone</Text>
+          </View>
+          <Text style={{ color: colors.accent, fontSize: 18 }}>›</Text>
+        </View>
+      </Card>
 
       {(rt?.editors ?? []).map((editor) => (
-        <View
-          key={editor.editor_id}
-          style={{
-            backgroundColor: colors.card,
-            borderColor: colors.accent,
-            borderWidth: 1,
-            borderRadius: 10,
-            padding: 14,
-            gap: 4,
-          }}
-        >
-          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
-            ✎ VS Code{editor.workspace ? ` — ${editor.workspace}` : ""}
-          </Text>
+        <Card key={editor.editor_id}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <StatusDot color={colors.accent} />
+            <Text style={{ ...type_.heading, flex: 1 }} numberOfLines={1}>
+              VS Code{editor.workspace ? ` — ${editor.workspace}` : ""}
+            </Text>
+          </View>
           {editor.active_file ? (
-            <Text style={{ color: colors.accent, fontSize: 13 }}>
-              editing {editor.active_file.name}
+            <Text style={{ ...type_.body, color: colors.accent }} numberOfLines={1}>
+              ✎ {editor.active_file.name}
               {editor.active_file.line ? `:${editor.active_file.line}` : ""}
             </Text>
           ) : (
-            <Text style={{ color: colors.dim, fontSize: 13 }}>no file focused</Text>
+            <Text style={type_.caption}>no file focused</Text>
           )}
-          <Text style={{ color: colors.dim, fontSize: 12 }}>
-            {editor.diagnostics.errors > 0 ? `⛔ ${editor.diagnostics.errors} ` : ""}
-            {editor.diagnostics.warnings > 0 ? `⚠ ${editor.diagnostics.warnings} ` : ""}
-            {editor.diagnostics.errors === 0 && editor.diagnostics.warnings === 0
-              ? "no problems "
-              : ""}
-            {editor.running_tasks.length > 0 ? `· running: ${editor.running_tasks.join(", ")}` : ""}
-          </Text>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            {editor.diagnostics.errors > 0 ? (
+              <Pill tone="bad">{editor.diagnostics.errors} errors</Pill>
+            ) : null}
+            {editor.diagnostics.warnings > 0 ? (
+              <Pill tone="warn">{editor.diagnostics.warnings} warnings</Pill>
+            ) : null}
+            {editor.diagnostics.errors === 0 && editor.diagnostics.warnings === 0 ? (
+              <Pill tone="ok">no problems</Pill>
+            ) : null}
+            {editor.running_tasks.length > 0 ? (
+              <Pill tone="accent">▶ {editor.running_tasks.join(", ")}</Pill>
+            ) : null}
+          </View>
           {editor.last_command ? (
-            <Text style={{ color: colors.dim, fontSize: 11 }} numberOfLines={1}>
+            <Text style={{ ...type_.caption, fontFamily: "monospace" }} numberOfLines={1}>
               $ {editor.last_command.command}
               {editor.last_command.exit_code !== null
                 ? ` → ${editor.last_command.exit_code}`
                 : " …"}
             </Text>
           ) : null}
-        </View>
+        </Card>
       ))}
 
-      <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>Projects</Text>
-      <Pressable
-        onPress={() => router.push(`/agent/${id}`)}
-        style={{
-          backgroundColor: colors.card,
-          borderColor: colors.accent,
-          borderWidth: 1,
-          borderRadius: 10,
-          padding: 14,
-        }}
-      >
-        <Text style={{ color: colors.accent, fontSize: 15, fontWeight: "600" }}>
-          🤖 Agents — run Copilot on this machine
-        </Text>
-      </Pressable>
+      <SectionLabel>Projects</SectionLabel>
       {(rt?.projects ?? []).map((project) => (
-        <View
-          key={project.project_id}
-          style={{
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderWidth: 1,
-            borderRadius: 10,
-            padding: 14,
-            gap: 6,
-          }}
-        >
-          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
-            {project.name}
-            {project.wsl ? " · WSL" : ""}
+        <Card key={project.project_id} style={{ gap: space.xs }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Text style={{ ...type_.heading, flex: 1 }} numberOfLines={1}>
+              {project.name}
+            </Text>
+            {project.wsl ? <Pill tone="dim">WSL</Pill> : null}
+          </View>
+          <Text style={type_.caption} numberOfLines={1}>
+            {project.root_path}
           </Text>
-          <Text style={{ color: colors.dim, fontSize: 11 }}>{project.root_path}</Text>
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
-            <Pressable
+          <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.xs }}>
+            <Button
+              small
+              kind="ghost"
+              label="Files"
               onPress={() =>
                 router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)
               }
-              style={{
-                borderColor: colors.border,
-                borderWidth: 1,
-                borderRadius: 8,
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-              }}
-            >
-              <Text style={{ color: colors.accent }}>Files</Text>
-            </Pressable>
+            />
             {project.vcs === "git" ? (
-              <Pressable
+              <Button
+                small
+                kind="ghost"
+                label="⎇ Git"
                 onPress={() => router.push(`/git/${id}/${encodeURIComponent(project.project_id)}`)}
-                style={{
-                  borderColor: colors.border,
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                }}
-              >
-                <Text style={{ color: colors.accent }}>⎇ Git</Text>
-              </Pressable>
+              />
             ) : null}
           </View>
-        </View>
+        </Card>
       ))}
       {rt?.projects?.length === 0 ? (
-        <Text style={{ color: colors.dim }}>No projects detected on this machine.</Text>
+        <Text style={type_.caption}>No projects detected on this machine.</Text>
       ) : null}
 
-      <Pressable
-        onPress={() => {
-          void forget(id);
-          router.replace("/");
-        }}
-        style={{ alignItems: "center", padding: 12 }}
-      >
-        <Text style={{ color: colors.bad }}>Forget this machine</Text>
-      </Pressable>
+      <View style={{ marginTop: space.lg }}>
+        <Button
+          kind="danger"
+          label="Forget this machine"
+          onPress={() => {
+            void forget(id);
+            router.replace("/");
+          }}
+        />
+      </View>
     </ScrollView>
+  );
+}
+
+function Stat(props: { label: string; value: string }) {
+  return (
+    <View style={{ gap: 1, minWidth: 90 }}>
+      <Text style={type_.micro}>{props.label}</Text>
+      <Text style={{ ...type_.body, fontSize: 13 }}>{props.value}</Text>
+    </View>
   );
 }

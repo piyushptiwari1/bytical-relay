@@ -43,12 +43,15 @@ export class AgentManager {
 
   async providers(): Promise<Array<{ id: string; available: boolean; detail: string }>> {
     if (!this.#detectCache) {
-      this.#detectCache = await Promise.all(
+      const detected = await Promise.all(
         [...this.#adapters.values()].map(async (adapter) => ({
           id: adapter.id,
           ...(await adapter.detect()),
         })),
       );
+      // only cache full success — a slow first probe must not stick as "unavailable"
+      if (detected.every((d) => d.available)) this.#detectCache = detected;
+      else return detected;
     }
     return this.#detectCache;
   }

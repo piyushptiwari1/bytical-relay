@@ -54,7 +54,7 @@ describe("KeepAwake", () => {
     expect(calls).toEqual(["activate", "deactivate"]);
   });
 
-  test("TTL auto-disables", () => {
+  test("TTL auto-disables (with periodic re-asserts while enabled)", () => {
     vi.useFakeTimers();
     try {
       const { strategy, calls } = tracked();
@@ -63,7 +63,13 @@ describe("KeepAwake", () => {
       expect(on.until).not.toBeNull();
       vi.advanceTimersByTime(15 * 60_000 + 1);
       expect(ka.state().enabled).toBe(false);
-      expect(calls).toEqual(["activate", "deactivate"]);
+      expect(calls[0]).toBe("activate");
+      expect(calls.at(-1)).toBe("deactivate");
+      expect(calls.filter((c) => c === "deactivate")).toHaveLength(1);
+      // no re-asserts after disable
+      const after = calls.length;
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(calls.length).toBe(after);
     } finally {
       vi.useRealTimers();
     }

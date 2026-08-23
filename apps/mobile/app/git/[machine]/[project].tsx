@@ -1,20 +1,19 @@
 import type { GitFileStatus, GitState } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { gitCommit, gitStage, gitStatus, gitUnstage, watchGit } from "../../../src/machines.ts";
-import { colors, mono } from "../../../src/theme.ts";
-
-const GLYPH: Record<string, string> = {
-  M: "M",
-  A: "A",
-  D: "D",
-  R: "R",
-  C: "C",
-  U: "U",
-  "?": "?",
-  ".": " ",
-};
+import {
+  Button,
+  Card,
+  colors,
+  EmptyState,
+  mono,
+  Pill,
+  SectionLabel,
+  space,
+  type_,
+} from "../../../src/theme.tsx";
 
 function glyphColor(char: string): string {
   if (char === "A" || char === "?") return colors.ok;
@@ -50,8 +49,8 @@ export default function GitScreen() {
   if (!machine || !project) return null;
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <Text style={{ color: colors.bad, textAlign: "center" }}>{error}</Text>
+      <View style={{ flex: 1, justifyContent: "center", padding: space.xl }}>
+        <Text style={{ ...type_.body, color: colors.bad, textAlign: "center" }}>{error}</Text>
       </View>
     );
   }
@@ -86,26 +85,26 @@ export default function GitScreen() {
     return (
       <View
         key={`${isStaged ? "s" : "w"}:${file.path}`}
-        style={{ flexDirection: "row", alignItems: "center", paddingVertical: 6, gap: 8 }}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingVertical: 9,
+          gap: space.md,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.borderSoft,
+        }}
       >
-        <Text style={{ color: glyphColor(char), width: 16, ...mono, fontSize: 14 }}>
-          {GLYPH[char] ?? char}
-        </Text>
+        <Text style={{ color: glyphColor(char), width: 16, ...mono, fontSize: 14 }}>{char}</Text>
         <Pressable
           style={{ flex: 1 }}
           onPress={() =>
             router.push({
               pathname: "/gitdiff",
-              params: {
-                machine,
-                project,
-                path: file.path,
-                staged: isStaged ? "1" : "0",
-              },
+              params: { machine, project, path: file.path, staged: isStaged ? "1" : "0" },
             })
           }
         >
-          <Text style={{ color: colors.text, fontSize: 13 }} numberOfLines={1}>
+          <Text style={type_.body} numberOfLines={1}>
             {file.orig_path ? `${file.orig_path} → ` : ""}
             {file.path}
           </Text>
@@ -119,103 +118,92 @@ export default function GitScreen() {
                 : gitStage(machine, project, [file.path]),
             )
           }
-          style={{
-            borderColor: colors.border,
+          style={({ pressed }) => ({
+            width: 30,
+            height: 30,
+            borderRadius: 15,
             borderWidth: 1,
-            borderRadius: 6,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-          }}
+            borderColor: colors.border,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: pressed ? colors.cardRaised : "transparent",
+          })}
         >
-          <Text style={{ color: colors.accent, fontSize: 12 }}>{isStaged ? "−" : "+"}</Text>
+          <Text style={{ color: colors.accent, fontSize: 16, lineHeight: 18 }}>
+            {isStaged ? "−" : "+"}
+          </Text>
         </Pressable>
       </View>
     );
   };
 
   return (
-    <FlatList
+    <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 14, gap: 4 }}
-      data={[]}
-      renderItem={() => null}
-      ListHeaderComponent={
-        <View style={{ gap: 10 }}>
-          <View
-            style={{
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              borderWidth: 1,
-              borderRadius: 10,
-              padding: 12,
-              gap: 2,
-            }}
-          >
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600" }}>
-              ⎇ {state.detached ? "detached" : (state.branch ?? "no branch")}
-            </Text>
-            <Text style={{ color: colors.dim, fontSize: 12 }}>
-              {state.upstream ? `${state.upstream} · ` : ""}
-              {state.ahead > 0 ? `↑${state.ahead} ` : ""}
-              {state.behind > 0 ? `↓${state.behind} ` : ""}
-              {state.oid ? state.oid.slice(0, 8) : "no commits yet"}
-            </Text>
-          </View>
-
-          {staged.length > 0 ? (
-            <>
-              <Text style={{ color: colors.ok, fontSize: 13, fontWeight: "600" }}>
-                Staged ({staged.length})
-              </Text>
-              {staged.map((f) => row(f, true))}
-              <TextInput
-                value={message}
-                onChangeText={setMessage}
-                placeholder="Commit message"
-                placeholderTextColor={colors.dim}
-                multiline
-                style={{
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  color: colors.text,
-                  padding: 10,
-                  minHeight: 44,
-                }}
-              />
-              <Pressable
-                disabled={busy || message.trim().length === 0}
-                onPress={() =>
-                  void act(async () => {
-                    await gitCommit(machine, project, message.trim());
-                    setMessage("");
-                    return gitStatus(machine, project);
-                  })
-                }
-                style={{
-                  backgroundColor: message.trim() ? colors.accent : colors.card,
-                  borderRadius: 8,
-                  alignItems: "center",
-                  paddingVertical: 10,
-                }}
-              >
-                <Text style={{ color: message.trim() ? colors.bg : colors.dim, fontWeight: "600" }}>
-                  {busy ? "…" : `Commit ${staged.length} file(s)`}
-                </Text>
-              </Pressable>
-            </>
-          ) : null}
-
-          <Text style={{ color: colors.warn, fontSize: 13, fontWeight: "600" }}>
-            Changes ({unstaged.length})
+      contentContainerStyle={{ padding: space.lg, paddingBottom: space.xxl }}
+    >
+      <Card style={{ gap: space.xs }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text style={{ ...type_.heading, flex: 1 }}>
+            ⎇ {state.detached ? "detached" : (state.branch ?? "no branch")}
           </Text>
-          {unstaged.map((f) => row(f, false))}
-          {state.files.length === 0 ? (
-            <Text style={{ color: colors.dim, paddingVertical: 12 }}>Working tree clean ✓</Text>
-          ) : null}
+          {state.ahead > 0 ? <Pill tone="accent">↑{state.ahead}</Pill> : null}
+          {state.behind > 0 ? <Pill tone="warn">↓{state.behind}</Pill> : null}
         </View>
-      }
-    />
+        <Text style={type_.caption}>
+          {state.upstream ? `${state.upstream} · ` : ""}
+          {state.oid ? state.oid.slice(0, 8) : "no commits yet"}
+        </Text>
+      </Card>
+
+      {staged.length > 0 ? (
+        <>
+          <SectionLabel>Staged · {staged.length}</SectionLabel>
+          {staged.map((f) => row(f, true))}
+          <View style={{ gap: space.sm, marginTop: space.md }}>
+            <TextInput
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Commit message"
+              placeholderTextColor={colors.faint}
+              multiline
+              style={{
+                backgroundColor: colors.card,
+                borderColor: colors.borderSoft,
+                borderWidth: 1,
+                borderRadius: 12,
+                color: colors.text,
+                padding: space.md,
+                minHeight: 48,
+                fontSize: 14,
+              }}
+            />
+            <Button
+              disabled={busy || message.trim().length === 0}
+              label={
+                busy ? "committing…" : `Commit ${staged.length} file${staged.length > 1 ? "s" : ""}`
+              }
+              onPress={() =>
+                void act(async () => {
+                  await gitCommit(machine, project, message.trim());
+                  setMessage("");
+                  return gitStatus(machine, project);
+                })
+              }
+            />
+          </View>
+        </>
+      ) : null}
+
+      <SectionLabel>Changes · {unstaged.length}</SectionLabel>
+      {unstaged.map((f) => row(f, false))}
+      {state.files.length === 0 ? (
+        <EmptyState
+          icon="✓"
+          title="Working tree clean"
+          caption="Edits on the laptop appear here live."
+        />
+      ) : null}
+    </ScrollView>
   );
 }

@@ -9,7 +9,7 @@ import {
   watchAgentSession,
   watchAgentStatus,
 } from "../../../src/machines.ts";
-import { colors, mono } from "../../../src/theme.ts";
+import { colors, mono, Pill, type PillTone, space, type_ } from "../../../src/theme.tsx";
 
 type Block =
   | { id: string; kind: "user"; text: string }
@@ -25,6 +25,21 @@ const toolGlyph: Record<string, string> = {
   in_progress: "◐",
   completed: "●",
   failed: "✕",
+};
+const toolColor: Record<string, string> = {
+  pending: colors.dim,
+  in_progress: colors.warn,
+  completed: colors.ok,
+  failed: colors.bad,
+};
+const statusTone: Record<string, PillTone> = {
+  starting: "warn",
+  running: "warn",
+  awaiting_approval: "bad",
+  idle: "ok",
+  completed: "ok",
+  failed: "bad",
+  cancelled: "dim",
 };
 
 export default function AgentSessionScreen() {
@@ -65,24 +80,20 @@ export default function AgentSessionScreen() {
           return [...blocksNow, { id: id(), kind: "user", text: update.text ?? "" }];
         if (update.kind === "message_chunk") {
           const last = blocksNow.at(-1);
-          if (last?.kind === "assistant") {
+          if (last?.kind === "assistant")
             return [...blocksNow.slice(0, -1), { ...last, text: last.text + (update.text ?? "") }];
-          }
           return [...blocksNow, { id: id(), kind: "assistant", text: update.text ?? "" }];
         }
         if (update.kind === "thought_chunk") {
           const last = blocksNow.at(-1);
-          if (last?.kind === "thought") {
+          if (last?.kind === "thought")
             return [...blocksNow.slice(0, -1), { ...last, text: last.text + (update.text ?? "") }];
-          }
           return [...blocksNow, { id: id(), kind: "thought", text: update.text ?? "" }];
         }
         if (update.kind === "tool_call") {
           const toolId = update.tool_id ?? "tool";
-          const existing = blocksNow.findLast(
-            (b): b is Extract<Block, { kind: "tool" }> => b.kind === "tool" && b.toolId === toolId,
-          );
-          if (existing) {
+          const exists = blocksNow.some((b) => b.kind === "tool" && b.toolId === toolId);
+          if (exists) {
             return blocksNow.map((b) =>
               b.kind === "tool" && b.toolId === toolId
                 ? {
@@ -156,14 +167,28 @@ export default function AgentSessionScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 10 }}>
-        <Text style={{ color: colors.dim, fontSize: 12, flex: 1 }}>
-          {status}
-          {error ? ` · ${error}` : ""}
-        </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: space.lg,
+          paddingVertical: space.md,
+          gap: space.sm,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.borderSoft,
+        }}
+      >
+        <Pill tone={statusTone[status] ?? "dim"}>{status.replaceAll("_", " ")}</Pill>
+        {error ? (
+          <Text style={{ ...type_.caption, color: colors.bad, flex: 1 }} numberOfLines={1}>
+            {error}
+          </Text>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
         {status === "running" || status === "awaiting_approval" ? (
           <Pressable onPress={() => void agentCancel(machine, session).catch(() => {})}>
-            <Text style={{ color: colors.bad, fontSize: 12 }}>Cancel</Text>
+            <Text style={{ color: colors.bad, fontSize: 13, fontWeight: "600" }}>Stop</Text>
           </Pressable>
         ) : null}
       </View>
@@ -171,7 +196,7 @@ export default function AgentSessionScreen() {
       <FlatList
         ref={listRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 12, gap: 8 }}
+        contentContainerStyle={{ padding: space.lg, gap: space.md }}
         data={blocks}
         keyExtractor={(b) => b.id}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
@@ -181,13 +206,19 @@ export default function AgentSessionScreen() {
               <View
                 style={{
                   alignSelf: "flex-end",
-                  backgroundColor: colors.accent,
-                  borderRadius: 10,
-                  padding: 10,
+                  backgroundColor: colors.accentSoft,
+                  borderColor: colors.accent,
+                  borderWidth: 1,
+                  borderRadius: 16,
+                  borderBottomRightRadius: 4,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
                   maxWidth: "85%",
                 }}
               >
-                <Text style={{ color: colors.bg }}>{item.text}</Text>
+                <Text style={{ color: colors.text, fontSize: 14, lineHeight: 20 }}>
+                  {item.text}
+                </Text>
               </View>
             );
           if (item.kind === "assistant")
@@ -196,33 +227,75 @@ export default function AgentSessionScreen() {
                 style={{
                   alignSelf: "flex-start",
                   backgroundColor: colors.card,
-                  borderRadius: 10,
-                  padding: 10,
+                  borderColor: colors.borderSoft,
+                  borderWidth: 1,
+                  borderRadius: 16,
+                  borderBottomLeftRadius: 4,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
                   maxWidth: "92%",
                 }}
               >
-                <Text style={{ color: colors.text }}>{item.text}</Text>
+                <Text style={{ color: colors.text, fontSize: 14, lineHeight: 21 }}>
+                  {item.text}
+                </Text>
               </View>
             );
           if (item.kind === "thought")
             return (
-              <Text style={{ color: colors.dim, fontSize: 12, fontStyle: "italic" }}>
+              <Text
+                style={{
+                  ...type_.caption,
+                  fontStyle: "italic",
+                  paddingHorizontal: space.xs,
+                }}
+              >
                 {item.text}
               </Text>
             );
           if (item.kind === "tool")
             return (
-              <Text style={{ color: colors.warn, fontSize: 13, ...mono }}>
-                {toolGlyph[item.status] ?? "○"} {item.title || item.toolId} · {item.status}
-              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: space.sm,
+                  backgroundColor: colors.card,
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  alignSelf: "flex-start",
+                }}
+              >
+                <Text style={{ color: toolColor[item.status] ?? colors.dim, fontSize: 13 }}>
+                  {toolGlyph[item.status] ?? "○"}
+                </Text>
+                <Text style={{ ...type_.caption, color: colors.text, ...mono }} numberOfLines={1}>
+                  {item.title || item.toolId}
+                </Text>
+                <Text style={{ ...type_.caption, color: toolColor[item.status] ?? colors.dim }}>
+                  {item.status.replaceAll("_", " ")}
+                </Text>
+              </View>
             );
           if (item.kind === "plan")
             return (
-              <View style={{ gap: 2 }}>
+              <View
+                style={{
+                  gap: 4,
+                  backgroundColor: colors.card,
+                  borderRadius: 10,
+                  padding: space.md,
+                }}
+              >
+                <Text style={type_.micro}>Plan</Text>
                 {item.entries.map((entry) => (
                   <Text
                     key={`${item.id}-${entry.content.slice(0, 40)}`}
-                    style={{ color: colors.dim, fontSize: 12 }}
+                    style={{
+                      ...type_.caption,
+                      color: entry.status === "completed" ? colors.ok : colors.dim,
+                    }}
                   >
                     {entry.status === "completed" ? "☑" : "☐"} {entry.content}
                   </Text>
@@ -230,10 +303,14 @@ export default function AgentSessionScreen() {
               </View>
             );
           if (item.kind === "error")
-            return <Text style={{ color: colors.bad, fontSize: 13 }}>{item.text}</Text>;
+            return (
+              <Text style={{ ...type_.caption, color: colors.bad, paddingHorizontal: space.xs }}>
+                {item.text}
+              </Text>
+            );
           return (
-            <Text style={{ color: colors.dim, fontSize: 11, textAlign: "center" }}>
-              — {item.text} —
+            <Text style={{ ...type_.micro, textAlign: "center", marginVertical: 2 }}>
+              ── {item.text} ──
             </Text>
           );
         }}
@@ -245,66 +322,100 @@ export default function AgentSessionScreen() {
             backgroundColor: colors.card,
             borderColor: colors.bad,
             borderWidth: 1,
-            borderRadius: 10,
-            margin: 10,
-            padding: 12,
-            gap: 8,
+            borderRadius: 16,
+            marginHorizontal: space.lg,
+            marginBottom: space.md,
+            padding: space.lg,
+            gap: space.md,
           }}
         >
-          <Text style={{ color: colors.text, fontWeight: "600" }}>{approval.title}</Text>
-          <Text style={{ color: colors.dim, fontSize: 12 }}>tool: {approval.tool_kind}</Text>
-          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-            {approval.options.map((option) => (
-              <Pressable
-                key={option.option_id}
-                onPress={() =>
-                  void approvalRespond(machine, approval.approval_id, option.option_id).catch(
-                    (cause) => setError(String(cause)),
-                  )
-                }
-                style={{
-                  backgroundColor: option.option_kind.startsWith("allow") ? colors.ok : colors.bad,
-                  borderRadius: 8,
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                }}
-              >
-                <Text style={{ color: colors.bg, fontWeight: "600" }}>{option.name}</Text>
-              </Pressable>
-            ))}
+          <Text style={type_.micro}>Approval required</Text>
+          <Text style={type_.heading}>{approval.title}</Text>
+          <Text style={type_.caption}>tool · {approval.tool_kind}</Text>
+          <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
+            {approval.options.map((option) => {
+              const allow = option.option_kind.startsWith("allow");
+              return (
+                <Pressable
+                  key={option.option_id}
+                  onPress={() =>
+                    void approvalRespond(machine, approval.approval_id, option.option_id).catch(
+                      (cause) => setError(String(cause)),
+                    )
+                  }
+                  style={({ pressed }) => ({
+                    backgroundColor: allow ? colors.ok : colors.badSoft,
+                    borderRadius: 10,
+                    paddingHorizontal: 18,
+                    paddingVertical: 10,
+                    opacity: pressed ? 0.85 : 1,
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: allow ? "#0A0C10" : colors.bad,
+                      fontWeight: "700",
+                      fontSize: 14,
+                    }}
+                  >
+                    {option.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
       ) : null}
 
-      <View style={{ flexDirection: "row", padding: 10, gap: 8 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          padding: space.md,
+          gap: space.sm,
+          borderTopWidth: 1,
+          borderTopColor: colors.borderSoft,
+        }}
+      >
         <TextInput
           value={prompt}
           onChangeText={setPrompt}
           editable={canPrompt}
-          placeholder={canPrompt ? "Follow-up prompt…" : `agent is ${status}…`}
-          placeholderTextColor={colors.dim}
+          placeholder={canPrompt ? "Follow-up prompt…" : `agent is ${status.replaceAll("_", " ")}…`}
+          placeholderTextColor={colors.faint}
           style={{
             flex: 1,
             backgroundColor: colors.card,
-            borderColor: colors.border,
+            borderColor: colors.borderSoft,
             borderWidth: 1,
-            borderRadius: 8,
+            borderRadius: 22,
             color: colors.text,
-            paddingHorizontal: 10,
-            paddingVertical: 8,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            fontSize: 14,
           }}
         />
         <Pressable
           disabled={!canPrompt || prompt.trim().length === 0}
           onPress={() => void send()}
-          style={{
+          style={({ pressed }) => ({
             backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
-            borderRadius: 8,
+            borderRadius: 22,
+            width: 44,
+            height: 44,
+            alignItems: "center",
             justifyContent: "center",
-            paddingHorizontal: 16,
-          }}
+            opacity: pressed ? 0.85 : 1,
+          })}
         >
-          <Text style={{ color: canPrompt && prompt.trim() ? colors.bg : colors.dim }}>Send</Text>
+          <Text
+            style={{
+              color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
+              fontSize: 17,
+              fontWeight: "700",
+            }}
+          >
+            ↑
+          </Text>
         </Pressable>
       </View>
     </View>

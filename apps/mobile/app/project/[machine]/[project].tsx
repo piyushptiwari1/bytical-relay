@@ -1,49 +1,49 @@
-import type { FileEntry } from "@rdc/protocol";
+import type { FileEntry, KnownMessage } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { listEntries, watchProject } from "../../../src/machines.ts";
-import { colors, mono } from "../../../src/theme.ts";
+import { colors, EmptyState, mono, space, type_ } from "../../../src/theme.tsx";
 
 interface Crumb {
-  parentId: string | null;
   name: string;
+  parentId: string | null;
 }
 
 export default function ProjectBrowser() {
   const { machine, project } = useLocalSearchParams<{ machine: string; project: string }>();
   const router = useRouter();
-  const [crumbs, setCrumbs] = useState<Crumb[]>([{ parentId: null, name: "/" }]);
+  const projectId = project ? decodeURIComponent(project) : "";
+  const [crumbs, setCrumbs] = useState<Crumb[]>([{ name: "root", parentId: null }]);
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [live, setLive] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const current = crumbs[crumbs.length - 1] ?? { parentId: null, name: "/" };
-  const reloading = useRef(false);
+  const [live, setLive] = useState(0);
 
-  const load = useCallback(async () => {
-    if (!machine || !project || reloading.current) return;
-    reloading.current = true;
-    try {
-      setEntries(await listEntries(machine, decodeURIComponent(project), current.parentId));
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      reloading.current = false;
-    }
-  }, [machine, project, current.parentId]);
+  const load = useCallback(
+    async (parentId: string | null) => {
+      if (!machine || !projectId) return;
+      try {
+        setEntries(await listEntries(machine, projectId, parentId));
+        setError(null);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [machine, projectId],
+  );
+
+  const current = crumbs.at(-1);
+  useEffect(() => {
+    void load(current?.parentId ?? null);
+  }, [load, current?.parentId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (!machine || !project) return;
-    return watchProject(machine, decodeURIComponent(project), () => {
+    if (!machine || !projectId) return;
+    return watchProject(machine, projectId, (_msg: KnownMessage) => {
       setLive((n) => n + 1);
-      void load();
+      void load(crumbs.at(-1)?.parentId ?? null);
     });
-  }, [machine, project, load]);
+  }, [machine, projectId, load, crumbs]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -51,9 +51,12 @@ export default function ProjectBrowser() {
         style={{
           flexDirection: "row",
           flexWrap: "wrap",
-          padding: 10,
+          paddingHorizontal: space.lg,
+          paddingVertical: space.md,
           gap: 4,
           alignItems: "center",
+          borderBottomWidth: 1,
+          borderBottomColor: colors.borderSoft,
         }}
       >
         {crumbs.map((crumb, i) => (
@@ -72,54 +75,67 @@ export default function ProjectBrowser() {
               }}
             >
               {crumb.name}
-              {i < crumbs.length - 1 ? " ›" : ""}
+              {i < crumbs.length - 1 ? "  ›  " : ""}
             </Text>
           </Pressable>
         ))}
-        {live > 0 ? <Text style={{ color: colors.ok, fontSize: 11 }}> · live ({live})</Text> : null}
+        {live > 0 ? (
+          <Text style={{ color: colors.ok, fontSize: 10, marginLeft: 6 }}>● live</Text>
+        ) : null}
       </View>
-      {error ? <Text style={{ color: colors.bad, paddingHorizontal: 12 }}>{error}</Text> : null}
+      {error ? (
+        <Text style={{ ...type_.caption, color: colors.bad, padding: space.lg }}>{error}</Text>
+      ) : null}
       <FlatList
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingVertical: space.sm }}
         data={entries}
         keyExtractor={(entry) => entry.file_id}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        ListEmptyComponent={error ? null : <EmptyState icon="🗂" title="Empty folder" />}
         renderItem={({ item }) => (
           <Pressable
             onPress={() => {
               if (item.kind === "dir") {
-                setCrumbs([...crumbs, { parentId: item.file_id, name: item.name }]);
+                setCrumbs([...crumbs, { name: item.name, parentId: item.file_id }]);
               } else {
                 router.push({
                   pathname: "/viewer",
-                  params: { machine, project, path: item.relative_path, name: item.name },
+                  params: {
+                    machine,
+                    project: encodeURIComponent(projectId),
+                    path: item.relative_path,
+                    name: item.name,
+                  },
                 });
               }
             }}
-            style={{
+            style={({ pressed }) => ({
               flexDirection: "row",
-              paddingVertical: 8,
-              paddingHorizontal: 14,
-              gap: 8,
               alignItems: "center",
-            }}
+              gap: space.md,
+              paddingHorizontal: space.lg,
+              paddingVertical: 11,
+              backgroundColor: pressed ? colors.card : "transparent",
+            })}
           >
-            <Text style={{ fontSize: 14 }}>{item.kind === "dir" ? "📁" : "📄"}</Text>
-            <Text
-              style={{
-                color: item.kind === "dir" ? colors.accent : colors.text,
-                ...mono,
-                fontSize: 13,
-                flex: 1,
-              }}
-            >
+            <Text style={{ fontSize: 15, width: 22 }}>{item.kind === "dir" ? "📁" : "📄"}</Text>
+            <Text style={{ ...type_.body, flex: 1 }} numberOfLines={1}>
               {item.name}
             </Text>
             {item.kind === "file" ? (
-              <Text style={{ color: colors.dim, fontSize: 11 }}>{item.size} B</Text>
-            ) : null}
+              <Text style={type_.caption}>{formatSize(item.size)}</Text>
+            ) : (
+              <Text style={{ color: colors.faint, fontSize: 14 }}>›</Text>
+            )}
           </Pressable>
         )}
       />
     </View>
   );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
 }

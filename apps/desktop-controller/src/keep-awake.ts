@@ -92,16 +92,25 @@ export function defaultStrategy(): AwakeStrategy {
  * Prevents system sleep while enabled (phone toggle, PLAN §1 item 30).
  * Windows: SetThreadExecutionState (per-process, auto-clears on exit).
  * macOS: caffeinate. Linux: systemd-inhibit. Display sleep stays allowed —
- * only the system is kept awake for agents.
+ * only the system is kept awake for agents. The strategy is re-asserted every
+ * 60s while enabled (survives resume-from-sleep clearing the flag), and the
+ * desired state can be persisted/restored across controller restarts.
  */
 export class KeepAwake {
   readonly #strategy: AwakeStrategy;
   #enabled = false;
   #until: number | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
+  #reassert: ReturnType<typeof setInterval> | null = null;
+  #onChange: ((state: KeepAwakeState) => void) | null = null;
 
   constructor(strategy?: AwakeStrategy) {
     this.#strategy = strategy ?? defaultStrategy();
+  }
+
+  /** Called on every enable/disable — used to persist desired state. */
+  onChange(listener: (state: KeepAwakeState) => void): void {
+    this.#onChange = listener;
   }
 
   get supported(): boolean {
@@ -128,15 +137,27 @@ export class KeepAwake {
     } else {
       this.#until = null;
     }
-    return this.state();
+    if (!this.#reassert) {
+      this.#reassert = setInterval(() => {
+        if (this.#enabled) this.#strategy.activate();
+      }, 60_000);
+      (this.#reassert as { unref?: () => void }).unref?.();
+    }
+    const state = this.state();
+    this.#onChange?.(state);
+    return state;
   }
 
   disable(): KeepAwakeState {
     this.#clearTimer();
+    if (this.#reassert) clearInterval(this.#reassert);
+    this.#reassert = null;
     if (this.supported && this.#enabled) this.#strategy.deactivate();
     this.#enabled = false;
     this.#until = null;
-    return this.state();
+    const state = this.state();
+    this.#onChange?.(state);
+    return state;
   }
 
   #clearTimer(): void {

@@ -1,18 +1,29 @@
 import type { AgentSession } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { agentList, agentStart, useApp, watchAgentStatus } from "../../../src/machines.ts";
-import { colors } from "../../../src/theme.ts";
+import {
+  Button,
+  Card,
+  colors,
+  EmptyState,
+  Pill,
+  type PillTone,
+  SectionLabel,
+  StatusDot,
+  space,
+  type_,
+} from "../../../src/theme.tsx";
 
-const statusColor: Record<string, string> = {
-  starting: colors.warn,
-  running: colors.warn,
-  awaiting_approval: colors.bad,
-  idle: colors.ok,
-  completed: colors.ok,
-  failed: colors.bad,
-  cancelled: colors.dim,
+const statusTone: Record<string, PillTone> = {
+  starting: "warn",
+  running: "warn",
+  awaiting_approval: "bad",
+  idle: "ok",
+  completed: "ok",
+  failed: "bad",
+  cancelled: "dim",
 };
 
 export default function AgentsHome() {
@@ -67,103 +78,96 @@ export default function AgentsHome() {
   };
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 14, gap: 12 }}>
-      {providers.map((p) => (
-        <Text key={p.id} style={{ color: p.available ? colors.ok : colors.bad, fontSize: 12 }}>
-          {p.available ? "●" : "○"} {p.id} {p.detail ? `· ${p.detail}` : ""}
-        </Text>
-      ))}
-      {error ? <Text style={{ color: colors.bad }}>{error}</Text> : null}
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: space.lg, paddingBottom: space.xxl }}
+    >
+      <Card style={{ gap: space.md }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <StatusDot color={copilot?.available ? colors.ok : colors.bad} />
+          <Text style={{ ...type_.heading, flex: 1 }}>GitHub Copilot</Text>
+          <Pill tone={copilot?.available ? "ok" : "bad"}>
+            {copilot?.available ? "ready" : (copilot?.detail ?? "checking…")}
+          </Pill>
+        </View>
 
-      <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>New session</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8 }}
-      >
-        {projects.map((project) => (
-          <Pressable
-            key={project.project_id}
-            onPress={() => setProjectId(project.project_id)}
-            style={{
-              borderColor: project.project_id === chosenProject ? colors.accent : colors.border,
-              borderWidth: 1,
-              borderRadius: 8,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-            }}
-          >
-            <Text
-              style={{
-                color: project.project_id === chosenProject ? colors.accent : colors.dim,
-                fontSize: 13,
-              }}
-            >
-              {project.name}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-      <TextInput
-        value={prompt}
-        onChangeText={setPrompt}
-        placeholder="What should Copilot do?"
-        placeholderTextColor={colors.dim}
-        multiline
-        style={{
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-          borderWidth: 1,
-          borderRadius: 8,
-          color: colors.text,
-          padding: 10,
-          minHeight: 60,
-        }}
-      />
-      <Pressable
-        disabled={busy || !copilot?.available || prompt.trim().length === 0 || !chosenProject}
-        onPress={() => void start()}
-        style={{
-          backgroundColor: prompt.trim() && copilot?.available ? colors.accent : colors.card,
-          borderRadius: 8,
-          alignItems: "center",
-          paddingVertical: 12,
-        }}
-      >
-        <Text
-          style={{
-            color: prompt.trim() && copilot?.available ? colors.bg : colors.dim,
-            fontWeight: "600",
-          }}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: space.sm }}
         >
-          {busy ? "starting…" : "Start Copilot session"}
-        </Text>
-      </Pressable>
+          {projects.map((project) => {
+            const active = project.project_id === chosenProject;
+            return (
+              <Pressable
+                key={project.project_id}
+                onPress={() => setProjectId(project.project_id)}
+                style={{
+                  backgroundColor: active ? colors.accentSoft : "transparent",
+                  borderColor: active ? colors.accent : colors.border,
+                  borderWidth: 1,
+                  borderRadius: 999,
+                  paddingHorizontal: 14,
+                  paddingVertical: 6,
+                }}
+              >
+                <Text style={{ color: active ? colors.accent : colors.dim, fontSize: 13 }}>
+                  {project.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
-      <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>Sessions</Text>
+        <TextInput
+          value={prompt}
+          onChangeText={setPrompt}
+          placeholder="What should Copilot do?"
+          placeholderTextColor={colors.faint}
+          multiline
+          style={{
+            backgroundColor: colors.bg,
+            borderColor: colors.borderSoft,
+            borderWidth: 1,
+            borderRadius: 12,
+            color: colors.text,
+            padding: space.md,
+            minHeight: 64,
+            fontSize: 14,
+          }}
+        />
+        <Button
+          disabled={busy || !copilot?.available || prompt.trim().length === 0 || !chosenProject}
+          label={busy ? "starting…" : "Start session"}
+          onPress={() => void start()}
+        />
+        {error ? <Text style={{ ...type_.caption, color: colors.bad }}>{error}</Text> : null}
+      </Card>
+
+      <SectionLabel>Sessions</SectionLabel>
       {sessions.map((session) => (
-        <Pressable
+        <Card
           key={session.session_id}
           onPress={() => router.push(`/agent/${machine}/${session.session_id}`)}
-          style={{
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderWidth: 1,
-            borderRadius: 10,
-            padding: 12,
-            gap: 4,
-          }}
+          style={{ marginBottom: space.sm, gap: space.xs }}
         >
-          <Text style={{ color: colors.text, fontSize: 14 }} numberOfLines={1}>
+          <Text style={type_.body} numberOfLines={1}>
             {session.title}
           </Text>
-          <Text style={{ color: statusColor[session.status] ?? colors.dim, fontSize: 12 }}>
-            {session.status} · {session.provider}
-          </Text>
-        </Pressable>
+          <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
+            <Pill tone={statusTone[session.status] ?? "dim"}>
+              {session.status.replaceAll("_", " ")}
+            </Pill>
+            <Text style={type_.caption}>{session.provider}</Text>
+          </View>
+        </Card>
       ))}
       {sessions.length === 0 ? (
-        <Text style={{ color: colors.dim }}>No sessions yet on this machine.</Text>
+        <EmptyState
+          icon="✦"
+          title="No sessions yet"
+          caption="Sessions run on your computer and keep working even when this phone disconnects."
+        />
       ) : null}
     </ScrollView>
   );
