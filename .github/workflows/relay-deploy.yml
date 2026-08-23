@@ -1,0 +1,23 @@
+name: Relay deploy (S7 placeholder)
+
+# CD for the future S7 relay. Until the relay exists this only proves the AWS
+# wiring works. Separation rules: dedicated IAM user (rdc-dev), every resource
+# created by this pipeline MUST be prefixed `rdc-` and live in its own
+# CloudFormation stack — never touch other stacks in the account.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify-aws-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+      - name: Who am I (read-only)
+        run: aws sts get-caller-identity
+      - name: Relay not built yet
+        run: echo "S7 relay deploy will live here — rdc-* prefixed resources, own stack."
