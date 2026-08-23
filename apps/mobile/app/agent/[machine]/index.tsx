@@ -44,7 +44,11 @@ function relativeTime(iso: string): string {
 }
 
 export default function AgentsHome() {
-  const { machine } = useLocalSearchParams<{ machine: string }>();
+  const { machine, project: focusParam } = useLocalSearchParams<{
+    machine: string;
+    project?: string;
+  }>();
+  const focusProject = focusParam ? decodeURIComponent(focusParam) : null;
   const router = useRouter();
   const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -81,9 +85,13 @@ export default function AgentsHome() {
 
   if (!machine) return null;
   const copilot = providers.find((p) => p.id === "copilot");
-  const chosenProject = projects.find((p) => p.project_id === (projectId ?? "")) ?? projects[0];
-  const ongoing = sessions.filter((s) => LIVE.has(s.status));
-  const history = sessions.filter((s) => !LIVE.has(s.status));
+  const chosenProject =
+    projects.find((p) => p.project_id === (projectId ?? focusProject ?? "")) ?? projects[0];
+  const inScope = (pid: string | null) => focusProject === null || pid === focusProject;
+  const scopedSessions = sessions.filter((s) => inScope(s.project_id));
+  const scopedExternal = external.filter((e) => inScope(e.project_id));
+  const ongoing = scopedSessions.filter((s) => LIVE.has(s.status));
+  const history = scopedSessions.filter((s) => !LIVE.has(s.status));
   const projectName = (id: string) =>
     projects.find((p) => p.project_id === id)?.name ?? id.slice(0, 12);
 
@@ -151,6 +159,26 @@ export default function AgentsHome() {
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: space.lg, paddingBottom: space.xxl }}
     >
+      {focusProject ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: space.md,
+            gap: space.sm,
+          }}
+        >
+          <Text style={{ ...type_.title, flex: 1 }} numberOfLines={1}>
+            ✦ {projectName(focusProject)}
+          </Text>
+          <Text
+            style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}
+            onPress={() => router.setParams({ project: undefined })}
+          >
+            All chats ›
+          </Text>
+        </View>
+      ) : null}
       {/* composer — "New session in <project> with Copilot" */}
       <Card style={{ gap: space.md }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -188,7 +216,7 @@ export default function AgentsHome() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: space.sm }}
         >
-          {projects.map((project) => {
+          {(focusProject ? [] : projects).map((project) => {
             const active = project.project_id === chosenProject?.project_id;
             return (
               <Pressable
@@ -232,10 +260,10 @@ export default function AgentsHome() {
         </>
       ) : null}
 
-      {external.length > 0 ? (
+      {scopedExternal.length > 0 ? (
         <>
           <SectionLabel>From your laptop</SectionLabel>
-          {external.map((item) => {
+          {scopedExternal.map((item) => {
             const resumable = item.project_id !== null && copilot?.available;
             const isVsCode = item.provider === "vscode-chat";
             return (

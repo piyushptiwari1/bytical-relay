@@ -128,14 +128,21 @@ export default function MachineDetail() {
         </Card>
       ))}
 
-      <SectionLabel>Projects</SectionLabel>
+      <SectionLabel>Projects — tap for chats</SectionLabel>
       {(rt?.projects ?? []).map((project) => (
-        <Card key={project.project_id} style={{ gap: space.xs }}>
+        <Card
+          key={project.project_id}
+          onPress={() =>
+            router.push(`/agent/${id}?project=${encodeURIComponent(project.project_id)}`)
+          }
+          style={{ gap: space.xs }}
+        >
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
             <Text style={{ ...type_.heading, flex: 1 }} numberOfLines={1}>
-              {project.name}
+              ✦ {project.name}
             </Text>
             {project.wsl ? <Pill tone="dim">WSL</Pill> : null}
+            <Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>
           </View>
           <Text style={type_.caption} numberOfLines={1}>
             {project.root_path}

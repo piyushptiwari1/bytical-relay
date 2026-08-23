@@ -1,5 +1,5 @@
 // Inspect VS Code chat session file shape (keys + first request/response snippet).
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const storage = path.join(process.env.APPDATA ?? "", "Code/User/workspaceStorage");

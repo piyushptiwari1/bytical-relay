@@ -10,6 +10,7 @@ import {
   EditorList,
   EditorOpenFile,
   type EditorState,
+  eventEnvelopeFromRecord,
   type FileEntry,
   FileList,
   FileRead,
@@ -27,6 +28,7 @@ import {
   MachineStatus,
   type Project,
   ProjectList,
+  SyncReplay,
 } from "@rdc/protocol";
 import { fromB64 } from "@rdc/security/client";
 import { type ClientState, ControllerClient } from "@rdc/transport";
@@ -326,7 +328,31 @@ export const approvalRespond = (
     option_id: optionId,
   });
 
-/** Subscribe to a session's journaled stream; events replay from seq 0. */
+/**
+ * Full transcript fetch, independent of the live stream cursor — reopening a
+ * chat always shows complete history. Returns the events and the last seq so
+ * the caller can filter live pushes.
+ */
+export async function loadAgentTranscript(
+  machineId: string,
+  sessionId: string,
+): Promise<{ events: KnownMessage[]; lastSeq: number }> {
+  const client = requireClient(machineId);
+  const stream = agentStream(sessionId);
+  const events: KnownMessage[] = [];
+  let since = 0;
+  for (;;) {
+    const page = await client.command(SyncReplay, { stream, since, limit: 500 });
+    for (const record of page.events) {
+      const envelope = eventEnvelopeFromRecord(record);
+      if (envelope.ok) events.push(envelope.value);
+      since = record.seq;
+    }
+    if (page.events.length === 0 || since >= page.head_seq) return { events, lastSeq: since };
+  }
+}
+
+/** Subscribe to a session's journaled stream for live pushes. */
 export function watchAgentSession(
   machineId: string,
   sessionId: string,

@@ -6,6 +6,7 @@ import {
   agentCancel,
   agentPrompt,
   approvalRespond,
+  loadAgentTranscript,
   useApp,
   watchAgentSession,
   watchAgentStatus,
@@ -154,9 +155,44 @@ export default function AgentSessionScreen() {
     };
 
     setBlocks([]);
+    // full history first (immune to stream-cursor state), then live pushes beyond it
+    let lastSeq = -1;
+    let historyDone = false;
+    const backlog: Array<{ seq: number; msg: unknown }> = [];
+    const seqOf = (msg: unknown): number =>
+      typeof (msg as { seq?: number }).seq === "number" ? (msg as { seq: number }).seq : -1;
+
     const unsubEvents = watchAgentSession(machine, session, (msg) => {
-      setBlocks((prev) => apply(prev, msg));
+      const seq = seqOf(msg);
+      if (!historyDone) {
+        backlog.push({ seq, msg });
+        return;
+      }
+      if (seq > lastSeq) {
+        lastSeq = seq;
+        setBlocks((prev) => apply(prev, msg));
+      }
     });
+    void loadAgentTranscript(machine, session)
+      .then(({ events, lastSeq: replayedTo }) => {
+        lastSeq = replayedTo;
+        setBlocks(() => {
+          let next: Block[] = [];
+          for (const event of events) next = apply(next, event);
+          for (const item of backlog) {
+            if (item.seq > lastSeq) {
+              lastSeq = item.seq;
+              next = apply(next, item.msg);
+            }
+          }
+          return next;
+        });
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => {
+        historyDone = true;
+      });
+
     const unsubStatus = watchAgentStatus(machine, (s) => {
       if (s.session_id === session) {
         setStatus(s.status);
