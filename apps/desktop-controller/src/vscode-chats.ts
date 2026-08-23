@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -31,6 +31,8 @@ interface SessionFile {
 export class VsCodeChatReader {
   readonly #roots: string[];
   #index = new Map<string, SessionFile>();
+  /** mtime+size keyed summary cache — unchanged files are never re-parsed. */
+  #cache = new Map<string, { mtimeMs: number; size: number; summary: VsCodeChatSummary | null }>();
 
   constructor(roots?: string[]) {
     this.#roots = roots ?? defaultStorageRoots();
@@ -52,7 +54,9 @@ export class VsCodeChatReader {
         if (!workspacePath) continue;
         let files: string[] = [];
         try {
-          files = readdirSync(path.join(dir, "chatSessions")).filter((f) => f.endsWith(".json"));
+          files = readdirSync(path.join(dir, "chatSessions")).filter(
+            (f) => f.endsWith(".json") || f.endsWith(".jsonl"),
+          );
         } catch {
           continue;
         }
@@ -70,52 +74,171 @@ export class VsCodeChatReader {
   transcript(id: string): { workspacePath: string; turns: VsCodeChatTurn[] } | null {
     const entry = this.#index.get(id);
     if (!entry) return null;
-    try {
-      const session = JSON.parse(readFileSync(entry.file, "utf8")) as {
-        requests?: Array<{
-          message?: { text?: string };
-          response?: Array<{ kind?: string; value?: unknown }>;
-        }>;
-      };
-      const turns: VsCodeChatTurn[] = [];
-      for (const request of session.requests ?? []) {
-        const userText = request.message?.text?.trim();
-        if (userText) turns.push({ role: "user", text: userText });
-        const assistantText = responseText(request.response);
-        if (assistantText) turns.push({ role: "assistant", text: assistantText });
-      }
-      return { workspacePath: entry.workspacePath, turns };
-    } catch {
-      return null;
+    const session = loadSessionFile(entry.file);
+    if (!session) return null;
+    const turns: VsCodeChatTurn[] = [];
+    for (const request of session.requests) {
+      const userText = request.message?.text?.trim();
+      if (userText) turns.push({ role: "user", text: userText });
+      const assistantText = responseText(request.response);
+      if (assistantText) turns.push({ role: "assistant", text: assistantText });
     }
+    return { workspacePath: entry.workspacePath, turns };
   }
 
   #summarize(file: string, workspacePath: string): VsCodeChatSummary | null {
+    let stat: { mtimeMs: number; size: number };
     try {
-      const session = JSON.parse(readFileSync(file, "utf8")) as {
-        sessionId?: string;
-        customTitle?: string;
-        lastMessageDate?: number | string;
-        requests?: Array<{ message?: { text?: string } }>;
-      };
-      const requests = session.requests ?? [];
-      if (requests.length === 0) return null;
-      const id = `vsc_${session.sessionId ?? path.basename(file, ".json")}`;
-      const firstText = requests[0]?.message?.text ?? "VS Code chat";
-      const updated = session.lastMessageDate
-        ? new Date(session.lastMessageDate).toISOString()
-        : statSync(file).mtime.toISOString();
-      this.#index.set(id, { file, workspacePath });
+      stat = statSync(file);
+    } catch {
+      return null;
+    }
+    const cached = this.#cache.get(file);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      if (cached.summary) this.#index.set(cached.summary.id, { file, workspacePath });
+      return cached.summary;
+    }
+    const summary = this.#buildSummary(file, workspacePath, stat);
+    this.#cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
+    if (summary) this.#index.set(summary.id, { file, workspacePath });
+    return summary;
+  }
+
+  #buildSummary(
+    file: string,
+    workspacePath: string,
+    stat: { mtimeMs: number; size: number },
+  ): VsCodeChatSummary | null {
+    // Listing path: for .jsonl parse ONLY the snapshot line (cheap); full delta
+    // replay happens in transcript(). Legacy .json is small — full parse is fine.
+    // Some sessions snapshot BEFORE the first request (requests live only in
+    // deltas) — full-parse those, the result is cached by mtime anyway.
+    let session = file.endsWith(".jsonl") ? loadSnapshotLine(file) : loadSessionFile(file);
+    if (session && session.requests.length === 0 && file.endsWith(".jsonl")) {
+      session = loadSessionFile(file);
+    }
+    if (!session || session.requests.length === 0) return null;
+    try {
+      const id = `vsc_${session.sessionId ?? path.basename(file).replace(/\.jsonl?$/, "")}`;
+      const firstText = session.requests[0]?.message?.text ?? "VS Code chat";
+      const updated = new Date(
+        Math.max(
+          stat.mtimeMs,
+          session.lastMessageDate ? new Date(session.lastMessageDate).getTime() : 0,
+        ),
+      ).toISOString();
       return {
         id,
         title: (session.customTitle?.trim() || firstText).slice(0, 100),
         workspace_path: workspacePath,
         updated_at: updated,
-        turns: requests.length,
+        turns: session.requests.length,
       };
     } catch {
       return null;
     }
+  }
+}
+
+interface ChatRequest {
+  requestId?: string;
+  message?: { text?: string };
+  response?: Array<{ kind?: string; value?: unknown }>;
+}
+
+interface ChatSessionData {
+  sessionId?: string;
+  customTitle?: string;
+  lastMessageDate?: number | string;
+  requests: ChatRequest[];
+}
+
+const MAX_SESSION_FILE = 20 * 1024 * 1024;
+
+/** Read only the first line of a .jsonl file (the kind:0 session snapshot). */
+function loadSnapshotLine(file: string): ChatSessionData | null {
+  let fd: number;
+  try {
+    fd = openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const chunk = Buffer.alloc(256 * 1024);
+    const parts: Buffer[] = [];
+    let pos = 0;
+    while (pos < MAX_SESSION_FILE) {
+      const n = readSync(fd, chunk, 0, chunk.length, pos);
+      if (n <= 0) break;
+      const newlineAt = chunk.subarray(0, n).indexOf(0x0a);
+      if (newlineAt >= 0) {
+        parts.push(Buffer.from(chunk.subarray(0, newlineAt)));
+        break;
+      }
+      parts.push(Buffer.from(chunk.subarray(0, n)));
+      pos += n;
+    }
+    if (parts.length === 0) return null;
+    const entry = JSON.parse(Buffer.concat(parts).toString("utf8")) as {
+      kind?: number;
+      v?: unknown;
+    };
+    if (entry.kind !== 0 || !entry.v || typeof entry.v !== "object") return null;
+    const snapshot = entry.v as Partial<ChatSessionData>;
+    return { ...snapshot, requests: snapshot.requests ?? [] };
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Load either format: legacy .json (one object) or current .jsonl (line 0 =
+ * {kind:0, v:<session snapshot>}, later kind:2 array deltas may carry FULL new
+ * request objects appended after the snapshot). Unknown delta shapes are
+ * ignored — format drift degrades to "older snapshot", never a crash.
+ */
+function loadSessionFile(file: string): ChatSessionData | null {
+  try {
+    if (statSync(file).size > MAX_SESSION_FILE) return null;
+    const raw = readFileSync(file, "utf8");
+    if (!file.endsWith(".jsonl")) {
+      const parsed = JSON.parse(raw) as Partial<ChatSessionData>;
+      return { ...parsed, requests: parsed.requests ?? [] };
+    }
+    const lines = raw.split("\n").filter((l) => l.trim().length > 0);
+    let base: ChatSessionData | null = null;
+    const seen = new Set<string>();
+    for (const line of lines) {
+      let entry: { kind?: number; v?: unknown };
+      try {
+        entry = JSON.parse(line) as { kind?: number; v?: unknown };
+      } catch {
+        continue;
+      }
+      if (entry.kind === 0 && entry.v && typeof entry.v === "object") {
+        const snapshot = entry.v as Partial<ChatSessionData>;
+        base = { ...snapshot, requests: [...(snapshot.requests ?? [])] };
+        for (const request of base.requests) {
+          if (request.requestId) seen.add(request.requestId);
+        }
+        continue;
+      }
+      if (entry.kind === 2 && Array.isArray(entry.v) && base) {
+        for (const item of entry.v as ChatRequest[]) {
+          if (item && typeof item === "object" && item.requestId && item.message) {
+            if (!seen.has(item.requestId)) {
+              seen.add(item.requestId);
+              base.requests.push(item);
+            }
+          }
+        }
+      }
+    }
+    return base;
+  } catch {
+    return null;
   }
 }
 

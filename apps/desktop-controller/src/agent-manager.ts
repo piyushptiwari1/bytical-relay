@@ -334,11 +334,16 @@ export class AgentManager {
 
   #projectIdForCwd(cwd: string): string | null {
     const normalized = normalizePath(cwd);
+    let containedProject: string | null = null;
     for (const project of this.deps.fsIndex.listProjects()) {
       const root = normalizePath(project.root_path);
       if (normalized === root || normalized.startsWith(`${root}/`)) return project.project_id;
+      // workspace folder is a PARENT of the project root (VS Code opened the umbrella dir)
+      if (containedProject === null && root.startsWith(`${normalized}/`)) {
+        containedProject = project.project_id;
+      }
     }
-    return null;
+    return containedProject;
   }
 
   async prompt(sessionId: string, text: string): Promise<boolean> {
