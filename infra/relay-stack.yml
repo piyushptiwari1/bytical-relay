@@ -16,6 +16,11 @@ Parameters:
   InstanceType:
     Type: String
     Default: t4g.nano
+  AzIndex:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1, 2]
+    Description: Which AZ in the region to use (t4g capacity varies per AZ)
   Al2023Arm64Ami:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
@@ -46,7 +51,7 @@ Resources:
       VpcId: !Ref RdcVpc
       CidrBlock: 10.99.0.0/25
       MapPublicIpOnLaunch: true
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select [!Ref AzIndex, !GetAZs ""]
       Tags: [{ Key: Name, Value: rdc-relay-subnet }]
 
   RdcRouteTable:
