@@ -140,14 +140,21 @@ export async function buildServer(deps: ServerDeps): Promise<{
   await app.register(websocket);
   const dispatcher = new ControllerDispatcher(deps);
   const clients = new Map<WsLike, ConnectedClient>();
-  const allowedHosts = collectAllowedHostnames();
+  // Wi-Fi roaming/DHCP changes IPs while running — recompute, cached briefly.
+  let allowedHosts = collectAllowedHostnames();
+  let allowedHostsAt = Date.now();
+  const freshAllowedHosts = (): Set<string> => {
+    if (Date.now() - allowedHostsAt > 5_000) {
+      allowedHosts = collectAllowedHostnames();
+      allowedHostsAt = Date.now();
+    }
+    return allowedHosts;
+  };
   const requestDevices = new WeakMap<FastifyRequest, DeviceRecord>();
 
   app.addHook("onRequest", async (req, reply) => {
-    if (
-      !hostAllowed(req.headers.host, allowedHosts) ||
-      !originAllowed(req.headers.origin, allowedHosts)
-    ) {
+    const hosts = freshAllowedHosts();
+    if (!hostAllowed(req.headers.host, hosts) || !originAllowed(req.headers.origin, hosts)) {
       return reply.code(403).send({ error: "forbidden host/origin" });
     }
     const routePath = req.url.split("?")[0];
@@ -185,7 +192,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
     const address = app.server.address();
     const port = typeof address === "object" && address !== null ? address.port : 0;
     // Only LAN-reachable addresses belong in the QR — loopback is the phone's own.
-    const lanHosts = [...allowedHosts].filter(
+    const lanHosts = [...freshAllowedHosts()].filter(
       (h) => h !== "::1" && h !== "[::1]" && h !== "localhost" && h !== "127.0.0.1",
     );
     const addrs = (lanHosts.length > 0 ? lanHosts : ["127.0.0.1"]).map((h) => `ws://${h}:${port}`);
