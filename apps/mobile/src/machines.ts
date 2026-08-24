@@ -27,6 +27,7 @@ import {
   type MachineHealth,
   MachineKeepAwake,
   MachineStatus,
+  NotifyRegister,
   type Project,
   ProjectList,
   SyncReplay,
@@ -42,6 +43,7 @@ import {
 import { fromB64 } from "@rdc/security/client";
 import { type ClientState, ControllerClient } from "@rdc/transport";
 import { create } from "zustand";
+import { expoPushTokenOrNull, onAgentStatus } from "./notifications.ts";
 import { loadMachines, removeMachine, type StoredMachine, saveMachine } from "./storage.ts";
 
 export type MachineStatusResult = MachineHealth & {
@@ -132,11 +134,18 @@ export const useApp = create<AppState>((set, get) => {
           client.events.on("state", (state) => patchRuntime(machineId, { state }));
           client.events.on("event", (msg) => {
             if (msg.type === "machine.health") patchRuntime(machineId, { health: msg.payload });
+            if (msg.type === "agent.status_changed") onAgentStatus(machineId, msg.payload.session);
             if (msg.type === "editor.state_changed")
               patchRuntime(machineId, { editors: msg.payload.editors });
           });
           patchRuntime(machineId, { state: client.state, transport: candidate.transport });
           await get().refreshMachine(machineId);
+          // dormant in Expo Go (no token); dev builds register for killed-app push
+          void expoPushTokenOrNull()
+            .then((token) =>
+              token ? client.command(NotifyRegister, { expo_push_token: token }) : null,
+            )
+            .catch(() => {});
           return;
         } catch {
           client.close();

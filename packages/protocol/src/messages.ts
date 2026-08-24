@@ -120,6 +120,20 @@ export const MachineKeepAwake = defineCommand(
   KeepAwakeStateSchema,
 );
 
+// ── Notifications (S7b: Expo push for killed-app delivery via a dev build) ──
+export const NotifyRegister = defineCommand(
+  "notify.register",
+  z.object({ expo_push_token: z.string().min(8) }),
+  z.object({ registered: z.boolean() }),
+);
+
+/** Sends a test push to the caller's registered token; returns Expo's ticket. */
+export const NotifyTest = defineCommand(
+  "notify.test",
+  z.object({}),
+  z.object({ sent: z.boolean(), ticket: z.string() }),
+);
+
 /** Ephemeral telemetry push (not journaled) — stream "machine", seq = broadcast counter. */
 export const MachineHealthEvent = defineEvent(
   "machine.health",
@@ -435,6 +449,10 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   MachineStatus.response,
   MachineKeepAwake.request,
   MachineKeepAwake.response,
+  NotifyRegister.request,
+  NotifyRegister.response,
+  NotifyTest.request,
+  NotifyTest.response,
   MachineHealthEvent.schema,
   DebugEcho.request,
   DebugEcho.response,

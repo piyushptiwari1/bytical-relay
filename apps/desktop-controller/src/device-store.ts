@@ -28,6 +28,11 @@ export class DeviceStore {
         created_at TEXT NOT NULL,
         revoked INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS push_tokens (
+        device_id TEXT PRIMARY KEY,
+        token TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -65,6 +70,32 @@ export class DeviceStore {
       .prepare("UPDATE devices SET revoked = 1 WHERE device_id = ?")
       .run(deviceId);
     return Number(info.changes) > 0;
+  }
+
+  setPushToken(deviceId: string, token: string): void {
+    this.#db
+      .prepare(
+        "INSERT INTO push_tokens (device_id, token, updated_at) VALUES (?, ?, ?) ON CONFLICT(device_id) DO UPDATE SET token = excluded.token, updated_at = excluded.updated_at",
+      )
+      .run(deviceId, token, new Date().toISOString());
+  }
+
+  pushTokenOf(deviceId: string): string | undefined {
+    const row = this.#db
+      .prepare("SELECT token FROM push_tokens WHERE device_id = ?")
+      .get(deviceId) as { token?: string } | undefined;
+    return row?.token;
+  }
+
+  allPushTokens(): string[] {
+    const rows = this.#db.prepare("SELECT token FROM push_tokens").all() as Array<{
+      token: string;
+    }>;
+    return rows.map((r) => r.token);
+  }
+
+  removePushToken(token: string): void {
+    this.#db.prepare("DELETE FROM push_tokens WHERE token = ?").run(token);
   }
 
   #toRecord(row: Record<string, unknown>): DeviceRecord {

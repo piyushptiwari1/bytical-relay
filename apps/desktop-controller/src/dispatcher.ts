@@ -31,6 +31,8 @@ import {
   type KnownMessage,
   MachineKeepAwake,
   MachineStatus,
+  NotifyRegister,
+  NotifyTest,
   negotiateVersion,
   ProjectList,
   parseInbound,
@@ -49,9 +51,11 @@ import {
 import { nowIso } from "@rdc/shared";
 import type { TerminalManager } from "@rdc/terminal";
 import type { AgentManager } from "./agent-manager.ts";
+import type { DeviceStore } from "./device-store.ts";
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
+import { sendExpoPush } from "./push.ts";
 
 export interface ClientContext {
   helloDone: boolean;
@@ -76,6 +80,8 @@ export interface DispatcherDeps {
   editors: EditorRegistry;
   agents: AgentManager;
   terminals: TerminalManager;
+  /** S7b: push-token registry (paired-device notifications) */
+  devices?: DeviceStore;
   /** S7: advertised to paired phones via machine.status (over E2EE) */
   relay?: { url: string; token: string };
 }
@@ -342,6 +348,40 @@ export class ControllerDispatcher {
           ? this.deps.keepAwake.enable(msg.payload.ttl_minutes)
           : this.deps.keepAwake.disable();
         return [MachineKeepAwake.createOk(msg.command_id, state)];
+      }
+      case "notify.register": {
+        if (!this.deps.devices || !ctx.deviceId) {
+          return [
+            NotifyRegister.createError(
+              msg.command_id,
+              protocolError("FORBIDDEN", "no device identity on this connection"),
+            ),
+          ];
+        }
+        this.deps.devices.setPushToken(ctx.deviceId, msg.payload.expo_push_token);
+        return [NotifyRegister.createOk(msg.command_id, { registered: true })];
+      }
+      case "notify.test": {
+        const token = ctx.deviceId ? this.deps.devices?.pushTokenOf(ctx.deviceId) : undefined;
+        if (!token) {
+          return [
+            NotifyTest.createError(
+              msg.command_id,
+              protocolError("NOT_FOUND", "no push token registered for this device"),
+            ),
+          ];
+        }
+        const tickets = await sendExpoPush([token], {
+          title: "rdc test notification",
+          body: "Push pipeline works end-to-end.",
+        });
+        const ticket = tickets[0];
+        return [
+          NotifyTest.createOk(msg.command_id, {
+            sent: ticket?.status === "ok",
+            ticket: JSON.stringify(ticket ?? {}),
+          }),
+        ];
       }
       case "debug.echo": {
         const cached = this.deps.eventStore.getCommandResult(msg.command_id);

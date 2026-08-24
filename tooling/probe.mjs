@@ -159,6 +159,12 @@ const suites = {
     const port = process.env.RDC_PROBE_PORT ?? 8347;
     await relaySuite(t, { port, relayUrl, relayToken });
   },
+
+  /** S7b: push-token registration + live Expo Push API round-trip. */
+  async push(_client, t) {
+    const { pushSuite } = await import("./probe-relay.mjs");
+    await pushSuite(t, { port: process.env.RDC_PROBE_PORT ?? 8347 });
+  },
 };
 
 const DEFAULT = ["status", "chats", "terminal"];
@@ -167,7 +173,7 @@ async function main() {
   const argv = process.argv.slice(2);
   const names =
     argv[0] === "all"
-      ? Object.keys(suites).filter((s) => !["resume", "archive", "relay"].includes(s))
+      ? Object.keys(suites).filter((s) => !["resume", "archive", "relay", "push"].includes(s))
       : argv.filter((a) => suites[a]);
   const chosen = names.length > 0 ? names : DEFAULT;
   const extraArgs = argv.slice(argv.findIndex((a) => suites[a]) + 1);

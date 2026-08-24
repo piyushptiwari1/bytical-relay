@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useApp } from "../src/machines.ts";
+import { setupNotifications } from "../src/notifications.ts";
 import { colors } from "../src/theme.tsx";
 
 export default function RootLayout() {
@@ -10,6 +11,7 @@ export default function RootLayout() {
   const hydrate = useApp((s) => s.hydrate);
 
   useEffect(() => {
+    void setupNotifications().catch(() => {});
     hydrate()
       .then(() => setReady(true))
       .catch(() => setReady(true));

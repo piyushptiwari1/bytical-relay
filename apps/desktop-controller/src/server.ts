@@ -31,6 +31,7 @@ import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
 import type { PairingCoordinator } from "./pairing-coordinator.ts";
+import { sendExpoPush } from "./push.ts";
 
 export interface ServerDeps {
   machineId: string;
@@ -398,12 +399,45 @@ export async function buildServer(deps: ServerDeps): Promise<{
     }
   });
   let agentSeq = 0;
+  const pushStatus = new Map<string, string>();
   deps.agents.emitter.on("status", (session) => {
     agentSeq += 1;
     const json = JSON.stringify(AgentStatusChanged.create("agent", agentSeq, { session }));
     for (const [, client] of clients) {
       if (client.ctx.helloDone) client.sendJson(json);
     }
+    // S7b: remote push for killed-app delivery (no-op until tokens registered)
+    const previous = pushStatus.get(session.session_id);
+    pushStatus.set(session.session_id, session.status);
+    if (previous === session.status) return;
+    const title =
+      session.status === "awaiting_approval"
+        ? "🔐 Approval needed"
+        : session.status === "failed"
+          ? "⚠️ Agent failed"
+          : session.status === "idle" && previous === "running"
+            ? "✅ Agent finished"
+            : null;
+    if (!title) return;
+    const tokens = deps.devices.allPushTokens();
+    if (tokens.length === 0) return;
+    void sendExpoPush(tokens, {
+      title,
+      body: session.title?.slice(0, 100) || "Agent session",
+      data: { machine: deps.machineId, session: session.session_id },
+    })
+      .then((tickets) => {
+        // tickets align with tokens — drop dead registrations so we stop retrying
+        tickets.forEach((ticket, i) => {
+          const token = tokens[i];
+          if (token && ticket.details?.error === "DeviceNotRegistered") {
+            deps.devices.removePushToken(token);
+          }
+        });
+      })
+      .catch(() => {
+        // push is best-effort; local notifications still cover attached devices
+      });
   });
 
   // Live push: terminal output pings + close events (ephemeral).

@@ -5,6 +5,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  NotifyRegister,
+  NotifyTest,
   ProjectList,
   SysPing,
   TerminalCreate,
@@ -60,6 +62,51 @@ export async function ensureProbeDevice(port) {
   };
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   return state;
+}
+
+/** S7b push suite: register token as a paired device, then notify.test proves
+ * the controller→Expo Push API round-trip live (fake token → DeviceNotRegistered). */
+export async function pushSuite(t, { port }) {
+  let device;
+  await t.expect(
+    "PU1",
+    "probe device paired",
+    async () => {
+      device = await ensureProbeDevice(port);
+      return device.device_id;
+    },
+    { fatal: true },
+  );
+  const client = new ControllerClient({
+    url: `ws://127.0.0.1:${port}/ws`,
+    token: device.token,
+    deviceId: device.device_id,
+    keys: {
+      keypair: { publicKey: fromB64(device.kx_pub), privateKey: fromB64(device.kx_priv) },
+      controllerKxPub: fromB64(device.controller_kx_pub),
+    },
+    backoff: { baseMs: 500, capMs: 2000 },
+  });
+  try {
+    await client.connect(10_000);
+    await t.expect("PU2", "notify.register stores push token", async () => {
+      const { registered } = await client.command(NotifyRegister, {
+        expo_push_token: "ExponentPushToken[probe-fake-0000000000]",
+      });
+      if (!registered) throw new Error("not registered");
+    });
+    await t.expect("PU3", "controller reaches Expo Push API (live)", async () => {
+      const { ticket } = await client.command(NotifyTest, {}, 20_000);
+      const parsed = JSON.parse(ticket);
+      // fake token → Expo answers with a real ticket (error DeviceNotRegistered) = pipeline works
+      if (parsed.status !== "ok" && !JSON.stringify(parsed).includes("Registered")) {
+        throw new Error(`unexpected ticket: ${ticket.slice(0, 120)}`);
+      }
+      return `ticket=${ticket.slice(0, 80)}`;
+    });
+  } finally {
+    client.close();
+  }
 }
 
 /** The relay suite body — registered by tooling/probe.mjs. */

@@ -11,6 +11,7 @@ import {
   watchAgentSession,
   watchAgentStatus,
 } from "../../../src/machines.ts";
+import { dismissSessionNotifications, setFocusedSession } from "../../../src/notifications.ts";
 import { colors, mono, Pill, type PillTone, space, type_ } from "../../../src/theme.tsx";
 
 type Block =
@@ -199,7 +200,10 @@ export default function AgentSessionScreen() {
         setProjectId(s.project_id);
       }
     });
+    setFocusedSession(session);
+    void dismissSessionNotifications(session).catch(() => {});
     return () => {
+      setFocusedSession(null);
       unsubEvents();
       unsubStatus();
     };
