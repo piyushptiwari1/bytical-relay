@@ -6,6 +6,11 @@ name: Relay deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      azIndex:
+        description: "AZ index (t4g capacity varies; AWS suggests alternatives in the error)"
+        default: "2"
+        required: false
 
 concurrency: relay-deploy
 
@@ -36,7 +41,7 @@ jobs:
             --stack-name rdc-relay \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
-            --parameter-overrides RelayToken=${{ secrets.RDC_RELAY_TOKEN }}
+            --parameter-overrides RelayToken=${{ secrets.RDC_RELAY_TOKEN }} AzIndex=${{ inputs.azIndex || '2' }}
 
       - name: Upload relay bundle
         run: |
