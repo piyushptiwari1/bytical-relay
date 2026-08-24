@@ -15,15 +15,16 @@ Parameters:
     Default: 8443
   InstanceType:
     Type: String
-    Default: t4g.nano
+    Default: t3.micro
   AzIndex:
     Type: Number
     Default: 1
     AllowedValues: [0, 1, 2]
-    Description: Which AZ in the region to use (t4g capacity varies per AZ)
-  Al2023Arm64Ami:
+    Description: Which AZ in the region to use (capacity varies per AZ)
+  Al2023Ami:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Must match InstanceType arch (x86_64 for t3*, arm64 for t4g*)
 
 Resources:
   RdcVpc:
@@ -126,7 +127,7 @@ Resources:
   RdcRelayInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref Al2023Arm64Ami
+      ImageId: !Ref Al2023Ami
       InstanceType: !Ref InstanceType
       SubnetId: !Ref RdcPublicSubnet
       SecurityGroupIds: [!Ref RdcRelaySecurityGroup]
