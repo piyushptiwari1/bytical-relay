@@ -3,6 +3,12 @@ packages:
   - apps/*
   - extensions/*
 
+# Expo SDK 57 native-compat pins: expo-modules-core C++ requires worklets 0.10.x
+# (executeSync); transitive branches otherwise pull reanimated 4.6 + worklets 0.12.
+overrides:
+  react-native-reanimated: "4.5.1"
+  react-native-worklets: "0.10.1"
+
 catalog:
   typescript: ^5.9.2
   vitest: ^3.2.0

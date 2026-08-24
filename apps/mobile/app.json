@@ -6,9 +6,12 @@
     "scheme": "rdc",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "android": {
-      "package": "com.rdc.mobile"
+      "package": "com.rdc.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "ios": {
       "bundleIdentifier": "com.rdc.mobile",
@@ -34,6 +37,13 @@
         }
       ],
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ddba29c9-3ecb-4141-ae98-bb427035dfdd"
+      }
+    },
+    "owner": "piyushptiwari"
   }
 }
