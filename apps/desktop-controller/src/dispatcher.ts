@@ -76,6 +76,8 @@ export interface DispatcherDeps {
   editors: EditorRegistry;
   agents: AgentManager;
   terminals: TerminalManager;
+  /** S7: advertised to paired phones via machine.status (over E2EE) */
+  relay?: { url: string; token: string };
 }
 
 /**
@@ -332,6 +334,7 @@ export class ControllerDispatcher {
           MachineStatus.createOk(msg.command_id, {
             ...this.deps.health.latest(),
             keep_awake: this.deps.keepAwake.state(),
+            relay: this.deps.relay ?? null,
           }),
         ];
       case "machine.keep_awake": {

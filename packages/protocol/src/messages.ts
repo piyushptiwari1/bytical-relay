@@ -107,7 +107,11 @@ export const SysPing = defineCommand(
 export const MachineStatus = defineCommand(
   "machine.status",
   z.object({}),
-  MachineHealthSchema.extend({ keep_awake: KeepAwakeStateSchema }),
+  MachineHealthSchema.extend({
+    keep_awake: KeepAwakeStateSchema,
+    /** present when this machine is reachable through a relay (S7 remote access) */
+    relay: z.object({ url: z.string(), token: z.string() }).nullable().optional(),
+  }),
 );
 
 export const MachineKeepAwake = defineCommand(

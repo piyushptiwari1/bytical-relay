@@ -99,7 +99,7 @@ afterAll(async () => {
 
 describe("controller server", () => {
   test("healthz open; everything else requires the local token", async () => {
-    const app = await buildServer(makeDeps());
+    const { app } = await buildServer(makeDeps());
     closers.push(() => app.close());
     await app.listen({ port: 0, host: "127.0.0.1" });
     const port = (app.server.address() as { port: number }).port;
@@ -141,7 +141,7 @@ describe("controller server", () => {
 
   test("ws: hello → subscribe → journaled event is pushed live", async () => {
     const deps = makeDeps();
-    const app = await buildServer(deps);
+    const { app } = await buildServer(deps);
     closers.push(() => app.close());
     await app.listen({ port: 0, host: "127.0.0.1" });
     const port = (app.server.address() as { port: number }).port;

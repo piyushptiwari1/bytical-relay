@@ -44,10 +44,14 @@ import { type ClientState, ControllerClient } from "@rdc/transport";
 import { create } from "zustand";
 import { loadMachines, removeMachine, type StoredMachine, saveMachine } from "./storage.ts";
 
-export type MachineStatusResult = MachineHealth & { keep_awake: KeepAwakeState };
+export type MachineStatusResult = MachineHealth & {
+  keep_awake: KeepAwakeState;
+  relay?: { url: string; token: string } | null;
+};
 
 export interface MachineRuntime {
   state: ClientState | "unreachable";
+  transport?: "direct" | "relay";
   health?: MachineStatusResult;
   projects?: Project[];
   editors?: EditorState[];
@@ -100,9 +104,20 @@ export const useApp = create<AppState>((set, get) => {
       const machine = get().machines.find((m) => m.machine_id === machineId);
       if (!machine || clients.has(machineId)) return;
       patchRuntime(machineId, { state: "connecting" });
-      for (const addr of machine.addrs) {
+      // direct LAN first (lowest latency), then relay if the machine advertised one
+      const candidates: Array<{ url: string; transport: "direct" | "relay" }> = machine.addrs.map(
+        (addr) => ({ url: `${addr}/ws`, transport: "direct" }),
+      );
+      if (machine.relay) {
+        const base = machine.relay.url.replace(/\/$/, "");
+        candidates.push({
+          url: `${base}/tunnel?role=phone&machine=${encodeURIComponent(machine.machine_id)}&rt=${encodeURIComponent(machine.relay.token)}`,
+          transport: "relay",
+        });
+      }
+      for (const candidate of candidates) {
         const client = new ControllerClient({
-          url: `${addr}/ws`,
+          url: candidate.url,
           token: machine.token,
           deviceId: machine.device_id,
           keys: {
@@ -120,7 +135,7 @@ export const useApp = create<AppState>((set, get) => {
             if (msg.type === "editor.state_changed")
               patchRuntime(machineId, { editors: msg.payload.editors });
           });
-          patchRuntime(machineId, { state: client.state });
+          patchRuntime(machineId, { state: client.state, transport: candidate.transport });
           await get().refreshMachine(machineId);
           return;
         } catch {
@@ -139,6 +154,16 @@ export const useApp = create<AppState>((set, get) => {
         client.command(EditorList, {}),
       ]);
       patchRuntime(machineId, { health, projects: projects.projects, editors: editors.editors });
+      // persist newly advertised relay so out-of-home connects work next time
+      const machine = get().machines.find((m) => m.machine_id === machineId);
+      const advertised = (health as MachineStatusResult).relay ?? null;
+      if (machine && JSON.stringify(machine.relay ?? null) !== JSON.stringify(advertised)) {
+        const updated = { ...machine, relay: advertised };
+        await saveMachine(updated);
+        set((s) => ({
+          machines: s.machines.map((m) => (m.machine_id === machineId ? updated : m)),
+        }));
+      }
     },
 
     async toggleAwake(machineId) {

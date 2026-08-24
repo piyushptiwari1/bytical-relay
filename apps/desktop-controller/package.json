@@ -27,12 +27,15 @@
     "koffi": "catalog:",
     "pino": "catalog:",
     "qrcode": "catalog:",
+    "ws": "^8.18.0",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@rdc/relay": "workspace:*",
     "@rdc/transport": "workspace:*",
     "@types/node": "catalog:",
     "@types/qrcode": "catalog:",
+    "@types/ws": "^8.18.0",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

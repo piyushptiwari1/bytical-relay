@@ -48,6 +48,7 @@ export interface ServerDeps {
   editors: EditorRegistry;
   agents: AgentManager;
   terminals: TerminalManager;
+  relay?: { url: string; token: string };
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -108,7 +109,7 @@ function dashHtml(): string {
 }
 
 /** Structural socket type — avoids a hard dependency on ws's type package. */
-interface WsLike {
+export interface WsLike {
   send(data: string | Uint8Array): void;
   close(code?: number, reason?: string): void;
   on(event: "message", cb: (data: Buffer, isBinary: boolean) => void): void;
@@ -129,7 +130,11 @@ const dec = new TextDecoder();
  * clients), token auth on everything except /healthz and /pair, and a
  * mandatory E2EE secretstream channel for paired devices.
  */
-export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
+export async function buildServer(deps: ServerDeps): Promise<{
+  app: FastifyInstance;
+  /** feed a protocol connection from any transport (direct ws or relay tunnel) */
+  attachProtocolSocket: (socket: WsLike, device: DeviceRecord | undefined) => void;
+}> {
   const app = Fastify({ logger: false });
   await app.register(websocket);
   const dispatcher = new ControllerDispatcher(deps);
@@ -226,8 +231,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   // ── Protocol endpoint (E2EE mandatory for paired devices) ──────────────────
-  app.get("/ws", { websocket: true }, (socket: WsLike, req: FastifyRequest) => {
-    const device = requestDevices.get(req);
+  const attachProtocolSocket = (socket: WsLike, device: DeviceRecord | undefined): void => {
     const ctx = newClientContext();
     const secure = device ? new SecureChannel("server", deps.keys, fromB64(device.kx_pub)) : null;
     let ownHeaderSent = false;
@@ -321,6 +325,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       clients.delete(socket);
       deps.editors.detach(ctx);
     });
+  };
+
+  app.get("/ws", { websocket: true }, (socket: WsLike, req: FastifyRequest) => {
+    attachProtocolSocket(socket, requestDevices.get(req));
   });
 
   // Live push: journaled events → sockets subscribed to that stream (encrypted per client).
@@ -424,5 +432,5 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     for (const projectId of touched) deps.git.scheduleRefresh(projectId);
   });
 
-  return app;
+  return { app, attachProtocolSocket };
 }

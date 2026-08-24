@@ -9,3 +9,4 @@ coverage/
 .export-check/
 apps/mobile/android/
 apps/mobile/ios/
+tooling/.probe-device.json

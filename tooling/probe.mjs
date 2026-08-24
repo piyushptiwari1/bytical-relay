@@ -141,6 +141,24 @@ const suites = {
       if (!archived) throw new Error("not archived");
     });
   },
+
+  /** Live remote access through the relay (args: [relayUrl] [relayToken], else controller config). */
+  async relay(_client, t, args) {
+    const { relaySuite } = await import("./probe-relay.mjs");
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    let relayUrl = args.find((a) => a.startsWith("ws"));
+    let relayToken = args.find((a) => !a.startsWith("ws") && !a.startsWith("--"));
+    if (!relayUrl || !relayToken) {
+      const base = process.env.LOCALAPPDATA ?? "";
+      const config = JSON.parse(readFileSync(path.join(base, "rdc", "config.json"), "utf8"));
+      if (!config.relay) throw new Error("no relay in controller config and none passed");
+      relayUrl = relayUrl ?? config.relay.url;
+      relayToken = relayToken ?? config.relay.token;
+    }
+    const port = process.env.RDC_PROBE_PORT ?? 8347;
+    await relaySuite(t, { port, relayUrl, relayToken });
+  },
 };
 
 const DEFAULT = ["status", "chats", "terminal"];
@@ -149,7 +167,7 @@ async function main() {
   const argv = process.argv.slice(2);
   const names =
     argv[0] === "all"
-      ? Object.keys(suites).filter((s) => !["resume", "archive"].includes(s))
+      ? Object.keys(suites).filter((s) => !["resume", "archive", "relay"].includes(s))
       : argv.filter((a) => suites[a]);
   const chosen = names.length > 0 ? names : DEFAULT;
   const extraArgs = argv.slice(argv.findIndex((a) => suites[a]) + 1);

@@ -17,6 +17,7 @@ import { KeepAwake } from "./keep-awake.ts";
 import { loadOrCreateKeys } from "./keys.ts";
 import { HealthMonitor } from "./machine-health.ts";
 import { PairingCoordinator } from "./pairing-coordinator.ts";
+import { RelayClient } from "./relay-client.ts";
 import { buildServer } from "./server.ts";
 import { SessionStore } from "./session-store.ts";
 import { acquireSingleInstanceLock } from "./single-instance.ts";
@@ -109,7 +110,12 @@ async function start(): Promise<void> {
   }, RECONCILE_INTERVAL_MS);
   reconcileTimer.unref();
 
-  const app = await buildServer({
+  // env overrides let local probes point at a scratch relay without touching config
+  const relayUrl = process.env.RDC_RELAY_URL ?? config.relay?.url;
+  const relayToken = process.env.RDC_RELAY_TOKEN ?? config.relay?.token;
+  const relay = relayUrl && relayToken ? { url: relayUrl, token: relayToken } : undefined;
+
+  const { app, attachProtocolSocket } = await buildServer({
     machineId: config.machine_id,
     machineName: os.hostname(),
     localToken: config.local_token,
@@ -125,8 +131,23 @@ async function start(): Promise<void> {
     editors: new EditorRegistry(),
     agents,
     terminals,
+    ...(relay ? { relay } : {}),
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
+
+  let relayClient: RelayClient | null = null;
+  if (relay) {
+    relayClient = new RelayClient({
+      url: relay.url,
+      relayToken: relay.token,
+      machineId: config.machine_id,
+      devices,
+      attach: (socket, device) => attachProtocolSocket(socket, device ?? undefined),
+      log: (msg, extra) => logger.info(extra ?? {}, msg),
+    });
+    relayClient.start();
+    logger.info({ relay: relay.url }, "relay tunnel enabled");
+  }
 
   const dashUrl = `http://127.0.0.1:${config.port}/dash?token=${config.local_token}`;
   logger.info({ port: config.port, projects: detected.length }, "controller ready");
@@ -139,6 +160,7 @@ async function start(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, "shutting down");
     clearInterval(reconcileTimer);
+    relayClient?.stop();
     health.stop();
     // preserve the user's intent across restarts: disable the OS assertion
     // (auto-cleared anyway) but re-save the pre-shutdown desired state

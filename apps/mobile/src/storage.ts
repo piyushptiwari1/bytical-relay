@@ -10,6 +10,8 @@ export interface StoredMachine {
   kx_pub: string;
   kx_priv: string;
   addrs: string[];
+  /** learned from machine.status over E2EE — used when direct addrs fail */
+  relay?: { url: string; token: string } | null;
 }
 
 const INDEX_KEY = "rdc.machine.index";

@@ -1,23 +1,60 @@
-name: Relay deploy (S7 placeholder)
+name: Relay deploy
 
-# CD for the future S7 relay. Until the relay exists this only proves the AWS
-# wiring works. Separation rules: dedicated IAM user (rdc-dev), every resource
-# created by this pipeline MUST be prefixed `rdc-` and live in its own
-# CloudFormation stack — never touch other stacks in the account.
+# Deploys the S7 zero-knowledge relay into its OWN CloudFormation stack
+# (rdc-relay) — dedicated IAM user (rdc-dev), every resource rdc-prefixed,
+# never touches other stacks in the account.
 
 on:
   workflow_dispatch:
 
+concurrency: relay-deploy
+
 jobs:
-  verify-aws-access:
+  deploy:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build relay bundle
+        run: pnpm --filter @rdc/relay build
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
-      - name: Who am I (read-only)
-        run: aws sts get-caller-identity
-      - name: Relay not built yet
-        run: echo "S7 relay deploy will live here — rdc-* prefixed resources, own stack."
+
+      - name: Deploy stack (rdc-relay)
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/relay-stack.yml \
+            --stack-name rdc-relay \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides RelayToken=${{ secrets.RDC_RELAY_TOKEN }}
+
+      - name: Upload relay bundle
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks --stack-name rdc-relay \
+            --query "Stacks[0].Outputs[?OutputKey=='ArtifactsBucket'].OutputValue" --output text)
+          aws s3 cp apps/relay/dist/relay.mjs "s3://$BUCKET/relay.mjs"
+
+      - name: Restart relay service (best effort — first boot self-heals)
+        run: |
+          INSTANCE=$(aws cloudformation describe-stacks --stack-name rdc-relay \
+            --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" --output text)
+          aws ssm send-command \
+            --instance-ids "$INSTANCE" \
+            --document-name AWS-RunShellScript \
+            --parameters commands="systemctl restart rdc-relay" \
+            --comment "rdc relay redeploy" || echo "SSM not ready yet; systemd retry loop will pick up the bundle"
+
+      - name: Print endpoint
+        run: |
+          aws cloudformation describe-stacks --stack-name rdc-relay \
+            --query "Stacks[0].Outputs" --output table

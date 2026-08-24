@@ -13,6 +13,8 @@ export const ConfigSchema = z.object({
   log_level: z.enum(["trace", "debug", "info", "warn", "error"]),
   /** bind 0.0.0.0 so phones on the LAN can reach the controller (S2 pairing) */
   lan: z.boolean().default(true),
+  /** S7 remote access: controller dials out to this relay; phones fall back to it */
+  relay: z.object({ url: z.string().min(1), token: z.string().min(16) }).optional(),
 });
 export type ControllerConfig = z.infer<typeof ConfigSchema>;
 

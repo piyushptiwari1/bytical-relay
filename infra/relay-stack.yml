@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  rdc-relay: zero-knowledge websocket relay for remote-dev-control (S7).
+  Fully isolated stack — own VPC, no dependencies on other resources in the
+  account. All resources are rdc-prefixed. Teardown: delete this stack.
+
+Parameters:
+  RelayToken:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Shared relay auth token (laptop + phones present it)
+  RelayPort:
+    Type: Number
+    Default: 8443
+  InstanceType:
+    Type: String
+    Default: t4g.nano
+  Al2023Arm64Ami:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Resources:
+  RdcVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.99.0.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: rdc-relay-vpc }]
+
+  RdcInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: rdc-relay-igw }]
+
+  RdcVpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref RdcVpc
+      InternetGatewayId: !Ref RdcInternetGateway
+
+  RdcPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RdcVpc
+      CidrBlock: 10.99.0.0/25
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: rdc-relay-subnet }]
+
+  RdcRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RdcVpc
+      Tags: [{ Key: Name, Value: rdc-relay-rt }]
+
+  RdcDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: RdcVpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RdcRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref RdcInternetGateway
+
+  RdcSubnetRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref RdcPublicSubnet
+      RouteTableId: !Ref RdcRouteTable
+
+  RdcRelaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: rdc-relay ingress (websocket tunnel only)
+      VpcId: !Ref RdcVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref RelayPort
+          ToPort: !Ref RelayPort
+          CidrIp: 0.0.0.0/0
+      Tags: [{ Key: Name, Value: rdc-relay-sg }]
+
+  RdcArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub rdc-relay-artifacts-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  RdcInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: rdc-relay-instance-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: rdc-relay-artifacts-read
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub ${RdcArtifactsBucket.Arn}/*
+
+  RdcInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: rdc-relay-instance-profile
+      Roles: [!Ref RdcInstanceRole]
+
+  RdcRelayInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref Al2023Arm64Ami
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref RdcPublicSubnet
+      SecurityGroupIds: [!Ref RdcRelaySecurityGroup]
+      IamInstanceProfile: !Ref RdcInstanceProfile
+      Tags: [{ Key: Name, Value: rdc-relay }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -x
+          dnf install -y nodejs22 || dnf install -y nodejs20
+          mkdir -p /opt/rdc
+          cat > /etc/rdc-relay.env <<EOF
+          RELAY_TOKEN=${RelayToken}
+          RELAY_PORT=${RelayPort}
+          EOF
+          chmod 600 /etc/rdc-relay.env
+          cat > /etc/systemd/system/rdc-relay.service <<'EOF'
+          [Unit]
+          Description=rdc zero-knowledge relay
+          After=network-online.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          EnvironmentFile=/etc/rdc-relay.env
+          ExecStartPre=/usr/bin/aws s3 cp s3://${RdcArtifactsBucket}/relay.mjs /opt/rdc/relay.mjs
+          ExecStart=/usr/bin/env node /opt/rdc/relay.mjs
+          Restart=always
+          RestartSec=10
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          systemctl daemon-reload
+          systemctl enable --now rdc-relay
+
+  RdcRelayEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref RdcRelayInstance
+      Tags: [{ Key: Name, Value: rdc-relay-eip }]
+
+Outputs:
+  RelayEndpoint:
+    Value: !Sub ws://${RdcRelayEip.PublicIp}:${RelayPort}
+  RelayPublicIp:
+    Value: !GetAtt RdcRelayEip.PublicIp
+  InstanceId:
+    Value: !Ref RdcRelayInstance
+  ArtifactsBucket:
+    Value: !Ref RdcArtifactsBucket

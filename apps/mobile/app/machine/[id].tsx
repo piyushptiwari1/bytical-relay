@@ -39,6 +39,7 @@ export default function MachineDetail() {
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <Text style={{ ...type_.title, flex: 1 }}>{machine.name}</Text>
+          {rt?.transport === "relay" ? <Pill tone="accent">☁ relay</Pill> : null}
           <Pill tone={rt?.state === "ready" ? "ok" : "dim"}>{rt?.state ?? "idle"}</Pill>
         </View>
         {health ? (

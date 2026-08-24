@@ -58,7 +58,7 @@ beforeAll(async () => {
     terminals: new TerminalManager(),
     agents: new AgentManager({ eventStore, fsIndex }, []),
   };
-  const app = await buildServer(deps);
+  const { app } = await buildServer(deps);
   closers.push(() => app.close());
   await app.listen({ port: 0, host: "127.0.0.1" });
   port = (app.server.address() as { port: number }).port;
