@@ -11,6 +11,10 @@ on:
         description: "AZ index (t4g capacity varies; AWS suggests alternatives in the error)"
         default: "2"
         required: false
+      instanceType:
+        description: "EC2 instance type (arm64)"
+        default: "t4g.micro"
+        required: false
 
 concurrency: relay-deploy
 
@@ -41,7 +45,7 @@ jobs:
             --stack-name rdc-relay \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
-            --parameter-overrides RelayToken=${{ secrets.RDC_RELAY_TOKEN }} AzIndex=${{ inputs.azIndex || '2' }}
+            --parameter-overrides RelayToken=${{ secrets.RDC_RELAY_TOKEN }} AzIndex=${{ inputs.azIndex || '2' }} InstanceType=${{ inputs.instanceType || 't4g.micro' }}
 
       - name: Upload relay bundle
         run: |
