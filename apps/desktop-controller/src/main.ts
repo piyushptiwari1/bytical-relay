@@ -135,6 +135,9 @@ async function start(): Promise<void> {
     terminals,
     audit,
     ...(relay ? { relay } : {}),
+    ...(config.data_password
+      ? { dataConsole: { password: config.data_password, dataDir: dir } }
+      : {}),
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
 

@@ -15,6 +15,8 @@ export const ConfigSchema = z.object({
   lan: z.boolean().default(true),
   /** S7 remote access: controller dials out with this private credential; phones receive tickets. */
   relay: z.object({ url: z.string().min(1), token: z.string().min(16) }).optional(),
+  /** owner-only /data analytics console — unset disables the page entirely */
+  data_password: z.string().min(6).optional(),
 });
 export type ControllerConfig = z.infer<typeof ConfigSchema>;
 

@@ -236,4 +236,55 @@ describe("controller server", () => {
     expect(pushed.seq).toBe(1);
     expect(pushed.payload.relative_path).toBe("src/new.ts");
   });
+
+  test("/data owner console: disabled without config, password-gated with it", async () => {
+    // disabled: no dataConsole dep → 404
+    const { app: plain } = await buildServer(makeDeps());
+    closers.push(() => plain.close());
+    expect((await plain.inject({ method: "GET", url: "/data" })).statusCode).toBe(404);
+
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dataDir = mkdtempSync(join(tmpdir(), "rdc-data-"));
+    const { app } = await buildServer({
+      ...makeDeps(),
+      dataConsole: { password: "Sup3r-secret", dataDir },
+    });
+    closers.push(() => app.close());
+
+    // unauthenticated: login page, and stats API refuses
+    const page = await app.inject({ method: "GET", url: "/data" });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("data console");
+    expect((await app.inject({ method: "GET", url: "/api/data/stats" })).statusCode).toBe(401);
+
+    // wrong password rejected
+    const bad = await app.inject({
+      method: "POST",
+      url: "/data/login",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "password=nope-nope",
+    });
+    expect(bad.statusCode).toBe(401);
+
+    // right password issues session cookie; stats become readable
+    const ok = await app.inject({
+      method: "POST",
+      url: "/data/login",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "password=Sup3r-secret",
+    });
+    expect(ok.statusCode).toBe(302);
+    const cookie = String(ok.headers["set-cookie"]).split(";")[0];
+    const stats = await app.inject({
+      method: "GET",
+      url: "/api/data/stats",
+      headers: { cookie },
+    });
+    expect(stats.statusCode).toBe(200);
+    const parsed = stats.json() as { sessions: { total: number }; devices: { total: number } };
+    expect(parsed.sessions.total).toBe(0);
+    expect(parsed.devices.total).toBe(0);
+  });
 });

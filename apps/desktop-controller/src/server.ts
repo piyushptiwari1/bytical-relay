@@ -27,6 +27,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
 import type { AgentManager } from "./agent-manager.ts";
 import type { AuditLog } from "./audit-log.ts";
+import { DataConsole } from "./data-console.ts";
 import type { DeviceRecord, DeviceStore } from "./device-store.ts";
 import {
   type ClientContext,
@@ -59,6 +60,8 @@ export interface ServerDeps {
   terminals: TerminalManager;
   audit?: AuditLog;
   relay?: { url: string; token: string };
+  /** owner analytics console (/data) — password + data dir; absent = disabled */
+  dataConsole?: { password: string; dataDir: string };
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -118,6 +121,29 @@ function dashHtml(): string {
   return dashHtmlCache;
 }
 
+let dataHtmlCache: string | null = null;
+function dataHtml(): string {
+  dataHtmlCache ??= readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "data.html"),
+    "utf8",
+  );
+  return dataHtmlCache;
+}
+
+function dataLoginHtml(error = ""): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<title>Relay — data console</title><style>
+body{background:#0d1414;color:#e8f1ef;font:14px ui-sans-serif,system-ui;display:grid;place-items:center;height:100vh;margin:0}
+form{background:#121c1c;border:1px solid #1e2b2b;border-radius:14px;padding:34px;width:300px}
+h1{font-size:16px;margin:0 0 4px}h1 b{color:#4fd1b0}p{color:#7d938f;font-size:12px;margin:0 0 18px}
+input{width:100%;box-sizing:border-box;background:#0d1414;border:1px solid #1e2b2b;border-radius:8px;color:#e8f1ef;padding:10px;font-size:14px}
+button{width:100%;margin-top:12px;background:#4fd1b0;border:0;border-radius:8px;padding:10px;font-weight:600;cursor:pointer}
+.err{color:#e07a6a;font-size:12px;margin-top:10px}</style></head><body>
+<form method="post" action="/data/login"><h1><b>Relay</b> data console</h1><p>Owner access only.</p>
+<input type="password" name="password" placeholder="Password" autofocus>
+<button>Open console</button>${error ? `<div class="err">${error}</div>` : ""}</form></body></html>`;
+}
+
 /** Structural socket type — avoids a hard dependency on ws's type package. */
 export interface WsLike {
   send(data: string | Uint8Array): void;
@@ -165,6 +191,14 @@ export async function buildServer(deps: ServerDeps): Promise<{
 }> {
   const app = Fastify({ logger: false });
   await app.register(websocket);
+  // login form posts urlencoded; fastify only parses JSON by default
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(String(body))));
+    },
+  );
   const dispatcher = new ControllerDispatcher(deps);
   const clients = new Map<WsLike, ConnectedClient>();
   const sendAgentPush = (message: PushMessage) => {
@@ -204,6 +238,10 @@ export async function buildServer(deps: ServerDeps): Promise<{
     }
     const routePath = req.url.split("?")[0];
     if (routePath === "/healthz" || routePath === "/pair") return;
+    // /data has its own password gate (owner console); disabled unless configured
+    if (routePath === "/data" || routePath === "/data/login" || routePath === "/api/data/stats") {
+      return;
+    }
     const presented = extractToken(req);
     if (tokenMatches(deps.localToken, presented)) {
       localRequests.add(req);
@@ -220,6 +258,51 @@ export async function buildServer(deps: ServerDeps): Promise<{
   });
 
   app.get("/healthz", async () => ({ ok: true, machine_id: deps.machineId }));
+
+  // ── Owner analytics console (/data) — password-gated, local data only ──────
+  const dataConsole = deps.dataConsole
+    ? new DataConsole(deps.dataConsole.password, deps.dataConsole.dataDir)
+    : null;
+
+  app.get("/data", async (req, reply) => {
+    if (!dataConsole) return reply.code(404).send({ error: "not found" });
+    if (!dataConsole.validSession(req.headers.cookie)) {
+      return reply.type("text/html").send(dataLoginHtml());
+    }
+    return reply.type("text/html").send(dataHtml());
+  });
+
+  app.post("/data/login", async (req, reply) => {
+    if (!dataConsole) return reply.code(404).send({ error: "not found" });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const presented = typeof body.password === "string" ? body.password : "";
+    if (!dataConsole.checkPassword(presented)) {
+      deps.audit?.append({
+        ts: new Date().toISOString(),
+        actor: "local",
+        action: "data_console.login_failed",
+      });
+      return reply.code(401).type("text/html").send(dataLoginHtml("Wrong password."));
+    }
+    deps.audit?.append({
+      ts: new Date().toISOString(),
+      actor: "local",
+      action: "data_console.login",
+    });
+    reply.header(
+      "set-cookie",
+      `rdc_data=${encodeURIComponent(dataConsole.issueSession())}; HttpOnly; SameSite=Strict; Path=/`,
+    );
+    return reply.redirect("/data");
+  });
+
+  app.get("/api/data/stats", async (req, reply) => {
+    if (!dataConsole) return reply.code(404).send({ error: "not found" });
+    if (!dataConsole.validSession(req.headers.cookie)) {
+      return reply.code(401).send({ error: "login required" });
+    }
+    return dataConsole.stats();
+  });
 
   app.get("/dash", async (req, reply) => {
     const q = (req.query as Record<string, unknown> | undefined)?.token;

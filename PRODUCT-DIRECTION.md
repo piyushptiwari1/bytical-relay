@@ -140,11 +140,28 @@ protocol, mobile type, bundle, and live-controller checks:
   Release-build FCM/APNs credentials and physical-device push validation remain external setup.
 - `RDC: Open in Agents` is available from the VS Code status bar and Command Palette, starts a
   controller-owned session for the active indexed workspace, and its extension bundle is built.
+- The ticket-aware relay is deployed to the isolated `rdc-relay` AWS stack behind TLS at
+  `wss://ws.relay.bytical.ai` (Caddy + Let's Encrypt in front of the relay service). The
+  controller registers over `wss`, and the live internet probe passes including the
+  default-device terminal-denial check.
+- An owner-only analytics console is served by the local controller at `/data`, gated by a
+  password that exists only in the local controller config (never in the repository). It
+  visualizes agent sessions, journaled events, device presence/scopes, and the audit trail from
+  the controller's own SQLite stores; data never leaves the machine.
+
+### Analytics track (planned)
+
+1. Owner data console `/data` — shipped (local, password-gated, zero exfiltration).
+2. Site analytics — privacy-friendly, cookieless page analytics for relay.bytical.ai
+   (aggregate visits/downloads only), surfaced into the owner console.
+3. Product telemetry — strictly opt-in, anonymous, aggregate-only app health metrics via an
+   isolated `rdc-analytics` service; requires the public privacy policy first and must never
+   include prompts, file paths, code, tokens, or per-user behavior. Scheduled before P5 release.
 
 Remaining delivery dependencies are intentionally not simulated: project-level grants and
-controller policy profiles, deployment of the ticket-aware relay behind TLS with rate limits and
-monitoring, Firebase/APNs release credentials, physical-device notification testing, the Claude
-Code adapter, and localhost service viewing.
+controller policy profiles, relay rate limits and monitoring, Firebase/APNs release
+credentials, physical-device notification testing, the Claude Code adapter, and localhost
+service viewing.
 
 ## Working roles for development
 
