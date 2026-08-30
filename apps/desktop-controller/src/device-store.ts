@@ -1,5 +1,23 @@
 import { DatabaseSync } from "node:sqlite";
 
+const LEGACY_DEFAULT_SCOPES = ["projects.read", "files.read", "events.read"];
+
+/** Capabilities granted after an owner confirms physical device pairing. */
+export const DEFAULT_DEVICE_SCOPES = [
+  "machine.read",
+  "machine.control",
+  "projects.read",
+  "files.read",
+  "events.read",
+  "git.read",
+  "editor.read",
+  "editor.control",
+  "agents.read",
+  "agents.control",
+  "terminals.read",
+  "notifications.manage",
+] as const;
+
 export interface DeviceRecord {
   device_id: string;
   name: string;
@@ -34,6 +52,7 @@ export class DeviceStore {
         updated_at TEXT NOT NULL
       );
     `);
+    this.#upgradeLegacyScopes();
   }
 
   add(device: Omit<DeviceRecord, "created_at" | "revoked">): void {
@@ -108,6 +127,31 @@ export class DeviceStore {
       created_at: row.created_at as string,
       revoked: Number(row.revoked) === 1,
     };
+  }
+
+  /** Existing pairings predate enforced scopes; safely reduce them to the new core grant. */
+  #upgradeLegacyScopes(): void {
+    const rows = this.#db.prepare("SELECT device_id, scopes FROM devices").all() as Array<{
+      device_id: string;
+      scopes: string;
+    }>;
+    for (const row of rows) {
+      try {
+        const scopes = JSON.parse(row.scopes) as unknown;
+        if (
+          !Array.isArray(scopes) ||
+          scopes.length !== LEGACY_DEFAULT_SCOPES.length ||
+          !LEGACY_DEFAULT_SCOPES.every((scope) => scopes.includes(scope))
+        ) {
+          continue;
+        }
+        this.#db
+          .prepare("UPDATE devices SET scopes = ? WHERE device_id = ?")
+          .run(JSON.stringify(DEFAULT_DEVICE_SCOPES), row.device_id);
+      } catch {
+        // Corrupt scope data remains untouched and is denied by the dispatcher.
+      }
+    }
   }
 
   close(): void {

@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible problem in Relay.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include passwords, API keys, device tokens, pairing QR codes, private project paths, or proprietary source code.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Explain the observed behavior and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the controller
+        2. Pair the phone
+        3. Open ...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Controller
+        - Mobile app
+        - VS Code extension
+        - Agent adapter
+        - Relay transport
+        - Website or documentation
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Relay commit/version, VS Code version, and provider version where relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Remove secrets, private paths, and project content before attaching anything.

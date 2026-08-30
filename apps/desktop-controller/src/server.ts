@@ -25,6 +25,7 @@ import type { TerminalManager } from "@rdc/terminal";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import QRCode from "qrcode";
 import type { AgentManager } from "./agent-manager.ts";
+import type { AuditLog } from "./audit-log.ts";
 import type { DeviceRecord, DeviceStore } from "./device-store.ts";
 import { type ClientContext, ControllerDispatcher, newClientContext } from "./dispatcher.ts";
 import type { EditorRegistry } from "./editors.ts";
@@ -49,6 +50,7 @@ export interface ServerDeps {
   editors: EditorRegistry;
   agents: AgentManager;
   terminals: TerminalManager;
+  audit?: AuditLog;
   relay?: { url: string; token: string };
 }
 
@@ -240,7 +242,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
 
   // ── Protocol endpoint (E2EE mandatory for paired devices) ──────────────────
   const attachProtocolSocket = (socket: WsLike, device: DeviceRecord | undefined): void => {
-    const ctx = newClientContext();
+    const ctx = newClientContext(device?.device_id ?? null, device?.scopes ?? null);
     const secure = device ? new SecureChannel("server", deps.keys, fromB64(device.kx_pub)) : null;
     let ownHeaderSent = false;
     let peerHeaderAccepted = false;

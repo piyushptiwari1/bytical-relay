@@ -24,6 +24,8 @@ interface ManagedSession {
   session: AgentSession;
   handle: AgentSessionHandle | null;
   muteUpdates?: boolean;
+  /** The queued instruction currently being delivered to the provider. */
+  drainingPromptId?: string;
 }
 
 const normalizePath = (p: string): string =>
@@ -185,6 +187,8 @@ export class AgentManager {
       managed.muteUpdates = false;
     }
     this.#setStatus(managed, "idle");
+    this.#refreshQueuedPromptCount(managed);
+    this.#drainQueuedPrompt(managed);
   }
 
   /** Remove a conversation from the list (journal is kept; CLI history untouched). */
@@ -297,6 +301,7 @@ export class AgentManager {
       provider: providerId,
       title,
       status: "starting",
+      queued_prompt_count: 0,
       created_at: nowIso(),
       updated_at: nowIso(),
     };
@@ -346,21 +351,36 @@ export class AgentManager {
     return containedProject;
   }
 
-  async prompt(sessionId: string, text: string): Promise<boolean> {
+  async prompt(
+    sessionId: string,
+    text: string,
+  ): Promise<{ accepted: boolean; queued: boolean; queued_prompt_count: number }> {
     let managed = this.#sessions.get(sessionId);
     if (!managed?.handle) {
       // VS Code chat model: continuing an old conversation reattaches it on demand
       const stored = this.deps.sessions?.get(sessionId);
       const nativeId = this.deps.sessions?.nativeIdOf(sessionId);
-      if (!stored || !nativeId) return false;
+      if (!stored || !nativeId) {
+        return { accepted: false, queued: false, queued_prompt_count: 0 };
+      }
       await this.#reattach(stored, nativeId);
       managed = this.#sessions.get(sessionId);
-      if (!managed?.handle) return false;
+      if (!managed?.handle) return { accepted: false, queued: false, queued_prompt_count: 0 };
     }
-    if (managed.session.status === "running" || managed.session.status === "awaiting_approval")
-      return false;
+    const hasQueuedPrompts = (managed.session.queued_prompt_count ?? 0) > 0;
+    if (
+      managed.session.status === "starting" ||
+      managed.session.status === "running" ||
+      managed.session.status === "awaiting_approval" ||
+      managed.drainingPromptId !== undefined ||
+      hasQueuedPrompts
+    ) {
+      const queued = this.#queuePrompt(managed, text);
+      if (managed.session.status === "idle") this.#drainQueuedPrompt(managed);
+      return queued;
+    }
     this.#runTurn(managed, text);
-    return true;
+    return { accepted: true, queued: false, queued_prompt_count: 0 };
   }
 
   async cancel(sessionId: string): Promise<boolean> {
@@ -390,7 +410,77 @@ export class AgentManager {
     }
   }
 
-  #runTurn(managed: ManagedSession, prompt: string, opts: { journalUser?: boolean } = {}): void {
+  #queuePrompt(
+    managed: ManagedSession,
+    text: string,
+  ): { accepted: boolean; queued: boolean; queued_prompt_count: number } {
+    const sessions = this.deps.sessions;
+    if (!sessions) return { accepted: false, queued: false, queued_prompt_count: 0 };
+    const createdAt = nowIso();
+    sessions.enqueuePrompt(managed.session.session_id, newEventId(), text, createdAt);
+    // The message belongs in the transcript immediately, even though the provider receives it later.
+    this.#journalUpdate(managed.session.session_id, { kind: "user_message", text });
+    return {
+      accepted: true,
+      queued: true,
+      queued_prompt_count: this.#refreshQueuedPromptCount(managed),
+    };
+  }
+
+  #refreshQueuedPromptCount(managed: ManagedSession): number {
+    const queuedPromptCount =
+      this.deps.sessions?.queuedPromptCount(managed.session.session_id) ?? 0;
+    if ((managed.session.queued_prompt_count ?? 0) === queuedPromptCount) return queuedPromptCount;
+    managed.session = {
+      ...managed.session,
+      queued_prompt_count: queuedPromptCount,
+      updated_at: nowIso(),
+    };
+    this.#sessions.set(managed.session.session_id, managed);
+    this.#announce(managed);
+    return queuedPromptCount;
+  }
+
+  #drainQueuedPrompt(managed: ManagedSession): boolean {
+    const sessions = this.deps.sessions;
+    if (
+      !sessions ||
+      !managed.handle ||
+      managed.drainingPromptId !== undefined ||
+      managed.session.status !== "idle"
+    ) {
+      return false;
+    }
+    const queued = sessions.nextQueuedPrompt(managed.session.session_id);
+    if (!queued) {
+      this.#refreshQueuedPromptCount(managed);
+      return false;
+    }
+    managed.drainingPromptId = queued.prompt_id;
+    this.#runTurn(managed, queued.text, {
+      journalUser: false,
+      queuedPromptId: queued.prompt_id,
+    });
+    return true;
+  }
+
+  #finishQueuedPrompt(
+    managed: ManagedSession,
+    promptId: string | undefined,
+    completed: boolean,
+  ): void {
+    if (!promptId) return;
+    if (completed) this.deps.sessions?.removeQueuedPrompt(promptId);
+    delete managed.drainingPromptId;
+    this.#refreshQueuedPromptCount(managed);
+    if (completed) this.#drainQueuedPrompt(managed);
+  }
+
+  #runTurn(
+    managed: ManagedSession,
+    prompt: string,
+    opts: { journalUser?: boolean; queuedPromptId?: string } = {},
+  ): void {
     const sessionId = managed.session.session_id;
     if (opts.journalUser !== false) {
       this.#journalUpdate(sessionId, { kind: "user_message", text: prompt });
@@ -400,7 +490,10 @@ export class AgentManager {
       ?.prompt(prompt)
       .then(({ stop_reason }) => {
         this.#journalUpdate(sessionId, { kind: "turn_ended", stop_reason });
-        if (managed.session.status === "running") this.#setStatus(managed, "idle");
+        const completed = managed.session.status === "running";
+        if (completed) this.#setStatus(managed, "idle");
+        this.#finishQueuedPrompt(managed, opts.queuedPromptId, completed);
+        if (completed && opts.queuedPromptId === undefined) this.#drainQueuedPrompt(managed);
       })
       .catch((cause: unknown) => {
         if (managed.session.status === "cancelled") return;
@@ -409,6 +502,7 @@ export class AgentManager {
           message: cause instanceof Error ? cause.message : String(cause),
         });
         this.#setStatus(managed, "failed");
+        this.#finishQueuedPrompt(managed, opts.queuedPromptId, false);
       });
   }
 

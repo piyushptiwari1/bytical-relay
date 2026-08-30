@@ -1,6 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
 import type { AgentSession } from "@rdc/protocol";
 
+export interface QueuedAgentPrompt {
+  prompt_id: string;
+  session_id: string;
+  text: string;
+  created_at: string;
+}
+
 /**
  * Persistent session index (chat history). Transcripts live in the event
  * store (`agent:<id>` streams); this table is the browsable list that
@@ -24,6 +31,14 @@ export class SessionStore {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS queued_agent_prompts (
+        prompt_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS queued_agent_prompts_by_session
+        ON queued_agent_prompts (session_id, created_at, prompt_id);
     `);
     try {
       this.#db.exec("ALTER TABLE agent_sessions ADD COLUMN native_id TEXT");
@@ -68,9 +83,53 @@ export class SessionStore {
   }
 
   delete(sessionId: string): boolean {
+    this.#db.exec("BEGIN");
+    try {
+      this.#db.prepare("DELETE FROM queued_agent_prompts WHERE session_id = ?").run(sessionId);
+      const result = this.#db
+        .prepare("DELETE FROM agent_sessions WHERE session_id = ?")
+        .run(sessionId);
+      this.#db.exec("COMMIT");
+      return Number(result.changes) > 0;
+    } catch (cause) {
+      this.#db.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
+  enqueuePrompt(sessionId: string, promptId: string, text: string, createdAt: string): void {
+    this.#db
+      .prepare(
+        `INSERT INTO queued_agent_prompts (prompt_id, session_id, text, created_at)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(promptId, sessionId, text, createdAt);
+  }
+
+  nextQueuedPrompt(sessionId: string): QueuedAgentPrompt | undefined {
+    const row = this.#db
+      .prepare(
+        `SELECT prompt_id, session_id, text, created_at
+         FROM queued_agent_prompts
+         WHERE session_id = ?
+         ORDER BY created_at, prompt_id
+         LIMIT 1`,
+      )
+      .get(sessionId) as Record<string, unknown> | undefined;
+    return row ? this.#toQueuedPrompt(row) : undefined;
+  }
+
+  queuedPromptCount(sessionId: string): number {
+    const row = this.#db
+      .prepare("SELECT COUNT(*) AS count FROM queued_agent_prompts WHERE session_id = ?")
+      .get(sessionId) as { count: number };
+    return row.count;
+  }
+
+  removeQueuedPrompt(promptId: string): boolean {
     const result = this.#db
-      .prepare("DELETE FROM agent_sessions WHERE session_id = ?")
-      .run(sessionId);
+      .prepare("DELETE FROM queued_agent_prompts WHERE prompt_id = ?")
+      .run(promptId);
     return Number(result.changes) > 0;
   }
 
@@ -112,14 +171,25 @@ export class SessionStore {
   }
 
   #toSession(r: Record<string, unknown>): AgentSession {
+    const sessionId = r.session_id as string;
     return {
-      session_id: r.session_id as string,
+      session_id: sessionId,
       project_id: r.project_id as string,
       provider: r.provider as string,
       title: r.title as string,
       status: r.status as AgentSession["status"],
+      queued_prompt_count: this.queuedPromptCount(sessionId),
       created_at: r.created_at as string,
       updated_at: r.updated_at as string,
+    };
+  }
+
+  #toQueuedPrompt(r: Record<string, unknown>): QueuedAgentPrompt {
+    return {
+      prompt_id: r.prompt_id as string,
+      session_id: r.session_id as string,
+      text: r.text as string,
+      created_at: r.created_at as string,
     };
   }
 

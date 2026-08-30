@@ -20,6 +20,10 @@
       {
         "command": "rdc.reconnect",
         "title": "RDC: Reconnect to controller"
+      },
+      {
+        "command": "rdc.openAgents",
+        "title": "RDC: Open in Agents"
       }
     ]
   },

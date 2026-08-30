@@ -8,6 +8,7 @@ import {
   agentResume,
   agentStart,
   type ExternalSession,
+  hasScope,
   useApp,
   watchAgentStatus,
 } from "../../../src/machines.ts";
@@ -52,6 +53,7 @@ export default function AgentsHome() {
   const focusProject = focusParam ? decodeURIComponent(focusParam) : null;
   const router = useRouter();
   const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
+  const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [external, setExternal] = useState<ExternalSession[]>([]);
   const [resuming, setResuming] = useState<string | null>(null);
@@ -85,6 +87,7 @@ export default function AgentsHome() {
   }, [machine, load]);
 
   if (!machine) return null;
+  const canControl = hasScope(scopes, "agents.control");
   const copilot = providers.find((p) => p.id === "copilot");
   const chosenProject =
     projects.find((p) => p.project_id === (projectId ?? focusProject ?? "")) ?? projects[0];
@@ -97,7 +100,7 @@ export default function AgentsHome() {
     projects.find((p) => p.project_id === id)?.name ?? id.slice(0, 12);
 
   const start = async () => {
-    if (!chosenProject || prompt.trim().length === 0) return;
+    if (!canControl || !chosenProject || prompt.trim().length === 0) return;
     setBusy(true);
     try {
       const { session } = await agentStart(
@@ -131,22 +134,28 @@ export default function AgentsHome() {
     <Card
       key={session.session_id}
       onPress={() => router.push(`/agent/${machine}/${session.session_id}`)}
-      onLongPress={() => {
-        Alert.alert("Archive chat?", session.title, [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Archive",
-            style: "destructive",
-            onPress: () => {
-              void agentArchive(machine, session.session_id)
-                .then(() =>
-                  setSessions((prev) => prev.filter((s) => s.session_id !== session.session_id)),
-                )
-                .catch((cause) => setError(String(cause)));
-            },
-          },
-        ]);
-      }}
+      onLongPress={
+        canControl
+          ? () => {
+              Alert.alert("Archive chat?", session.title, [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Archive",
+                  style: "destructive",
+                  onPress: () => {
+                    void agentArchive(machine, session.session_id)
+                      .then(() =>
+                        setSessions((prev) =>
+                          prev.filter((s) => s.session_id !== session.session_id),
+                        ),
+                      )
+                      .catch((cause) => setError(String(cause)));
+                  },
+                },
+              ]);
+            }
+          : undefined
+      }
       accent={session.status === "awaiting_approval"}
       style={{ marginBottom: space.sm, gap: 6 }}
     >
@@ -167,6 +176,9 @@ export default function AgentsHome() {
         <Text style={type_.caption}>
           {projectName(session.project_id)} · {relativeTime(session.updated_at)}
         </Text>
+        {(session.queued_prompt_count ?? 0) > 0 ? (
+          <Pill tone="accent">{session.queued_prompt_count} queued</Pill>
+        ) : null}
       </View>
     </Card>
   );
@@ -257,13 +269,21 @@ export default function AgentsHome() {
         </ScrollView>
 
         <Button
-          disabled={busy || !copilot?.available || prompt.trim().length === 0 || !chosenProject}
+          disabled={
+            busy ||
+            !canControl ||
+            !copilot?.available ||
+            prompt.trim().length === 0 ||
+            !chosenProject
+          }
           label={
             busy
               ? "starting…"
-              : copilot?.available
-                ? "Start session"
-                : (copilot?.detail ?? "checking Copilot…")
+              : !canControl
+                ? "Work controls unavailable"
+                : copilot?.available
+                  ? "Start session"
+                  : (copilot?.detail ?? "checking Copilot…")
           }
           onPress={() => void start()}
         />
@@ -281,7 +301,7 @@ export default function AgentsHome() {
         <>
           <SectionLabel>From your laptop</SectionLabel>
           {scopedExternal.map((item) => {
-            const resumable = item.project_id !== null && copilot?.available;
+            const resumable = item.project_id !== null && copilot?.available && canControl;
             const isVsCode = item.provider === "vscode-chat";
             return (
               <Card

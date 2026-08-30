@@ -51,6 +51,7 @@ import {
 import { nowIso } from "@rdc/shared";
 import type { TerminalManager } from "@rdc/terminal";
 import type { AgentManager } from "./agent-manager.ts";
+import type { AuditLog } from "./audit-log.ts";
 import type { DeviceStore } from "./device-store.ts";
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
@@ -60,14 +61,81 @@ import { sendExpoPush } from "./push.ts";
 export interface ClientContext {
   helloDone: boolean;
   deviceId: string | null;
+  authenticatedDeviceId: string | null;
+  /** null means a local-owner connection authenticated by the controller token. */
+  authenticatedScopes: readonly string[] | null;
   subscriptions: Set<string>;
 }
 
-export const newClientContext = (): ClientContext => ({
+export const newClientContext = (
+  authenticatedDeviceId: string | null = null,
+  authenticatedScopes: readonly string[] | null = authenticatedDeviceId === null ? null : [],
+): ClientContext => ({
   helloDone: false,
-  deviceId: null,
+  deviceId: authenticatedDeviceId,
+  authenticatedDeviceId,
+  authenticatedScopes,
   subscriptions: new Set(),
 });
+
+type CommandErrorDefinition = {
+  createError(commandId: string, error: ReturnType<typeof protocolError>): unknown;
+};
+
+const SCOPED_COMMANDS: Record<string, { scope: string; definition: CommandErrorDefinition }> = {
+  "project.list": { scope: "projects.read", definition: ProjectList },
+  "file.list": { scope: "files.read", definition: FileList },
+  "file.read": { scope: "files.read", definition: FileRead },
+  "git.status": { scope: "git.read", definition: GitStatus },
+  "git.diff_file": { scope: "git.read", definition: GitDiffFile },
+  "git.stage": { scope: "git.write", definition: GitStage },
+  "git.unstage": { scope: "git.write", definition: GitUnstage },
+  "git.commit": { scope: "git.write", definition: GitCommit },
+  "editor.publish_state": { scope: "editor.publish", definition: EditorPublishState },
+  "editor.list": { scope: "editor.read", definition: EditorList },
+  "editor.open_file": { scope: "editor.control", definition: EditorOpenFile },
+  "editor.ask_chat": { scope: "editor.control", definition: EditorAskChat },
+  "agent.start": { scope: "agents.control", definition: AgentStart },
+  "agent.prompt": { scope: "agents.control", definition: AgentPrompt },
+  "agent.cancel": { scope: "agents.control", definition: AgentCancel },
+  "agent.list": { scope: "agents.read", definition: AgentList },
+  "agent.resume": { scope: "agents.control", definition: AgentResume },
+  "agent.archive": { scope: "agents.control", definition: AgentArchive },
+  "approval.respond": { scope: "agents.control", definition: ApprovalRespond },
+  "terminal.list": { scope: "terminals.read", definition: TerminalList },
+  "terminal.create": { scope: "terminals.control", definition: TerminalCreate },
+  "terminal.write": { scope: "terminals.control", definition: TerminalWrite },
+  "terminal.snapshot": { scope: "terminals.read", definition: TerminalSnapshotCmd },
+  "terminal.resize": { scope: "terminals.control", definition: TerminalResize },
+  "terminal.kill": { scope: "terminals.control", definition: TerminalKill },
+  "sync.subscribe": { scope: "events.read", definition: SyncSubscribe },
+  "sync.replay": { scope: "events.read", definition: SyncReplay },
+  "machine.status": { scope: "machine.read", definition: MachineStatus },
+  "machine.keep_awake": { scope: "machine.control", definition: MachineKeepAwake },
+  "notify.register": { scope: "notifications.manage", definition: NotifyRegister },
+  "notify.test": { scope: "notifications.manage", definition: NotifyTest },
+};
+
+const PRIVILEGED_COMMANDS = new Set([
+  "git.stage",
+  "git.unstage",
+  "git.commit",
+  "editor.open_file",
+  "editor.ask_chat",
+  "agent.start",
+  "agent.prompt",
+  "agent.cancel",
+  "agent.resume",
+  "agent.archive",
+  "approval.respond",
+  "terminal.create",
+  "terminal.write",
+  "terminal.resize",
+  "terminal.kill",
+  "machine.keep_awake",
+  "notify.register",
+  "notify.test",
+]);
 
 export interface DispatcherDeps {
   machineId: string;
@@ -84,6 +152,8 @@ export interface DispatcherDeps {
   devices?: DeviceStore;
   /** S7: advertised to paired phones via machine.status (over E2EE) */
   relay?: { url: string; token: string };
+  /** Persistent, redacted record of privileged requests. */
+  audit?: AuditLog;
 }
 
 /**
@@ -105,6 +175,17 @@ export class ControllerDispatcher {
 
   async #dispatch(msg: KnownMessage, ctx: ClientContext): Promise<unknown[]> {
     if (msg.type === "hello") {
+      if (
+        ctx.authenticatedDeviceId !== null &&
+        msg.payload.device_id !== ctx.authenticatedDeviceId
+      ) {
+        return [
+          HelloReject.create({
+            error: protocolError("FORBIDDEN", "hello identity does not match the paired device"),
+            supported: SUPPORTED_VERSIONS,
+          }),
+        ];
+      }
       const negotiated = negotiateVersion(SUPPORTED_VERSIONS, msg.payload.protocol);
       if (negotiated === null) {
         return [
@@ -115,7 +196,7 @@ export class ControllerDispatcher {
         ];
       }
       ctx.helloDone = true;
-      ctx.deviceId = msg.payload.device_id;
+      ctx.deviceId = ctx.authenticatedDeviceId ?? msg.payload.device_id;
       return [
         HelloAck.create({
           negotiated_version: negotiated,
@@ -133,6 +214,25 @@ export class ControllerDispatcher {
         ? [DebugEcho.createError(commandId, protocolError("FORBIDDEN", "hello required"))]
         : [];
     }
+    const scoped = SCOPED_COMMANDS[msg.type];
+    const commandId =
+      "command_id" in msg && typeof msg.command_id === "string" ? msg.command_id : null;
+    if (
+      scoped &&
+      commandId &&
+      ctx.authenticatedScopes !== null &&
+      !ctx.authenticatedScopes.includes("*") &&
+      !ctx.authenticatedScopes.includes(scoped.scope)
+    ) {
+      this.#audit(ctx, msg, "denied_scope");
+      return [
+        scoped.definition.createError(
+          commandId,
+          protocolError("FORBIDDEN", `this paired device does not have ${scoped.scope} access`),
+        ),
+      ];
+    }
+    this.#audit(ctx, msg, "accepted");
     switch (msg.type) {
       case "project.list":
         return [
@@ -233,9 +333,9 @@ export class ControllerDispatcher {
         ];
       case "agent.prompt":
         return [
-          await this.#tryRun(msg.command_id, AgentPrompt, async () => ({
-            accepted: await this.deps.agents.prompt(msg.payload.session_id, msg.payload.prompt),
-          })),
+          await this.#tryRun(msg.command_id, AgentPrompt, async () =>
+            this.deps.agents.prompt(msg.payload.session_id, msg.payload.prompt),
+          ),
         ];
       case "agent.cancel":
         return [
@@ -340,6 +440,7 @@ export class ControllerDispatcher {
           MachineStatus.createOk(msg.command_id, {
             ...this.deps.health.latest(),
             keep_awake: this.deps.keepAwake.state(),
+            scopes: [...(ctx.authenticatedScopes ?? ["*"])],
             relay: this.deps.relay ?? null,
           }),
         ];
@@ -414,6 +515,26 @@ export class ControllerDispatcher {
       const message = cause instanceof Error ? cause.message : String(cause);
       return def.createError(commandId, protocolError("INTERNAL", message));
     }
+  }
+
+  /** Keep audit metadata useful but never persist prompts, shell input, tokens, or source data. */
+  #audit(ctx: ClientContext, msg: KnownMessage, outcome: "accepted" | "denied_scope"): void {
+    if (!this.deps.audit || !PRIVILEGED_COMMANDS.has(msg.type)) return;
+    const payload = msg.payload as Record<string, unknown>;
+    const details: Record<string, string> = {
+      outcome,
+      connection: ctx.authenticatedDeviceId === null ? "local_owner" : "paired_device",
+    };
+    for (const key of ["project_id", "session_id", "approval_id"] as const) {
+      const value = payload[key];
+      if (typeof value === "string") details[key] = value;
+    }
+    this.deps.audit.append({
+      ts: nowIso(),
+      actor: ctx.authenticatedDeviceId ?? ctx.deviceId ?? "local_owner",
+      action: msg.type,
+      details,
+    });
   }
 
   /** Uniform wrapper: git failures surface as GIT_ERROR command errors, never crash the socket. */

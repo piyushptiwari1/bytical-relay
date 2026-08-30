@@ -6,6 +6,7 @@ import {
   agentCancel,
   agentPrompt,
   approvalRespond,
+  hasScope,
   loadAgentTranscript,
   useApp,
   watchAgentSession,
@@ -59,10 +60,12 @@ export default function AgentSessionScreen() {
   const { machine, session } = useLocalSearchParams<{ machine: string; session: string }>();
   const router = useRouter();
   const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
+  const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [status, setStatus] = useState<string>("running");
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(0);
@@ -87,7 +90,7 @@ export default function AgentSessionScreen() {
             entries?: Array<{ content: string; status: string }>;
           };
           approval_id?: string;
-          session?: { status: string; project_id?: string };
+          session?: { status: string; project_id?: string; queued_prompt_count?: number };
         };
       };
       if (message.type === "agent.updated" && message.payload.update) {
@@ -150,12 +153,14 @@ export default function AgentSessionScreen() {
       if (message.type === "agent.status_changed" && message.payload.session) {
         setStatus(message.payload.session.status);
         if (message.payload.session.project_id) setProjectId(message.payload.session.project_id);
+        setQueuedPromptCount(message.payload.session.queued_prompt_count ?? 0);
         return blocksNow;
       }
       return blocksNow;
     };
 
     setBlocks([]);
+    setQueuedPromptCount(0);
     // full history first (immune to stream-cursor state), then live pushes beyond it
     let lastSeq = -1;
     let historyDone = false;
@@ -198,6 +203,7 @@ export default function AgentSessionScreen() {
       if (s.session_id === session) {
         setStatus(s.status);
         setProjectId(s.project_id);
+        setQueuedPromptCount(s.queued_prompt_count ?? 0);
       }
     });
     setFocusedSession(session);
@@ -210,15 +216,24 @@ export default function AgentSessionScreen() {
   }, [machine, session]);
 
   if (!machine || !session) return null;
+  const canControl = hasScope(scopes, "agents.control");
   const busy = status === "running" || status === "awaiting_approval" || status === "starting";
-  const canPrompt = !busy;
+  const canPrompt = canControl && status !== "starting";
+  const willQueue = busy || queuedPromptCount > 0;
   const ended = ENDED.has(status);
   const project = projects.find((p) => p.project_id === projectId);
 
   const send = async () => {
     if (prompt.trim().length === 0) return;
     try {
-      await agentPrompt(machine, session, prompt.trim());
+      const result = await agentPrompt(machine, session, prompt.trim());
+      if (!result.accepted) {
+        setError(
+          "Relay could not deliver that instruction. Try again when the session reconnects.",
+        );
+        return;
+      }
+      setQueuedPromptCount(result.queued_prompt_count);
       setPrompt("");
       setError(null);
     } catch (cause) {
@@ -254,7 +269,7 @@ export default function AgentSessionScreen() {
             <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>⎇ Changes</Text>
           </Pressable>
         ) : null}
-        {status === "running" || status === "awaiting_approval" ? (
+        {canControl && (status === "running" || status === "awaiting_approval") ? (
           <Pressable onPress={() => void agentCancel(machine, session).catch(() => {})}>
             <Text style={{ color: colors.bad, fontSize: 13, fontWeight: "600" }}>Stop</Text>
           </Pressable>
@@ -422,6 +437,7 @@ export default function AgentSessionScreen() {
                 return (
                   <Pressable
                     key={option.option_id}
+                    disabled={!canControl}
                     onPress={() =>
                       void approvalRespond(machine, approval.approval_id, option.option_id).catch(
                         (cause) => setError(String(cause)),
@@ -459,6 +475,31 @@ export default function AgentSessionScreen() {
         </View>
       ) : null}
 
+      {queuedPromptCount > 0 ? (
+        <View
+          style={{
+            backgroundColor: colors.accentSoft,
+            borderColor: colors.border,
+            borderWidth: 1,
+            marginHorizontal: space.lg,
+            marginBottom: space.sm,
+            paddingHorizontal: space.md,
+            paddingVertical: space.sm,
+          }}
+        >
+          <Text style={{ ...type_.caption, color: colors.accent }}>
+            {queuedPromptCount} instruction{queuedPromptCount === 1 ? "" : "s"} queued for the next
+            step
+          </Text>
+        </View>
+      ) : null}
+
+      {!canControl ? (
+        <Text style={{ ...type_.caption, paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+          This phone can view this session. Changes and approvals stay on the computer.
+        </Text>
+      ) : null}
+
       <View
         style={{
           flexDirection: "row",
@@ -474,10 +515,12 @@ export default function AgentSessionScreen() {
           editable={canPrompt}
           placeholder={
             !canPrompt
-              ? `agent is ${status.replaceAll("_", " ")}…`
-              : ended
-                ? "Continue this conversation…"
-                : "Follow-up prompt…"
+              ? "starting agent…"
+              : willQueue
+                ? "Add an instruction for after this step…"
+                : ended
+                  ? "Continue this conversation…"
+                  : "Follow-up prompt…"
           }
           placeholderTextColor={colors.faint}
           style={{
@@ -495,6 +538,7 @@ export default function AgentSessionScreen() {
         <Pressable
           disabled={!canPrompt || prompt.trim().length === 0}
           onPress={() => void send()}
+          accessibilityLabel={willQueue ? "Queue instruction" : "Send instruction"}
           style={({ pressed }) => ({
             backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
             borderRadius: 22,

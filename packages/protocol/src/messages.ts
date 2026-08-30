@@ -109,6 +109,8 @@ export const MachineStatus = defineCommand(
   z.object({}),
   MachineHealthSchema.extend({
     keep_awake: KeepAwakeStateSchema,
+    /** Capabilities granted to this paired device; local owner connections receive `*`. */
+    scopes: z.array(z.string()).optional(),
     /** present when this machine is reachable through a relay (S7 remote access) */
     relay: z.object({ url: z.string(), token: z.string() }).nullable().optional(),
   }),
@@ -305,7 +307,11 @@ export const AgentStart = defineCommand(
 export const AgentPrompt = defineCommand(
   "agent.prompt",
   z.object({ session_id: z.string().min(1), prompt: z.string().min(1).max(32_000) }),
-  z.object({ accepted: z.boolean() }),
+  z.object({
+    accepted: z.boolean(),
+    queued: z.boolean(),
+    queued_prompt_count: z.number().int().nonnegative(),
+  }),
 );
 
 export const AgentCancel = defineCommand(

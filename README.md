@@ -1,27 +1,92 @@
-# remote-dev-control
+# Relay by Bytical
 
-Mobile developer control plane for a local Windows dev machine. Planning docs live one level up
-(`PLAN.md`, `RESEARCH-NOTES.md`, `IMPLEMENTATION-PLAN.md`) and will migrate into `/docs`.
+Relay is a mobile control plane for the local coding agents, development machine, and VS Code
+workspace you already use. Start work at your desk, follow it from your phone, and return with the
+session, decisions, and changes in context.
 
-## Status: S0 foundation slice
+**Relay is an alpha product of Bytical.** It is not a mobile replacement for VS Code and it does
+not move source code or model-provider credentials into a Bytical cloud account.
 
-| Package | Purpose |
-|---|---|
-| `packages/shared` | Result type, UUIDv7 ids, decorrelated-jitter backoff, typed emitter, stable JSON |
-| `packages/protocol` | Zod 4 message envelope, command/event definitions, version negotiation, binary frames |
-| `packages/event-store` | Append-only journal (gap-free per-stream seq), replay cursors, idempotency, snapshots — memory + `node:sqlite` (WAL) |
-| `packages/security` | Opaque token service, hash-chained audit log (E2EE/pairing arrive in S2) |
+## What works today
 
-## Develop
+- Pair an Android phone with a Windows controller using a QR flow and encrypted device channel.
+- Browse indexed projects and files, view Git status and diffs, and inspect controller health.
+- Start, continue, approve, stop, and replay controller-owned Copilot ACP sessions.
+- See VS Code editor state, diagnostics, terminal activity, and use `RDC: Open in Agents` from the
+	VS Code Command Palette.
+- Create and reattach to controller-owned terminals.
+- Connect directly over LAN, with an experimental encrypted relay path for remote access.
 
-```sh
-pnpm install
-pnpm test        # turbo run test (vitest per package)
-pnpm typecheck
-pnpm lint
+## Alpha safety note
+
+Relay is actively being hardened. Do not expose the controller or relay directly to the public
+internet, and do not rely on it for production access control yet. The public-release priorities are
+device capability enforcement, token lifecycle controls, audited privileged actions, TLS relay
+transport, and release-build push notifications. See [PRODUCT-DIRECTION.md](PRODUCT-DIRECTION.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+	Phone[Relay mobile app] -->|LAN or encrypted relay| Controller[Local controller]
+	Controller --> Workspace[Files, Git, terminal]
+	Controller --> Agents[Local agent adapters]
+	VSCode[VS Code extension] -->|editor context| Controller
+	Controller -->|open file or chat request| VSCode
 ```
 
-Node ≥ 22.13 (dev on 24 LTS), pnpm 10 (versions via workspace catalog).
+The laptop remains the source of truth. Relay persists replayable controller events so a phone can
+reconnect without pretending it is a second desktop environment.
 
-S0 demo gate: `packages/event-store/test/s0-gate.test.ts` — a command round-trips
-client ⇄ controller with schema validation, sequence assignment, replay, and idempotent retry.
+## Quick start
+
+Prerequisites: Node.js 22.13 or later and pnpm 10.
+
+```sh
+corepack enable
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm lint
+pnpm --filter @rdc/desktop-controller dev
+```
+
+The controller prints a local dashboard URL. Open it on the computer, choose **Pair device**, then
+scan the pairing QR from the Relay mobile app.
+
+To run the mobile app during development:
+
+```sh
+pnpm --filter @rdc/mobile start
+```
+
+To build and run the VS Code extension locally:
+
+```sh
+pnpm --filter rdc-vscode build
+code --extensionDevelopmentPath="$(pwd)/extensions/vscode"
+```
+
+Open the Command Palette in the extension host and run **RDC: Open in Agents** to begin a
+controller-owned session in the active workspace.
+
+## Website
+
+The public product site lives in [apps/site](apps/site). Run it locally with:
+
+```sh
+pnpm --filter @bytical/relay-site dev
+```
+
+The intended public address is `relay.bytical.ai` once the Bytical domain and Vercel project have
+been configured. Deployment instructions are in [apps/site/README.md](apps/site/README.md).
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, scope ownership,
+validation requirements, and pull-request expectations. Please read [SECURITY.md](SECURITY.md)
+before reporting a potential security issue.
+
+## License
+
+Copyright 2026 Bytical. Licensed under [Apache-2.0](LICENSE).

@@ -22,6 +22,7 @@ import {
 import { TerminalManager } from "@rdc/terminal";
 import { describe, expect, test } from "vitest";
 import { AgentManager } from "../src/agent-manager.ts";
+import { AuditLog } from "../src/audit-log.ts";
 import { ControllerDispatcher, newClientContext } from "../src/dispatcher.ts";
 import { EditorRegistry } from "../src/editors.ts";
 import { KeepAwake } from "../src/keep-awake.ts";
@@ -91,6 +92,96 @@ describe("ControllerDispatcher", () => {
     } else {
       throw new Error("expected FORBIDDEN error result");
     }
+  });
+
+  test("paired connections bind hello identity to the authenticated device", async () => {
+    const dispatcher = new ControllerDispatcher(makeDeps());
+    const ctx = newClientContext("dev_paired");
+
+    const rejected = await send(
+      dispatcher,
+      ctx,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "dev_someone_else" }),
+    );
+    if (rejected?.type === "hello_reject") {
+      expect(rejected.payload.error.code).toBe("FORBIDDEN");
+    } else {
+      throw new Error("expected paired identity rejection");
+    }
+    expect(ctx.helloDone).toBe(false);
+    expect(ctx.deviceId).toBe("dev_paired");
+
+    const accepted = await send(
+      dispatcher,
+      ctx,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "dev_paired" }),
+    );
+    expect(accepted?.type).toBe("hello_ack");
+    expect(ctx.helloDone).toBe(true);
+    expect(ctx.deviceId).toBe("dev_paired");
+  });
+
+  test("paired connections can only use their granted command scopes", async () => {
+    const dispatcher = new ControllerDispatcher(makeDeps());
+    const ctx = newClientContext("dev_paired", ["projects.read"]);
+    await send(
+      dispatcher,
+      ctx,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "dev_paired" }),
+    );
+
+    const projects = await send(dispatcher, ctx, ProjectList.createRequest({}));
+    expect(projects?.type).toBe("project.list.result");
+
+    const status = await send(dispatcher, ctx, MachineStatus.createRequest({}));
+    if (status?.type === "machine.status.result" && status.payload.status === "error") {
+      expect(status.payload.error.code).toBe("FORBIDDEN");
+      expect(status.payload.error.message).toContain("machine.read");
+    } else {
+      throw new Error("expected paired machine status denial");
+    }
+
+    const keepAwake = await send(
+      dispatcher,
+      ctx,
+      MachineKeepAwake.createRequest({ enabled: true }),
+    );
+    if (keepAwake?.type === "machine.keep_awake.result" && keepAwake.payload.status === "error") {
+      expect(keepAwake.payload.error.code).toBe("FORBIDDEN");
+      expect(keepAwake.payload.error.message).toContain("machine.control");
+    } else {
+      throw new Error("expected paired keep-awake denial");
+    }
+  });
+
+  test("records accepted and denied privileged requests without command contents", async () => {
+    const audit = new AuditLog(":memory:");
+    const dispatcher = new ControllerDispatcher({ ...makeDeps(), audit });
+    const local = newClientContext();
+    await send(
+      dispatcher,
+      local,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "owner" }),
+    );
+    await send(dispatcher, local, MachineKeepAwake.createRequest({ enabled: true }));
+
+    const paired = newClientContext("dev_limited", ["projects.read"]);
+    await send(
+      dispatcher,
+      paired,
+      Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "dev_limited" }),
+    );
+    await send(dispatcher, paired, MachineKeepAwake.createRequest({ enabled: false }));
+
+    const entries = audit.entries();
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.details)).toEqual([
+      { outcome: "accepted", connection: "local_owner" },
+      { outcome: "denied_scope", connection: "paired_device" },
+    ]);
+    expect(JSON.stringify(entries)).not.toContain("enabled");
+    expect(audit.verify()).toEqual({ valid: true });
+    audit.close();
   });
 
   test("editor: publish → list → open_file routed to matching window", async () => {

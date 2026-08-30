@@ -7,6 +7,14 @@ coverage/
 .DS_Store
 .expo/
 .export-check/
+.vercel/
 apps/mobile/android/
 apps/mobile/ios/
+apps/mobile/google-services.json
+apps/mobile/GoogleService-Info.plist
 tooling/.probe-device.json
+.env
+.env.*
+!.env.example
+*.key
+*.pem

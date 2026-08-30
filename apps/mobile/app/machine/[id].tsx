@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { useApp } from "../../src/machines.ts";
+import { hasScope, useApp } from "../../src/machines.ts";
 import {
   Button,
   Card,
@@ -30,6 +30,10 @@ export default function MachineDetail() {
   if (!machine || !id)
     return <Text style={{ ...type_.caption, padding: space.xl }}>machine not found</Text>;
   const health = rt?.health;
+  const canReadAgents = hasScope(health?.scopes, "agents.read");
+  const canReadTerminal = hasScope(health?.scopes, "terminals.read");
+  const canReadFiles = hasScope(health?.scopes, "files.read");
+  const canReadGit = hasScope(health?.scopes, "git.read");
 
   return (
     <ScrollView
@@ -77,16 +81,18 @@ export default function MachineDetail() {
         )}
       </Card>
 
-      <Card accent onPress={() => router.push(`/agent/${id}`)}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Text style={{ fontSize: 20 }}>✦</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={type_.heading}>Agents</Text>
-            <Text style={type_.caption}>Run Copilot on this machine from your phone</Text>
+      {canReadAgents ? (
+        <Card accent onPress={() => router.push(`/agent/${id}`)}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Text style={{ fontSize: 20 }}>✦</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={type_.heading}>Agents</Text>
+              <Text style={type_.caption}>Run Copilot on this machine from your phone</Text>
+            </View>
+            <Text style={{ color: colors.accent, fontSize: 18 }}>›</Text>
           </View>
-          <Text style={{ color: colors.accent, fontSize: 18 }}>›</Text>
-        </View>
-      </Card>
+        </Card>
+      ) : null}
 
       {(rt?.editors ?? []).map((editor) => (
         <Card key={editor.editor_id}>
@@ -129,20 +135,24 @@ export default function MachineDetail() {
         </Card>
       ))}
 
-      <Card onPress={() => router.push(`/terminal/${id}`)} style={{ gap: 2 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Text style={{ ...type_.heading, flex: 1 }}>⌨ Terminals</Text>
-          <Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>
-        </View>
-        <Text style={type_.caption}>Persistent shells on this machine</Text>
-      </Card>
+      {canReadTerminal ? (
+        <Card onPress={() => router.push(`/terminal/${id}`)} style={{ gap: 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Text style={{ ...type_.heading, flex: 1 }}>⌨ Terminals</Text>
+            <Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>
+          </View>
+          <Text style={type_.caption}>Persistent shells on this machine</Text>
+        </Card>
+      ) : null}
 
       <SectionLabel>Projects — tap for chats</SectionLabel>
       {(rt?.projects ?? []).map((project) => (
         <Card
           key={project.project_id}
-          onPress={() =>
-            router.push(`/agent/${id}?project=${encodeURIComponent(project.project_id)}`)
+          onPress={
+            canReadAgents
+              ? () => router.push(`/agent/${id}?project=${encodeURIComponent(project.project_id)}`)
+              : undefined
           }
           style={{ gap: space.xs }}
         >
@@ -157,15 +167,17 @@ export default function MachineDetail() {
             {project.root_path}
           </Text>
           <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.xs }}>
-            <Button
-              small
-              kind="ghost"
-              label="Files"
-              onPress={() =>
-                router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)
-              }
-            />
-            {project.vcs === "git" ? (
+            {canReadFiles ? (
+              <Button
+                small
+                kind="ghost"
+                label="Files"
+                onPress={() =>
+                  router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)
+                }
+              />
+            ) : null}
+            {project.vcs === "git" && canReadGit ? (
               <Button
                 small
                 kind="ghost"

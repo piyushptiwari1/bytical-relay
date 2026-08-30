@@ -2,7 +2,13 @@ import type { TerminalInfo } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
-import { terminalCreate, terminalKill, terminalList } from "../../../src/machines.ts";
+import {
+  hasScope,
+  terminalCreate,
+  terminalKill,
+  terminalList,
+  useApp,
+} from "../../../src/machines.ts";
 import {
   Card,
   colors,
@@ -17,6 +23,7 @@ import {
 export default function TerminalsHome() {
   const { machine } = useLocalSearchParams<{ machine: string }>();
   const router = useRouter();
+  const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [shells, setShells] = useState<Array<{ id: string; label: string }>>([]);
   const [busy, setBusy] = useState(false);
@@ -39,6 +46,7 @@ export default function TerminalsHome() {
   }, [load]);
 
   if (!machine) return null;
+  const canControl = hasScope(scopes, "terminals.control");
 
   const open = async (shell: string) => {
     setBusy(true);
@@ -60,46 +68,58 @@ export default function TerminalsHome() {
     >
       {error ? <Text style={{ ...type_.caption, color: colors.bad }}>{error}</Text> : null}
 
-      <SectionLabel>New terminal</SectionLabel>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-        {shells.map((shell) => (
-          <Pressable
-            key={shell.id}
-            disabled={busy}
-            onPress={() => void open(shell.id)}
-            style={({ pressed }) => ({
-              borderColor: colors.border,
-              borderWidth: 1,
-              borderRadius: 10,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              backgroundColor: pressed ? colors.cardRaised : colors.card,
-            })}
-          >
-            <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
-              + {shell.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {canControl ? (
+        <>
+          <SectionLabel>New terminal</SectionLabel>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+            {shells.map((shell) => (
+              <Pressable
+                key={shell.id}
+                disabled={busy}
+                onPress={() => void open(shell.id)}
+                style={({ pressed }) => ({
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                  borderRadius: 10,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  backgroundColor: pressed ? colors.cardRaised : colors.card,
+                })}
+              >
+                <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
+                  + {shell.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : (
+        <Text style={{ ...type_.caption, marginTop: space.md }}>
+          This phone can view terminal output. Command input is not enabled.
+        </Text>
+      )}
 
       <SectionLabel>Open terminals</SectionLabel>
       {terminals.map((terminal) => (
         <Card
           key={terminal.terminal_id}
           onPress={() => router.push(`/terminal/${machine}/${terminal.terminal_id}`)}
-          onLongPress={() => {
-            Alert.alert("Kill terminal?", terminal.title, [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Kill",
-                style: "destructive",
-                onPress: () => {
-                  void terminalKill(machine, terminal.terminal_id).then(() => load());
-                },
-              },
-            ]);
-          }}
+          onLongPress={
+            canControl
+              ? () => {
+                  Alert.alert("Kill terminal?", terminal.title, [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Kill",
+                      style: "destructive",
+                      onPress: () => {
+                        void terminalKill(machine, terminal.terminal_id).then(() => load());
+                      },
+                    },
+                  ]);
+                }
+              : undefined
+          }
           style={{ marginBottom: space.sm, gap: 4 }}
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>

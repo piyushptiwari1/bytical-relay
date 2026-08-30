@@ -151,6 +151,8 @@ export const AgentSessionSchema = z.object({
   provider: z.string().min(1),
   title: z.string(),
   status: AgentSessionStatusSchema,
+  /** Instructions accepted while a turn is active and waiting to run in FIFO order. */
+  queued_prompt_count: nonNegInt.optional(),
   created_at: z.iso.datetime(),
   updated_at: z.iso.datetime(),
 });

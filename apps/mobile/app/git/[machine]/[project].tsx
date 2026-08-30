@@ -2,7 +2,15 @@ import type { GitFileStatus, GitState } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { gitCommit, gitStage, gitStatus, gitUnstage, watchGit } from "../../../src/machines.ts";
+import {
+  gitCommit,
+  gitStage,
+  gitStatus,
+  gitUnstage,
+  hasScope,
+  useApp,
+  watchGit,
+} from "../../../src/machines.ts";
 import {
   Button,
   Card,
@@ -25,6 +33,7 @@ function glyphColor(char: string): string {
 export default function GitScreen() {
   const { machine, project } = useLocalSearchParams<{ machine: string; project: string }>();
   const router = useRouter();
+  const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
   const [state, setState] = useState<GitState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -47,6 +56,7 @@ export default function GitScreen() {
   }, [machine, project, load]);
 
   if (!machine || !project) return null;
+  const canWrite = hasScope(scopes, "git.write");
   if (error) {
     return (
       <View style={{ flex: 1, justifyContent: "center", padding: space.xl }}>
@@ -109,30 +119,32 @@ export default function GitScreen() {
             {file.path}
           </Text>
         </Pressable>
-        <Pressable
-          disabled={busy}
-          onPress={() =>
-            void act(() =>
-              isStaged
-                ? gitUnstage(machine, project, [file.path])
-                : gitStage(machine, project, [file.path]),
-            )
-          }
-          style={({ pressed }) => ({
-            width: 30,
-            height: 30,
-            borderRadius: 15,
-            borderWidth: 1,
-            borderColor: colors.border,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: pressed ? colors.cardRaised : "transparent",
-          })}
-        >
-          <Text style={{ color: colors.accent, fontSize: 16, lineHeight: 18 }}>
-            {isStaged ? "−" : "+"}
-          </Text>
-        </Pressable>
+        {canWrite ? (
+          <Pressable
+            disabled={busy}
+            onPress={() =>
+              void act(() =>
+                isStaged
+                  ? gitUnstage(machine, project, [file.path])
+                  : gitStage(machine, project, [file.path]),
+              )
+            }
+            style={({ pressed }) => ({
+              width: 30,
+              height: 30,
+              borderRadius: 15,
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: pressed ? colors.cardRaised : "transparent",
+            })}
+          >
+            <Text style={{ color: colors.accent, fontSize: 16, lineHeight: 18 }}>
+              {isStaged ? "−" : "+"}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   };
@@ -160,38 +172,46 @@ export default function GitScreen() {
         <>
           <SectionLabel>Staged · {staged.length}</SectionLabel>
           {staged.map((f) => row(f, true))}
-          <View style={{ gap: space.sm, marginTop: space.md }}>
-            <TextInput
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Commit message"
-              placeholderTextColor={colors.faint}
-              multiline
-              style={{
-                backgroundColor: colors.card,
-                borderColor: colors.borderSoft,
-                borderWidth: 1,
-                borderRadius: 12,
-                color: colors.text,
-                padding: space.md,
-                minHeight: 48,
-                fontSize: 14,
-              }}
-            />
-            <Button
-              disabled={busy || message.trim().length === 0}
-              label={
-                busy ? "committing…" : `Commit ${staged.length} file${staged.length > 1 ? "s" : ""}`
-              }
-              onPress={() =>
-                void act(async () => {
-                  await gitCommit(machine, project, message.trim());
-                  setMessage("");
-                  return gitStatus(machine, project);
-                })
-              }
-            />
-          </View>
+          {canWrite ? (
+            <View style={{ gap: space.sm, marginTop: space.md }}>
+              <TextInput
+                value={message}
+                onChangeText={setMessage}
+                placeholder="Commit message"
+                placeholderTextColor={colors.faint}
+                multiline
+                style={{
+                  backgroundColor: colors.card,
+                  borderColor: colors.borderSoft,
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  color: colors.text,
+                  padding: space.md,
+                  minHeight: 48,
+                  fontSize: 14,
+                }}
+              />
+              <Button
+                disabled={busy || message.trim().length === 0}
+                label={
+                  busy
+                    ? "committing…"
+                    : `Commit ${staged.length} file${staged.length > 1 ? "s" : ""}`
+                }
+                onPress={() =>
+                  void act(async () => {
+                    await gitCommit(machine, project, message.trim());
+                    setMessage("");
+                    return gitStatus(machine, project);
+                  })
+                }
+              />
+            </View>
+          ) : (
+            <Text style={{ ...type_.caption, marginTop: space.md }}>
+              Review is enabled on this phone. Staging and commits stay on the computer.
+            </Text>
+          )}
         </>
       ) : null}
 

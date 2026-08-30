@@ -48,6 +48,7 @@ import { loadMachines, removeMachine, type StoredMachine, saveMachine } from "./
 
 export type MachineStatusResult = MachineHealth & {
   keep_awake: KeepAwakeState;
+  scopes?: string[];
   relay?: { url: string; token: string } | null;
 };
 
@@ -57,12 +58,21 @@ export interface MachineRuntime {
   health?: MachineStatusResult;
   projects?: Project[];
   editors?: EditorState[];
+  sessions?: AgentSession[];
+  last_refreshed_at?: string;
 }
 
 // client instances live outside React state — they are not serializable
 const clients = new Map<string, ControllerClient>();
+const relayFallbacks = new Set<string>();
+const lanRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const LAN_RETRY_MS = 60_000;
 export const clientFor = (machineId: string): ControllerClient | undefined =>
   clients.get(machineId);
+
+export function hasScope(scopes: readonly string[] | undefined, scope: string): boolean {
+  return scopes?.includes("*") === true || scopes?.includes(scope) === true;
+}
 
 interface AppState {
   hydrated: boolean;
@@ -70,7 +80,7 @@ interface AppState {
   runtime: Record<string, MachineRuntime>;
   hydrate(): Promise<void>;
   addMachine(machine: StoredMachine): Promise<void>;
-  connect(machineId: string): Promise<void>;
+  connect(machineId: string, options?: { preferRelay?: boolean }): Promise<void>;
   refreshMachine(machineId: string): Promise<void>;
   toggleAwake(machineId: string): Promise<void>;
   forget(machineId: string): Promise<void>;
@@ -81,6 +91,73 @@ export const useApp = create<AppState>((set, get) => {
     set((s) => ({
       runtime: { ...s.runtime, [id]: { state: "unreachable", ...s.runtime[id], ...patch } },
     }));
+
+  const fallBackToRelay = (machineId: string, directClient: ControllerClient) => {
+    const machine = get().machines.find((item) => item.machine_id === machineId);
+    if (!machine?.relay || relayFallbacks.has(machineId) || clients.get(machineId) !== directClient)
+      return;
+    relayFallbacks.add(machineId);
+    clients.delete(machineId);
+    directClient.close();
+    void get()
+      .connect(machineId, { preferRelay: true })
+      .finally(() => relayFallbacks.delete(machineId));
+  };
+
+  const clearLanRetry = (machineId: string) => {
+    const timer = lanRetryTimers.get(machineId);
+    if (timer) clearTimeout(timer);
+    lanRetryTimers.delete(machineId);
+  };
+
+  const scheduleLanRetry = (machineId: string) => {
+    clearLanRetry(machineId);
+    const timer = setTimeout(() => {
+      lanRetryTimers.delete(machineId);
+      void tryReturnToLan(machineId);
+    }, LAN_RETRY_MS);
+    lanRetryTimers.set(machineId, timer);
+  };
+
+  const tryReturnToLan = async (machineId: string) => {
+    const activeClient = clients.get(machineId);
+    const machine = get().machines.find((item) => item.machine_id === machineId);
+    if (
+      !activeClient ||
+      !machine ||
+      machine.addrs.length === 0 ||
+      get().runtime[machineId]?.transport !== "relay"
+    ) {
+      return;
+    }
+    const probe = new ControllerClient({
+      url: `${machine.addrs[0]}/ws`,
+      token: machine.token,
+      deviceId: machine.device_id,
+      keys: {
+        keypair: { publicKey: fromB64(machine.kx_pub), privateKey: fromB64(machine.kx_priv) },
+        controllerKxPub: fromB64(machine.controller_kx_pub),
+      },
+      backoff: { baseMs: 500, capMs: 15_000 },
+    });
+    try {
+      await probe.connect(6000);
+    } catch {
+      probe.close();
+      scheduleLanRetry(machineId);
+      return;
+    }
+    probe.close();
+    if (
+      clients.get(machineId) !== activeClient ||
+      get().runtime[machineId]?.transport !== "relay"
+    ) {
+      return;
+    }
+    clients.delete(machineId);
+    activeClient.close();
+    await get().connect(machineId);
+  };
 
   return {
     hydrated: false,
@@ -102,21 +179,24 @@ export const useApp = create<AppState>((set, get) => {
       await get().connect(machine.machine_id);
     },
 
-    async connect(machineId) {
+    async connect(machineId, options = {}) {
       const machine = get().machines.find((m) => m.machine_id === machineId);
       if (!machine || clients.has(machineId)) return;
       patchRuntime(machineId, { state: "connecting" });
       // direct LAN first (lowest latency), then relay if the machine advertised one
-      const candidates: Array<{ url: string; transport: "direct" | "relay" }> = machine.addrs.map(
-        (addr) => ({ url: `${addr}/ws`, transport: "direct" }),
-      );
+      const directCandidates: Array<{ url: string; transport: "direct" | "relay" }> =
+        machine.addrs.map((addr) => ({ url: `${addr}/ws`, transport: "direct" }));
+      const relayCandidates: Array<{ url: string; transport: "direct" | "relay" }> = [];
       if (machine.relay) {
         const base = machine.relay.url.replace(/\/$/, "");
-        candidates.push({
+        relayCandidates.push({
           url: `${base}/tunnel?role=phone&machine=${encodeURIComponent(machine.machine_id)}&rt=${encodeURIComponent(machine.relay.token)}`,
           transport: "relay",
         });
       }
+      const candidates = options.preferRelay
+        ? [...relayCandidates, ...directCandidates]
+        : [...directCandidates, ...relayCandidates];
       for (const candidate of candidates) {
         const client = new ControllerClient({
           url: candidate.url,
@@ -131,15 +211,40 @@ export const useApp = create<AppState>((set, get) => {
         try {
           await client.connect(6000);
           clients.set(machineId, client);
-          client.events.on("state", (state) => patchRuntime(machineId, { state }));
+          client.events.on("state", (state) => {
+            if (clients.get(machineId) !== client) return;
+            patchRuntime(machineId, { state });
+            if (state === "reconnecting" && candidate.transport === "direct") {
+              fallBackToRelay(machineId, client);
+            }
+          });
           client.events.on("event", (msg) => {
-            if (msg.type === "machine.health") patchRuntime(machineId, { health: msg.payload });
-            if (msg.type === "agent.status_changed") onAgentStatus(machineId, msg.payload.session);
+            if (clients.get(machineId) !== client) return;
+            if (msg.type === "machine.health") {
+              patchRuntime(machineId, {
+                health: msg.payload,
+                last_refreshed_at: new Date().toISOString(),
+              });
+            }
+            if (msg.type === "agent.status_changed") {
+              onAgentStatus(machineId, msg.payload.session);
+              patchRuntime(machineId, {
+                sessions: [
+                  msg.payload.session,
+                  ...(get().runtime[machineId]?.sessions ?? []).filter(
+                    (session) => session.session_id !== msg.payload.session.session_id,
+                  ),
+                ],
+                last_refreshed_at: new Date().toISOString(),
+              });
+            }
             if (msg.type === "editor.state_changed")
               patchRuntime(machineId, { editors: msg.payload.editors });
           });
           patchRuntime(machineId, { state: client.state, transport: candidate.transport });
           await get().refreshMachine(machineId);
+          if (candidate.transport === "relay") scheduleLanRetry(machineId);
+          else clearLanRetry(machineId);
           // dormant in Expo Go (no token); dev builds register for killed-app push
           void expoPushTokenOrNull()
             .then((token) =>
@@ -157,12 +262,19 @@ export const useApp = create<AppState>((set, get) => {
     async refreshMachine(machineId) {
       const client = clients.get(machineId);
       if (!client) return;
-      const [health, projects, editors] = await Promise.all([
+      const [health, projects, editors, agentState] = await Promise.all([
         client.command(MachineStatus, {}),
         client.command(ProjectList, {}),
         client.command(EditorList, {}),
+        client.command(AgentList, {}).catch(() => null),
       ]);
-      patchRuntime(machineId, { health, projects: projects.projects, editors: editors.editors });
+      patchRuntime(machineId, {
+        health,
+        projects: projects.projects,
+        editors: editors.editors,
+        ...(agentState ? { sessions: agentState.sessions } : {}),
+        last_refreshed_at: new Date().toISOString(),
+      });
       // persist newly advertised relay so out-of-home connects work next time
       const machine = get().machines.find((m) => m.machine_id === machineId);
       const advertised = (health as MachineStatusResult).relay ?? null;
@@ -186,6 +298,7 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     async forget(machineId) {
+      clearLanRetry(machineId);
       clients.get(machineId)?.close();
       clients.delete(machineId);
       await removeMachine(machineId);
@@ -352,7 +465,7 @@ export const agentPrompt = (
   machineId: string,
   sessionId: string,
   prompt: string,
-): Promise<{ accepted: boolean }> =>
+): Promise<{ accepted: boolean; queued: boolean; queued_prompt_count: number }> =>
   requireClient(machineId).command(AgentPrompt, { session_id: sessionId, prompt });
 
 export const agentCancel = (

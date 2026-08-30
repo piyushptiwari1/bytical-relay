@@ -29,7 +29,7 @@ export default function RootLayout() {
         }}
       >
         <Text style={{ fontSize: 30 }}>⌘</Text>
-        <Text style={{ color: colors.dim, fontSize: 13, letterSpacing: 2 }}>RDC</Text>
+        <Text style={{ color: colors.dim, fontSize: 13, letterSpacing: 2 }}>RELAY</Text>
       </View>
     );
   }
@@ -43,7 +43,7 @@ export default function RootLayout() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Machines" }} />
+      <Stack.Screen name="index" options={{ title: "Relay" }} />
       <Stack.Screen name="pair" options={{ title: "Pair device", presentation: "modal" }} />
       <Stack.Screen name="machine/[id]" options={{ title: "Machine" }} />
       <Stack.Screen name="project/[machine]/[project]" options={{ title: "Files" }} />

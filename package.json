@@ -1,7 +1,23 @@
 {
-  "name": "remote-dev-control",
+  "name": "bytical-relay",
+  "description": "Relay by Bytical - a mobile control plane for local coding agents and development machines.",
   "private": true,
   "version": "0.0.0",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ai-agents",
+    "developer-tools",
+    "mobile",
+    "remote-development",
+    "vscode"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/piyushptiwari1/bytical-relay.git"
+  },
+  "bugs": {
+    "url": "https://github.com/piyushptiwari1/bytical-relay/issues"
+  },
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22.13"

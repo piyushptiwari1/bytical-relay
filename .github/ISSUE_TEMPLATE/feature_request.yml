@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a focused improvement to Relay.
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should Relay solve?
+      description: Describe the developer workflow rather than a preferred implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the smallest useful user-visible result.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - Controller
+        - Mobile app
+        - VS Code extension
+        - Agent adapter
+        - Relay transport
+        - Documentation
+  - type: textarea
+    id: risks
+    attributes:
+      label: Security or reliability considerations
+      description: Note any new device permissions, data exposure, network behavior, or recovery concerns.

@@ -3,9 +3,11 @@ import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
+  hasScope,
   terminalKill,
   terminalSnapshot,
   terminalWrite,
+  useApp,
   watchTerminal,
 } from "../../../src/machines.ts";
 import { colors, mono, Pill, space, type_ } from "../../../src/theme.tsx";
@@ -21,6 +23,7 @@ const CTRL_KEYS: Array<{ label: string; data: string }> = [
 
 export default function TerminalScreen() {
   const { machine, terminal } = useLocalSearchParams<{ machine: string; terminal: string }>();
+  const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
   const [snapshot, setSnapshot] = useState<TerminalSnapshot | null>(null);
   const [input, setInput] = useState("");
   const [exited, setExited] = useState<number | null | undefined>(undefined);
@@ -62,6 +65,7 @@ export default function TerminalScreen() {
   }, [machine, terminal, refresh]);
 
   if (!machine || !terminal) return null;
+  const canControl = hasScope(scopes, "terminals.control");
 
   const send = async (data: string) => {
     try {
@@ -101,9 +105,13 @@ export default function TerminalScreen() {
         ) : (
           <View style={{ flex: 1 }} />
         )}
-        <Pressable onPress={() => void terminalKill(machine, terminal).then(() => setExited(null))}>
-          <Text style={{ color: colors.bad, fontSize: 13, fontWeight: "600" }}>Kill</Text>
-        </Pressable>
+        {canControl ? (
+          <Pressable
+            onPress={() => void terminalKill(machine, terminal).then(() => setExited(null))}
+          >
+            <Text style={{ color: colors.bad, fontSize: 13, fontWeight: "600" }}>Kill</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -140,41 +148,49 @@ export default function TerminalScreen() {
         </ScrollView>
       </ScrollView>
 
-      <View
-        style={{
-          flexDirection: "row",
-          gap: space.xs,
-          paddingHorizontal: space.md,
-          paddingTop: space.xs,
-        }}
-      >
-        {CTRL_KEYS.map((key) => (
-          <Pressable
-            key={key.label}
-            onPress={() => void send(key.data)}
-            style={({ pressed }) => ({
-              borderColor: colors.border,
-              borderWidth: 1,
-              borderRadius: 8,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              backgroundColor: pressed ? colors.cardRaised : "transparent",
-            })}
-          >
-            <Text style={{ color: colors.dim, fontSize: 12, ...mono }}>{key.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {canControl ? (
+        <View
+          style={{
+            flexDirection: "row",
+            gap: space.xs,
+            paddingHorizontal: space.md,
+            paddingTop: space.xs,
+          }}
+        >
+          {CTRL_KEYS.map((key) => (
+            <Pressable
+              key={key.label}
+              onPress={() => void send(key.data)}
+              style={({ pressed }) => ({
+                borderColor: colors.border,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                backgroundColor: pressed ? colors.cardRaised : "transparent",
+              })}
+            >
+              <Text style={{ color: colors.dim, fontSize: 12, ...mono }}>{key.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       <View style={{ flexDirection: "row", padding: space.md, gap: space.sm }}>
         <TextInput
           value={input}
           onChangeText={setInput}
           onSubmitEditing={submit}
-          editable={exited === undefined}
+          editable={canControl && exited === undefined}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder={exited === undefined ? "Type a command…" : "terminal exited"}
+          placeholder={
+            !canControl
+              ? "Terminal input is not enabled"
+              : exited === undefined
+                ? "Type a command…"
+                : "terminal exited"
+          }
           placeholderTextColor={colors.faint}
           style={{
             flex: 1,
@@ -190,10 +206,11 @@ export default function TerminalScreen() {
           }}
         />
         <Pressable
-          disabled={exited !== undefined || input.length === 0}
+          disabled={!canControl || exited !== undefined || input.length === 0}
           onPress={submit}
           style={({ pressed }) => ({
-            backgroundColor: input && exited === undefined ? colors.accent : colors.card,
+            backgroundColor:
+              canControl && input && exited === undefined ? colors.accent : colors.card,
             borderRadius: 10,
             paddingHorizontal: 16,
             justifyContent: "center",
@@ -202,7 +219,7 @@ export default function TerminalScreen() {
         >
           <Text
             style={{
-              color: input && exited === undefined ? "#0A0C10" : colors.faint,
+              color: canControl && input && exited === undefined ? "#0A0C10" : colors.faint,
               fontWeight: "700",
             }}
           >

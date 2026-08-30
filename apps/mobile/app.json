@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "rdc",
+    "name": "Relay",
     "slug": "rdc-mobile",
     "version": "0.0.1",
     "scheme": "rdc",
@@ -8,10 +8,7 @@
     "userInterfaceStyle": "dark",
     "android": {
       "package": "com.rdc.mobile",
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": ["android.permission.CAMERA"]
     },
     "ios": {
       "bundleIdentifier": "com.rdc.mobile",

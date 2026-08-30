@@ -59,7 +59,7 @@ export default function Pair() {
       setPhase({ step: "error", message: lastError });
       scanning.current = false;
     } catch {
-      setPhase({ step: "error", message: "That QR code is not an rdc pairing code." });
+      setPhase({ step: "error", message: "That QR code is not a Relay pairing code." });
       scanning.current = false;
     }
   }
@@ -70,7 +70,7 @@ export default function Pair() {
         <Text style={{ fontSize: 34, textAlign: "center" }}>📷</Text>
         <Text style={{ ...type_.heading, textAlign: "center" }}>Camera access needed</Text>
         <Text style={{ ...type_.caption, textAlign: "center" }}>
-          The camera is only used to scan the pairing QR code shown on your computer.
+          The camera is only used to scan the Relay pairing QR code shown on your computer.
         </Text>
         <Button label="Allow camera" onPress={() => void requestPermission()} />
       </View>
@@ -88,7 +88,7 @@ export default function Pair() {
           />
           <View style={{ padding: space.lg }}>
             <Text style={{ ...type_.caption, textAlign: "center" }}>
-              Point at the QR code in the rdc dashboard → “Pair device”.
+              Point at the QR code in the Relay dashboard → “Pair device”.
             </Text>
           </View>
         </>

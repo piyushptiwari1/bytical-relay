@@ -9,6 +9,7 @@ import { TerminalManager } from "@rdc/terminal";
 import { Command } from "commander";
 import pino from "pino";
 import { AgentManager } from "./agent-manager.ts";
+import { AuditLog } from "./audit-log.ts";
 import { configDir, loadOrCreateConfig } from "./config.ts";
 import { DeviceStore } from "./device-store.ts";
 import { runDoctor } from "./doctor.ts";
@@ -40,6 +41,7 @@ async function start(): Promise<void> {
   const releaseLock = acquireSingleInstanceLock(dir);
   const keys = loadOrCreateKeys(dir);
   const devices = new DeviceStore(path.join(dir, "devices.db"));
+  const audit = new AuditLog(path.join(dir, "audit.db"));
   const pairing = new PairingCoordinator({
     keys,
     devices,
@@ -131,6 +133,7 @@ async function start(): Promise<void> {
     editors: new EditorRegistry(),
     agents,
     terminals,
+    audit,
     ...(relay ? { relay } : {}),
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
@@ -178,6 +181,7 @@ async function start(): Promise<void> {
     await fsService.stop();
     eventStore.close();
     fsIndex.close();
+    audit.close();
     releaseLock();
     process.exit(0);
   };

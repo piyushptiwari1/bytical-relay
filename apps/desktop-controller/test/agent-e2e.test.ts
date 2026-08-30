@@ -76,13 +76,66 @@ describe("AgentManager end-to-end with scripted ACP agent", () => {
     expect(updates.at(-1)).toBe("turn_ended");
 
     // follow-up prompt on an idle session is accepted
-    expect(await manager.prompt(session.session_id, "again")).toBe(true);
+    expect((await manager.prompt(session.session_id, "again")).accepted).toBe(true);
     await waitFor(() => manager.list()[0]?.status === "awaiting_approval");
     const pending = manager.approvals.pendingFor(session.session_id)[0];
     manager.respond(pending?.approval_id as string, "reject");
     await waitFor(() => manager.list()[0]?.status === "idle");
 
     await manager.stop();
+  });
+});
+
+describe("AgentManager queued prompts", () => {
+  test("a prompt sent during an active turn is delivered once that turn completes", async () => {
+    const eventStore = new MemoryEventStore();
+    const sessions = new SessionStore(":memory:");
+    const fsIndex = new FsIndex(":memory:");
+    fsIndex.upsertProject({
+      project_id: "git_agent",
+      name: "agent-proj",
+      root_path: process.cwd(),
+      vcs: "git",
+      fingerprint: "a".repeat(40),
+      wsl: false,
+    });
+    const adapter = new AcpAdapter({
+      id: "fake",
+      command: process.execPath,
+      argsFor: () => [fixture],
+    });
+    const manager = new AgentManager({ eventStore, fsIndex, sessions }, [adapter]);
+    const session = await manager.start("git_agent", "fake", "first task");
+    await waitFor(() => manager.approvals.pendingFor(session.session_id).length === 1);
+
+    const queued = await manager.prompt(session.session_id, "run the focused tests after this");
+    expect(queued).toEqual({ accepted: true, queued: true, queued_prompt_count: 1 });
+    expect(manager.list()[0]?.queued_prompt_count).toBe(1);
+
+    const firstApproval = manager.approvals.pendingFor(session.session_id)[0]?.approval_id;
+    manager.respond(firstApproval as string, "allow");
+    await waitFor(() =>
+      manager.approvals
+        .pendingFor(session.session_id)
+        .some((request) => request.approval_id !== firstApproval),
+    );
+    const secondApproval = manager.approvals
+      .pendingFor(session.session_id)
+      .find((request) => request.approval_id !== firstApproval)?.approval_id;
+    manager.respond(secondApproval as string, "allow");
+    await waitFor(() => manager.list()[0]?.status === "idle");
+
+    expect(manager.list()[0]?.queued_prompt_count).toBe(0);
+    const userMessages = eventStore
+      .read(agentStream(session.session_id), 0, 500)
+      .filter((record) => record.type === "agent.updated")
+      .map((record) => record.payload as { update: { kind: string; text?: string } })
+      .filter((payload) => payload.update.kind === "user_message")
+      .filter((payload) => payload.update.text === "run the focused tests after this");
+    expect(userMessages).toHaveLength(1);
+
+    await manager.stop();
+    sessions.close();
   });
 });
 
@@ -95,6 +148,28 @@ async function waitFor(check: () => boolean, timeoutMs = 15_000): Promise<void> 
 }
 
 describe("SessionStore persistence across controller restarts", () => {
+  test("queued prompts are durable, ordered, and removed with their session", () => {
+    const store = new SessionStore(":memory:");
+    const base = {
+      project_id: "git_agent",
+      provider: "fake",
+      created_at: "2026-08-30T00:00:00.000Z",
+      updated_at: "2026-08-30T00:00:00.000Z",
+    };
+    store.upsert({ ...base, session_id: "ses_queue", title: "queued work", status: "idle" });
+    store.enqueuePrompt("ses_queue", "que_1", "first correction", "2026-08-30T00:01:00.000Z");
+    store.enqueuePrompt("ses_queue", "que_2", "second correction", "2026-08-30T00:02:00.000Z");
+
+    expect(store.queuedPromptCount("ses_queue")).toBe(2);
+    expect(store.nextQueuedPrompt("ses_queue")?.text).toBe("first correction");
+    expect(store.removeQueuedPrompt("que_1")).toBe(true);
+    expect(store.nextQueuedPrompt("ses_queue")?.text).toBe("second correction");
+
+    expect(store.delete("ses_queue")).toBe(true);
+    expect(store.queuedPromptCount("ses_queue")).toBe(0);
+    store.close();
+  });
+
   test("history survives; live sessions become cancelled on boot", () => {
     const store = new SessionStore(":memory:");
     const base = {
@@ -155,7 +230,7 @@ describe("SessionStore persistence across controller restarts", () => {
       "cancelled",
     );
     const accepted = await managerB.prompt(session.session_id, "continue please");
-    expect(accepted).toBe(true);
+    expect(accepted.accepted).toBe(true);
     await waitFor(() => managerB.list()[0]?.status === "awaiting_approval");
     managerB.respond(
       managerB.approvals.pendingFor(session.session_id)[0]?.approval_id as string,
