@@ -10,7 +10,7 @@ overrides:
   react-native-worklets: "0.10.1"
 
 catalog:
-  typescript: ^5.9.2
+  typescript: ^7.0.2
   vitest: ^3.2.0
   fast-check: ^4.1.0
   zod: ^4.1.0
