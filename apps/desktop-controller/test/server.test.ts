@@ -3,7 +3,7 @@ import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
 import { FileChanged, fsStream, Hello, SUPPORTED_VERSIONS, SyncSubscribe } from "@rdc/protocol";
-import { generateKxKeypair } from "@rdc/security";
+import { generateKxKeypair, hashToken } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { TerminalManager } from "@rdc/terminal";
 import { afterAll, describe, expect, test } from "vitest";
@@ -137,6 +137,48 @@ describe("controller server", () => {
       socket.on("error", reject);
     });
     expect(rawStatus).toBe(403);
+  });
+
+  test("only the local owner can manage redacted paired-device records", async () => {
+    const deps = makeDeps();
+    const deviceToken = "paired-device-token-0123456789abcdef";
+    deps.devices.add({
+      device_id: "dev_manage",
+      name: "Phone",
+      kx_pub: "public-key-material",
+      token_hash: hashToken(deviceToken),
+      scopes: ["projects.read"],
+      expires_at: Date.now() + 60_000,
+    });
+    const { app } = await buildServer(deps);
+    closers.push(() => app.close());
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const port = (app.server.address() as { port: number }).port;
+
+    const listed = await fetch(`http://127.0.0.1:${port}/api/devices`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { devices: Array<Record<string, unknown>> };
+    expect(body.devices[0]).toMatchObject({
+      device_id: "dev_manage",
+      name: "Phone",
+      connected: false,
+    });
+    expect(body.devices[0]).not.toHaveProperty("kx_pub");
+    expect(body.devices[0]).not.toHaveProperty("token_hash");
+
+    const pairedList = await fetch(`http://127.0.0.1:${port}/api/devices`, {
+      headers: { authorization: `Bearer ${deviceToken}` },
+    });
+    expect(pairedList.status).toBe(403);
+
+    const revoked = await fetch(`http://127.0.0.1:${port}/api/devices/dev_manage/revoke`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(revoked.status).toBe(200);
+    expect(deps.devices.get("dev_manage")?.revoked).toBe(true);
   });
 
   test("ws: hello → subscribe → journaled event is pushed live", async () => {

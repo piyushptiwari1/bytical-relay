@@ -142,22 +142,20 @@ const suites = {
     });
   },
 
-  /** Live remote access through the relay (args: [relayUrl] [relayToken], else controller config). */
+  /** Live remote access through the relay (arg: [relayUrl], else controller config). */
   async relay(_client, t, args) {
     const { relaySuite } = await import("./probe-relay.mjs");
     const { readFileSync } = await import("node:fs");
     const path = await import("node:path");
     let relayUrl = args.find((a) => a.startsWith("ws"));
-    let relayToken = args.find((a) => !a.startsWith("ws") && !a.startsWith("--"));
-    if (!relayUrl || !relayToken) {
+    if (!relayUrl) {
       const base = process.env.LOCALAPPDATA ?? "";
       const config = JSON.parse(readFileSync(path.join(base, "rdc", "config.json"), "utf8"));
       if (!config.relay) throw new Error("no relay in controller config and none passed");
       relayUrl = relayUrl ?? config.relay.url;
-      relayToken = relayToken ?? config.relay.token;
     }
     const port = process.env.RDC_PROBE_PORT ?? 8347;
-    await relaySuite(t, { port, relayUrl, relayToken });
+    await relaySuite(t, { port, relayUrl });
   },
 
   /** S7b: push-token registration + live Expo Push API round-trip. */

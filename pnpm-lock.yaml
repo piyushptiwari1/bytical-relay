@@ -263,6 +263,9 @@ importers:
       '@fastify/websocket':
         specifier: 'catalog:'
         version: 11.3.0
+      '@rdc/security':
+        specifier: workspace:*
+        version: link:../../packages/security
       fastify:
         specifier: 'catalog:'
         version: 5.12.1

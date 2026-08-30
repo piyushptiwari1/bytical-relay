@@ -18,7 +18,7 @@ import {
   toB64,
 } from "@rdc/security";
 import { newId } from "@rdc/shared";
-import { DEFAULT_DEVICE_SCOPES, type DeviceStore } from "./device-store.ts";
+import { DEFAULT_DEVICE_SCOPES, DEVICE_TOKEN_TTL_MS, type DeviceStore } from "./device-store.ts";
 
 export interface PairSocket {
   send(json: string): void;
@@ -32,8 +32,6 @@ export interface PairingStatus {
   granted_device_id?: string;
   expires_in_s?: number;
 }
-
-const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — refresh rotation arrives with the relay (S7)
 
 /** Orchestrates one pairing session: dashboard start/confirm ↔ /pair socket (PLAN §20). */
 export class PairingCoordinator {
@@ -150,17 +148,19 @@ export class PairingCoordinator {
     const pending = session?.pendingDevice;
     if (!session || !pending || !session.confirm()) return null;
     const deviceId = `dev_${newId()}`;
-    const issued = issueToken(deviceId, DEFAULT_DEVICE_SCOPES, TOKEN_TTL_MS);
+    const issued = issueToken(deviceId, DEFAULT_DEVICE_SCOPES, DEVICE_TOKEN_TTL_MS);
     this.deps.devices.add({
       device_id: deviceId,
       name: pending.deviceName,
       kx_pub: pending.deviceKxPubB64,
       token_hash: issued.record.token_hash,
       scopes: [...DEFAULT_DEVICE_SCOPES],
+      expires_at: issued.record.expires_at,
     });
     const grant: PairGrant = {
       device_id: deviceId,
       token: issued.token,
+      token_expires_at: new Date(issued.record.expires_at).toISOString(),
       machine_id: this.deps.machineId,
       machine_name: this.deps.machineName,
       controller_kx_pub: toB64(this.deps.keys.publicKey),

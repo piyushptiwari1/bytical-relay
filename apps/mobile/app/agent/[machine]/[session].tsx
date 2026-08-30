@@ -61,12 +61,16 @@ export default function AgentSessionScreen() {
   const router = useRouter();
   const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
   const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
+  const pendingPromptCount = useApp((s) =>
+    machine && session ? (s.runtime[machine]?.pending_prompt_counts?.[session] ?? 0) : 0,
+  );
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [status, setStatus] = useState<string>("running");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   const [prompt, setPrompt] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(0);
   const listRef = useRef<FlatList<Block> | null>(null);
@@ -219,7 +223,7 @@ export default function AgentSessionScreen() {
   const canControl = hasScope(scopes, "agents.control");
   const busy = status === "running" || status === "awaiting_approval" || status === "starting";
   const canPrompt = canControl && status !== "starting";
-  const willQueue = busy || queuedPromptCount > 0;
+  const willQueue = busy || queuedPromptCount > 0 || pendingPromptCount > 0;
   const ended = ENDED.has(status);
   const project = projects.find((p) => p.project_id === projectId);
 
@@ -236,6 +240,13 @@ export default function AgentSessionScreen() {
       setQueuedPromptCount(result.queued_prompt_count);
       setPrompt("");
       setError(null);
+      setNotice(
+        result.waiting_to_send
+          ? "Instruction saved. Relay will send it when your computer reconnects."
+          : result.queued
+            ? "Instruction queued for the next step."
+            : null,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -278,6 +289,11 @@ export default function AgentSessionScreen() {
       {error ? (
         <Text style={{ ...type_.caption, color: colors.bad, paddingHorizontal: space.lg }}>
           {error}
+        </Text>
+      ) : null}
+      {notice ? (
+        <Text style={{ ...type_.caption, color: colors.accent, paddingHorizontal: space.lg }}>
+          {notice}
         </Text>
       ) : null}
 
@@ -490,6 +506,25 @@ export default function AgentSessionScreen() {
           <Text style={{ ...type_.caption, color: colors.accent }}>
             {queuedPromptCount} instruction{queuedPromptCount === 1 ? "" : "s"} queued for the next
             step
+          </Text>
+        </View>
+      ) : null}
+
+      {pendingPromptCount > 0 ? (
+        <View
+          style={{
+            backgroundColor: colors.warnSoft,
+            borderColor: colors.border,
+            borderWidth: 1,
+            marginHorizontal: space.lg,
+            marginBottom: space.sm,
+            paddingHorizontal: space.md,
+            paddingVertical: space.sm,
+          }}
+        >
+          <Text style={{ ...type_.caption, color: colors.warn }}>
+            {pendingPromptCount} instruction{pendingPromptCount === 1 ? "" : "s"} waiting to send
+            when your computer reconnects
           </Text>
         </View>
       ) : null}

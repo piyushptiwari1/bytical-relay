@@ -13,6 +13,7 @@ import {
   AgentStart,
   ApprovalRespond,
   DebugEcho,
+  DeviceRotateToken,
   EditorAskChat,
   EditorChatRequested,
   EditorList,
@@ -48,11 +49,12 @@ import {
   TerminalSnapshotCmd,
   TerminalWrite,
 } from "@rdc/protocol";
+import { issueRelayTicketBundle, issueToken } from "@rdc/security";
 import { nowIso } from "@rdc/shared";
 import type { TerminalManager } from "@rdc/terminal";
 import type { AgentManager } from "./agent-manager.ts";
 import type { AuditLog } from "./audit-log.ts";
-import type { DeviceStore } from "./device-store.ts";
+import { DEVICE_TOKEN_TTL_MS, type DeviceStore } from "./device-store.ts";
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
@@ -64,19 +66,45 @@ export interface ClientContext {
   authenticatedDeviceId: string | null;
   /** null means a local-owner connection authenticated by the controller token. */
   authenticatedScopes: readonly string[] | null;
+  authenticatedTransport: "direct" | "relay" | null;
   subscriptions: Set<string>;
 }
 
 export const newClientContext = (
   authenticatedDeviceId: string | null = null,
   authenticatedScopes: readonly string[] | null = authenticatedDeviceId === null ? null : [],
+  authenticatedTransport: "direct" | "relay" | null = authenticatedDeviceId === null
+    ? null
+    : "direct",
 ): ClientContext => ({
   helloDone: false,
   deviceId: authenticatedDeviceId,
   authenticatedDeviceId,
   authenticatedScopes,
+  authenticatedTransport,
   subscriptions: new Set(),
 });
+
+/** Local-owner connections bypass scopes; paired devices need an explicit matching capability. */
+export function hasClientScope(ctx: ClientContext, scope: string): boolean {
+  return (
+    ctx.authenticatedScopes === null ||
+    ctx.authenticatedScopes.includes("*") ||
+    ctx.authenticatedScopes.includes(scope)
+  );
+}
+
+/** Resolve the least privilege needed to observe a journal stream. Unknown streams stay local-only. */
+export function canAccessStream(ctx: ClientContext, stream: string): boolean {
+  if (ctx.authenticatedScopes === null) return true;
+  if (stream === "machine") return hasClientScope(ctx, "machine.read");
+  if (stream === "editor") return hasClientScope(ctx, "editor.read");
+  if (stream.startsWith("fs:")) return hasClientScope(ctx, "files.read");
+  if (stream.startsWith("git:")) return hasClientScope(ctx, "git.read");
+  if (stream.startsWith("agent:")) return hasClientScope(ctx, "agents.read");
+  if (stream.startsWith("terminal")) return hasClientScope(ctx, "terminals.read");
+  return false;
+}
 
 type CommandErrorDefinition = {
   createError(commandId: string, error: ReturnType<typeof protocolError>): unknown;
@@ -112,6 +140,7 @@ const SCOPED_COMMANDS: Record<string, { scope: string; definition: CommandErrorD
   "sync.replay": { scope: "events.read", definition: SyncReplay },
   "machine.status": { scope: "machine.read", definition: MachineStatus },
   "machine.keep_awake": { scope: "machine.control", definition: MachineKeepAwake },
+  "device.rotate_token": { scope: "device.self_manage", definition: DeviceRotateToken },
   "notify.register": { scope: "notifications.manage", definition: NotifyRegister },
   "notify.test": { scope: "notifications.manage", definition: NotifyTest },
 };
@@ -133,6 +162,7 @@ const PRIVILEGED_COMMANDS = new Set([
   "terminal.resize",
   "terminal.kill",
   "machine.keep_awake",
+  "device.rotate_token",
   "notify.register",
   "notify.test",
 ]);
@@ -197,6 +227,9 @@ export class ControllerDispatcher {
       }
       ctx.helloDone = true;
       ctx.deviceId = ctx.authenticatedDeviceId ?? msg.payload.device_id;
+      if (ctx.authenticatedDeviceId && ctx.authenticatedTransport) {
+        this.deps.devices?.markSeen(ctx.authenticatedDeviceId, ctx.authenticatedTransport);
+      }
       return [
         HelloAck.create({
           negotiated_version: negotiated,
@@ -214,16 +247,13 @@ export class ControllerDispatcher {
         ? [DebugEcho.createError(commandId, protocolError("FORBIDDEN", "hello required"))]
         : [];
     }
+    if (ctx.authenticatedDeviceId && ctx.authenticatedTransport) {
+      this.deps.devices?.markSeen(ctx.authenticatedDeviceId, ctx.authenticatedTransport);
+    }
     const scoped = SCOPED_COMMANDS[msg.type];
     const commandId =
       "command_id" in msg && typeof msg.command_id === "string" ? msg.command_id : null;
-    if (
-      scoped &&
-      commandId &&
-      ctx.authenticatedScopes !== null &&
-      !ctx.authenticatedScopes.includes("*") &&
-      !ctx.authenticatedScopes.includes(scoped.scope)
-    ) {
+    if (scoped && commandId && !hasClientScope(ctx, scoped.scope)) {
       this.#audit(ctx, msg, "denied_scope");
       return [
         scoped.definition.createError(
@@ -332,10 +362,27 @@ export class ControllerDispatcher {
           })),
         ];
       case "agent.prompt":
+        {
+          const cached = this.deps.eventStore.getCommandResult(msg.command_id);
+          if (cached !== undefined) {
+            return [
+              AgentPrompt.createOk(
+                msg.command_id,
+                cached as { accepted: boolean; queued: boolean; queued_prompt_count: number },
+                { duplicate: true },
+              ),
+            ];
+          }
+        }
         return [
-          await this.#tryRun(msg.command_id, AgentPrompt, async () =>
-            this.deps.agents.prompt(msg.payload.session_id, msg.payload.prompt),
-          ),
+          await this.#tryRun(msg.command_id, AgentPrompt, async () => {
+            const result = await this.deps.agents.prompt(
+              msg.payload.session_id,
+              msg.payload.prompt,
+            );
+            this.deps.eventStore.putCommandResult(msg.command_id, result, 24 * 60 * 60 * 1000);
+            return result;
+          }),
         ];
       case "agent.cancel":
         return [
@@ -421,11 +468,28 @@ export class ControllerDispatcher {
           })),
         ];
       case "sync.subscribe": {
+        const denied = msg.payload.streams.find((stream) => !canAccessStream(ctx, stream));
+        if (denied) {
+          return [
+            SyncSubscribe.createError(
+              msg.command_id,
+              protocolError("FORBIDDEN", `this paired device cannot access stream: ${denied}`),
+            ),
+          ];
+        }
         for (const stream of msg.payload.streams) ctx.subscriptions.add(stream);
         return [SyncSubscribe.createOk(msg.command_id, { subscribed: [...ctx.subscriptions] })];
       }
       case "sync.replay": {
         const { stream, since, limit } = msg.payload;
+        if (!canAccessStream(ctx, stream)) {
+          return [
+            SyncReplay.createError(
+              msg.command_id,
+              protocolError("FORBIDDEN", `this paired device cannot access stream: ${stream}`),
+            ),
+          ];
+        }
         return [
           SyncReplay.createOk(msg.command_id, {
             events: this.deps.eventStore.read(stream, since, limit),
@@ -435,20 +499,68 @@ export class ControllerDispatcher {
       }
       case "sys.ping":
         return [SysPing.createOk(msg.command_id, { pong: nowIso() })];
-      case "machine.status":
+      case "machine.status": {
+        const device = ctx.authenticatedDeviceId
+          ? this.deps.devices?.get(ctx.authenticatedDeviceId)
+          : undefined;
+        const relay =
+          this.deps.relay && ctx.authenticatedDeviceId
+            ? {
+                url: this.deps.relay.url,
+                tickets: issueRelayTicketBundle(this.deps.relay.token, {
+                  machineId: this.deps.machineId,
+                  deviceId: ctx.authenticatedDeviceId,
+                }),
+              }
+            : null;
         return [
           MachineStatus.createOk(msg.command_id, {
             ...this.deps.health.latest(),
             keep_awake: this.deps.keepAwake.state(),
             scopes: [...(ctx.authenticatedScopes ?? ["*"])],
-            relay: this.deps.relay ?? null,
+            device_token_expires_at: device ? new Date(device.expires_at).toISOString() : null,
+            relay,
           }),
         ];
+      }
       case "machine.keep_awake": {
         const state = msg.payload.enabled
           ? this.deps.keepAwake.enable(msg.payload.ttl_minutes)
           : this.deps.keepAwake.disable();
         return [MachineKeepAwake.createOk(msg.command_id, state)];
+      }
+      case "device.rotate_token": {
+        const deviceId = ctx.authenticatedDeviceId;
+        const device = deviceId ? this.deps.devices?.get(deviceId) : undefined;
+        if (!deviceId || !device || device.revoked || device.expires_at <= Date.now()) {
+          return [
+            DeviceRotateToken.createError(
+              msg.command_id,
+              protocolError("FORBIDDEN", "a valid paired device connection is required"),
+            ),
+          ];
+        }
+        const issued = issueToken(device.device_id, device.scopes, DEVICE_TOKEN_TTL_MS);
+        if (
+          !this.deps.devices?.rotateToken(
+            device.device_id,
+            issued.record.token_hash,
+            issued.record.expires_at,
+          )
+        ) {
+          return [
+            DeviceRotateToken.createError(
+              msg.command_id,
+              protocolError("INTERNAL", "could not rotate the paired device token"),
+            ),
+          ];
+        }
+        return [
+          DeviceRotateToken.createOk(msg.command_id, {
+            token: issued.token,
+            expires_at: new Date(issued.record.expires_at).toISOString(),
+          }),
+        ];
       }
       case "notify.register": {
         if (!this.deps.devices || !ctx.deviceId) {

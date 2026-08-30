@@ -79,6 +79,7 @@ export const PairGranted = defineMessage("pair.granted", z.object({ sealed: z.st
 export const PairGrantSchema = z.object({
   device_id: z.string().min(1),
   token: z.string().min(16),
+  token_expires_at: z.iso.datetime(),
   machine_id: z.string().min(1),
   machine_name: z.string().min(1),
   controller_kx_pub: z.string().min(1),
@@ -111,8 +112,25 @@ export const MachineStatus = defineCommand(
     keep_awake: KeepAwakeStateSchema,
     /** Capabilities granted to this paired device; local owner connections receive `*`. */
     scopes: z.array(z.string()).optional(),
-    /** present when this machine is reachable through a relay (S7 remote access) */
-    relay: z.object({ url: z.string(), token: z.string() }).nullable().optional(),
+    /** Paired-device token expiry; the raw token is never returned here. */
+    device_token_expires_at: z.iso.datetime().nullable().optional(),
+    /** Short-lived device-bound relay tickets; the controller credential is never returned. */
+    relay: z
+      .object({
+        url: z.string(),
+        tickets: z
+          .array(
+            z.object({
+              ticket: z.string().min(1),
+              not_before: z.iso.datetime(),
+              expires_at: z.iso.datetime(),
+            }),
+          )
+          .min(1)
+          .max(31),
+      })
+      .nullable()
+      .optional(),
   }),
 );
 
@@ -120,6 +138,13 @@ export const MachineKeepAwake = defineCommand(
   "machine.keep_awake",
   z.object({ enabled: z.boolean(), ttl_minutes: z.number().int().min(1).max(720).optional() }),
   KeepAwakeStateSchema,
+);
+
+/** Replace the current paired device's opaque token over the authenticated E2EE channel. */
+export const DeviceRotateToken = defineCommand(
+  "device.rotate_token",
+  z.object({}),
+  z.object({ token: z.string().min(16), expires_at: z.iso.datetime() }),
 );
 
 // ── Notifications (S7b: Expo push for killed-app delivery via a dev build) ──
@@ -455,6 +480,8 @@ export const KnownMessageSchema = z.discriminatedUnion("type", [
   MachineStatus.response,
   MachineKeepAwake.request,
   MachineKeepAwake.response,
+  DeviceRotateToken.request,
+  DeviceRotateToken.response,
   NotifyRegister.request,
   NotifyRegister.response,
   NotifyTest.request,

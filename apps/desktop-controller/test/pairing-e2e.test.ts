@@ -1,8 +1,14 @@
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
-import { FileChanged, fsStream, type KnownMessage, ProjectList } from "@rdc/protocol";
-import { emojiFingerprint, fromB64, generateKxKeypair } from "@rdc/security";
+import {
+  DeviceRotateToken,
+  FileChanged,
+  fsStream,
+  type KnownMessage,
+  ProjectList,
+} from "@rdc/protocol";
+import { emojiFingerprint, fromB64, generateKxKeypair, hashToken } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { TerminalManager } from "@rdc/terminal";
 import { ControllerClient, pairWithController } from "@rdc/transport";
@@ -148,6 +154,7 @@ describe("S2 gate: pair → E2EE session → live push → drop → replay resum
     closers.push(() => client.close());
     await client.connect();
     expect(client.isSecure).toBe(true);
+    expect(deps.devices.get(grant.device_id)).toMatchObject({ last_transport: "direct" });
 
     const projects = await client.command(ProjectList, {});
     expect(projects.projects).toHaveLength(1);
@@ -174,7 +181,37 @@ describe("S2 gate: pair → E2EE session → live push → drop → replay resum
     await expect.poll(() => received.length, { timeout: 5000 }).toBe(3);
     expect(received.map((r) => r.seq)).toEqual([1, 2, 3]); // ordered, no duplicates
 
-    // 8. bad token cannot connect
+    // 8. Rotate the device's opaque token on the E2EE channel. The old credential dies on
+    // reconnect while the replacement preserves the same paired identity and key material.
+    const rotated = await client.command(DeviceRotateToken, {});
+    expect(rotated.token).not.toBe(grant.token);
+    expect(Date.parse(rotated.expires_at)).toBeGreaterThan(Date.now());
+    expect(deps.devices.findByTokenHash(hashToken(grant.token))).toBeUndefined();
+    expect(deps.devices.findByTokenHash(hashToken(rotated.token))?.device_id).toBe(grant.device_id);
+    client.close();
+
+    const staleClient = new ControllerClient({
+      url: `ws://127.0.0.1:${port}/ws`,
+      token: grant.token,
+      deviceId: grant.device_id,
+      keys: { keypair: phoneKeys, controllerKxPub: fromB64(grant.controller_kx_pub) },
+      backoff: { baseMs: 50, capMs: 100 },
+    });
+    await expect(staleClient.connect(1500)).rejects.toThrow();
+    staleClient.close();
+
+    const refreshedClient = new ControllerClient({
+      url: `ws://127.0.0.1:${port}/ws`,
+      token: rotated.token,
+      deviceId: grant.device_id,
+      keys: { keypair: phoneKeys, controllerKxPub: fromB64(grant.controller_kx_pub) },
+      backoff: { baseMs: 50, capMs: 100 },
+    });
+    closers.push(() => refreshedClient.close());
+    await refreshedClient.connect();
+    expect((await refreshedClient.command(ProjectList, {})).projects).toHaveLength(1);
+
+    // 9. bad token cannot connect
     const badClient = new ControllerClient({
       url: `ws://127.0.0.1:${port}/ws`,
       token: "wrong-token-wrong-token-wrong-token-wrong",

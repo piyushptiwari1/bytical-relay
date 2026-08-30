@@ -15,7 +15,9 @@ not move source code or model-provider credentials into a Bytical cloud account.
 - See VS Code editor state, diagnostics, terminal activity, and use `RDC: Open in Agents` from the
 	VS Code Command Palette.
 - Create and reattach to controller-owned terminals.
-- Connect directly over LAN, with an experimental encrypted relay path for remote access.
+- Connect directly over LAN, with an experimental encrypted ticket-based relay path for remote
+	access. The deployed relay must run the matching current relay bundle before remote fallback is
+	enabled for a new mobile build.
 
 ## Alpha safety note
 

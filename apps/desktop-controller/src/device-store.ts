@@ -1,9 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 
 const LEGACY_DEFAULT_SCOPES = ["projects.read", "files.read", "events.read"];
+export const DEVICE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Capabilities granted after an owner confirms physical device pairing. */
-export const DEFAULT_DEVICE_SCOPES = [
+const PREVIOUS_DEFAULT_DEVICE_SCOPES = [
   "machine.read",
   "machine.control",
   "projects.read",
@@ -18,14 +19,22 @@ export const DEFAULT_DEVICE_SCOPES = [
   "notifications.manage",
 ] as const;
 
+export const DEFAULT_DEVICE_SCOPES = [
+  ...PREVIOUS_DEFAULT_DEVICE_SCOPES,
+  "device.self_manage",
+] as const;
+
 export interface DeviceRecord {
   device_id: string;
   name: string;
   kx_pub: string;
   token_hash: string;
   scopes: string[];
+  expires_at: number;
   created_at: string;
   revoked: boolean;
+  last_seen_at: string | null;
+  last_transport: "direct" | "relay" | null;
 }
 
 /** Paired-device registry (PairingGrant persistence, PLAN §20). */
@@ -43,8 +52,11 @@ export class DeviceStore {
         kx_pub TEXT NOT NULL,
         token_hash TEXT NOT NULL UNIQUE,
         scopes TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
         created_at TEXT NOT NULL,
-        revoked INTEGER NOT NULL DEFAULT 0
+        revoked INTEGER NOT NULL DEFAULT 0,
+        last_seen_at TEXT,
+        last_transport TEXT
       );
       CREATE TABLE IF NOT EXISTS push_tokens (
         device_id TEXT PRIMARY KEY,
@@ -52,13 +64,22 @@ export class DeviceStore {
         updated_at TEXT NOT NULL
       );
     `);
+    this.#addColumn("expires_at INTEGER");
+    this.#addColumn("last_seen_at TEXT");
+    this.#addColumn("last_transport TEXT");
+    this.#db
+      .prepare("UPDATE devices SET expires_at = ? WHERE expires_at IS NULL")
+      .run(Date.now() + DEVICE_TOKEN_TTL_MS);
     this.#upgradeLegacyScopes();
   }
 
-  add(device: Omit<DeviceRecord, "created_at" | "revoked">): void {
+  add(
+    device: Omit<DeviceRecord, "created_at" | "revoked" | "last_seen_at" | "last_transport">,
+  ): void {
     this.#db
       .prepare(
-        "INSERT INTO devices (device_id, name, kx_pub, token_hash, scopes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        `INSERT INTO devices (device_id, name, kx_pub, token_hash, scopes, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         device.device_id,
@@ -66,14 +87,22 @@ export class DeviceStore {
         device.kx_pub,
         device.token_hash,
         JSON.stringify(device.scopes),
+        device.expires_at,
         new Date().toISOString(),
       );
   }
 
   findByTokenHash(tokenHash: string): DeviceRecord | undefined {
     const row = this.#db
-      .prepare("SELECT * FROM devices WHERE token_hash = ? AND revoked = 0")
-      .get(tokenHash) as Record<string, unknown> | undefined;
+      .prepare("SELECT * FROM devices WHERE token_hash = ? AND revoked = 0 AND expires_at > ?")
+      .get(tokenHash, Date.now()) as Record<string, unknown> | undefined;
+    return row ? this.#toRecord(row) : undefined;
+  }
+
+  get(deviceId: string): DeviceRecord | undefined {
+    const row = this.#db.prepare("SELECT * FROM devices WHERE device_id = ?").get(deviceId) as
+      | Record<string, unknown>
+      | undefined;
     return row ? this.#toRecord(row) : undefined;
   }
 
@@ -88,6 +117,33 @@ export class DeviceStore {
     const info = this.#db
       .prepare("UPDATE devices SET revoked = 1 WHERE device_id = ?")
       .run(deviceId);
+    return Number(info.changes) > 0;
+  }
+
+  revokeAll(): number {
+    const info = this.#db.prepare("UPDATE devices SET revoked = 1 WHERE revoked = 0").run();
+    return Number(info.changes);
+  }
+
+  rotateToken(deviceId: string, tokenHash: string, expiresAt: number): boolean {
+    const info = this.#db
+      .prepare(
+        `UPDATE devices
+         SET token_hash = ?, expires_at = ?
+         WHERE device_id = ? AND revoked = 0`,
+      )
+      .run(tokenHash, expiresAt, deviceId);
+    return Number(info.changes) > 0;
+  }
+
+  markSeen(deviceId: string, transport: "direct" | "relay"): boolean {
+    const info = this.#db
+      .prepare(
+        `UPDATE devices
+         SET last_seen_at = ?, last_transport = ?
+         WHERE device_id = ? AND revoked = 0 AND expires_at > ?`,
+      )
+      .run(new Date().toISOString(), transport, deviceId, Date.now());
     return Number(info.changes) > 0;
   }
 
@@ -106,11 +162,26 @@ export class DeviceStore {
     return row?.token;
   }
 
-  allPushTokens(): string[] {
-    const rows = this.#db.prepare("SELECT token FROM push_tokens").all() as Array<{
-      token: string;
-    }>;
-    return rows.map((r) => r.token);
+  allPushTokens(requiredScope?: string): string[] {
+    const rows = this.#db
+      .prepare(
+        `SELECT push_tokens.token, devices.scopes
+         FROM push_tokens
+         INNER JOIN devices ON devices.device_id = push_tokens.device_id
+         WHERE devices.revoked = 0 AND devices.expires_at > ?`,
+      )
+      .all(Date.now()) as Array<{ token: string; scopes: string }>;
+    return rows
+      .filter((row) => {
+        if (!requiredScope) return true;
+        try {
+          const scopes = JSON.parse(row.scopes) as unknown;
+          return Array.isArray(scopes) && (scopes.includes("*") || scopes.includes(requiredScope));
+        } catch {
+          return false;
+        }
+      })
+      .map((row) => row.token);
   }
 
   removePushToken(token: string): void {
@@ -124,9 +195,20 @@ export class DeviceStore {
       kx_pub: row.kx_pub as string,
       token_hash: row.token_hash as string,
       scopes: JSON.parse(row.scopes as string) as string[],
+      expires_at: Number(row.expires_at),
       created_at: row.created_at as string,
       revoked: Number(row.revoked) === 1,
+      last_seen_at: (row.last_seen_at as string | null) ?? null,
+      last_transport: (row.last_transport as DeviceRecord["last_transport"]) ?? null,
     };
+  }
+
+  #addColumn(definition: string): void {
+    try {
+      this.#db.exec(`ALTER TABLE devices ADD COLUMN ${definition}`);
+    } catch {
+      // Existing database already has this migration.
+    }
   }
 
   /** Existing pairings predate enforced scopes; safely reduce them to the new core grant. */
@@ -140,8 +222,8 @@ export class DeviceStore {
         const scopes = JSON.parse(row.scopes) as unknown;
         if (
           !Array.isArray(scopes) ||
-          scopes.length !== LEGACY_DEFAULT_SCOPES.length ||
-          !LEGACY_DEFAULT_SCOPES.every((scope) => scopes.includes(scope))
+          (!isExactScopeSet(scopes, LEGACY_DEFAULT_SCOPES) &&
+            !isExactScopeSet(scopes, PREVIOUS_DEFAULT_DEVICE_SCOPES))
         ) {
           continue;
         }
@@ -157,4 +239,8 @@ export class DeviceStore {
   close(): void {
     this.#db.close();
   }
+}
+
+function isExactScopeSet(scopes: unknown[], expected: readonly string[]): boolean {
+  return scopes.length === expected.length && expected.every((scope) => scopes.includes(scope));
 }

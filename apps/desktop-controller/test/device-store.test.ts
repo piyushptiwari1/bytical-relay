@@ -16,6 +16,7 @@ describe("DeviceStore", () => {
         kx_pub: "key",
         token_hash: "hash",
         scopes: ["projects.read", "files.read", "events.read"],
+        expires_at: Date.now() + 60_000,
       });
       original.add({
         device_id: "dev_custom",
@@ -23,15 +24,92 @@ describe("DeviceStore", () => {
         kx_pub: "key-2",
         token_hash: "hash-2",
         scopes: ["projects.read"],
+        expires_at: Date.now() + 60_000,
+      });
+      original.add({
+        device_id: "dev_previous_default",
+        name: "earlier upgraded phone",
+        kx_pub: "key-3",
+        token_hash: "hash-3",
+        scopes: [
+          "machine.read",
+          "machine.control",
+          "projects.read",
+          "files.read",
+          "events.read",
+          "git.read",
+          "editor.read",
+          "editor.control",
+          "agents.read",
+          "agents.control",
+          "terminals.read",
+          "notifications.manage",
+        ],
+        expires_at: Date.now() + 60_000,
       });
       original.close();
 
       const migrated = new DeviceStore(dbPath);
       expect(migrated.findByTokenHash("hash")?.scopes).toEqual(DEFAULT_DEVICE_SCOPES);
       expect(migrated.findByTokenHash("hash-2")?.scopes).toEqual(["projects.read"]);
+      expect(migrated.findByTokenHash("hash-3")?.scopes).toEqual(DEFAULT_DEVICE_SCOPES);
       migrated.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("rejects expired tokens, rotates valid tokens, and records presence", () => {
+    const store = new DeviceStore(":memory:");
+    const now = Date.now();
+    store.add({
+      device_id: "dev_lifecycle",
+      name: "phone",
+      kx_pub: "key",
+      token_hash: "old-hash",
+      scopes: ["projects.read"],
+      expires_at: now + 60_000,
+    });
+    store.add({
+      device_id: "dev_expired",
+      name: "old phone",
+      kx_pub: "expired-key",
+      token_hash: "expired-hash",
+      scopes: ["projects.read"],
+      expires_at: now - 1,
+    });
+
+    expect(store.findByTokenHash("expired-hash")).toBeUndefined();
+    expect(store.markSeen("dev_lifecycle", "relay")).toBe(true);
+    expect(store.get("dev_lifecycle")).toMatchObject({ last_transport: "relay" });
+    expect(store.rotateToken("dev_lifecycle", "new-hash", now + 120_000)).toBe(true);
+    expect(store.findByTokenHash("old-hash")).toBeUndefined();
+    expect(store.findByTokenHash("new-hash")?.expires_at).toBe(now + 120_000);
+    store.close();
+  });
+
+  test("sends push only to active devices with the required scope", () => {
+    const store = new DeviceStore(":memory:");
+    const now = Date.now();
+    for (const [deviceId, scopes, expiresAt] of [
+      ["dev_allowed", ["agents.control"], now + 60_000],
+      ["dev_limited", ["projects.read"], now + 60_000],
+      ["dev_expired", ["agents.control"], now - 1],
+    ] as const) {
+      store.add({
+        device_id: deviceId,
+        name: deviceId,
+        kx_pub: `${deviceId}-key`,
+        token_hash: `${deviceId}-token`,
+        scopes: [...scopes],
+        expires_at: expiresAt,
+      });
+      store.setPushToken(deviceId, `${deviceId}-push-token`);
+    }
+    store.revoke("dev_limited");
+
+    expect(store.allPushTokens("agents.control")).toEqual(["dev_allowed-push-token"]);
+    expect(store.allPushTokens()).toEqual(["dev_allowed-push-token"]);
+    store.close();
   });
 });

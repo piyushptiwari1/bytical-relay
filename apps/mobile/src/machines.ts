@@ -8,6 +8,7 @@ import {
   AgentStart,
   ApprovalRespond,
   agentStream,
+  DeviceRotateToken,
   EditorList,
   EditorOpenFile,
   type EditorState,
@@ -41,15 +42,32 @@ import {
   TerminalWrite,
 } from "@rdc/protocol";
 import { fromB64 } from "@rdc/security/client";
+import { newCommandId, nowIso } from "@rdc/shared";
 import { type ClientState, ControllerClient } from "@rdc/transport";
 import { create } from "zustand";
-import { expoPushTokenOrNull, onAgentStatus } from "./notifications.ts";
-import { loadMachines, removeMachine, type StoredMachine, saveMachine } from "./storage.ts";
+import {
+  expoPushTokenOrNull,
+  onAgentStatus,
+  onPendingApprovalAction,
+  pendingApprovalActions,
+  removePendingApprovalAction,
+} from "./notifications.ts";
+import {
+  loadMachines,
+  pendingAgentPrompts,
+  queueAgentPrompt,
+  removeMachine,
+  removePendingAgentPrompt,
+  type StoredMachine,
+  type StoredRelay,
+  saveMachine,
+} from "./storage.ts";
 
 export type MachineStatusResult = MachineHealth & {
   keep_awake: KeepAwakeState;
   scopes?: string[];
-  relay?: { url: string; token: string } | null;
+  device_token_expires_at?: string | null;
+  relay?: StoredRelay | null;
 };
 
 export interface MachineRuntime {
@@ -59,6 +77,7 @@ export interface MachineRuntime {
   projects?: Project[];
   editors?: EditorState[];
   sessions?: AgentSession[];
+  pending_prompt_counts?: Record<string, number>;
   last_refreshed_at?: string;
 }
 
@@ -66,12 +85,33 @@ export interface MachineRuntime {
 const clients = new Map<string, ControllerClient>();
 const relayFallbacks = new Set<string>();
 const lanRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const rotatingDeviceTokens = new Set<string>();
+const deliveringApprovalActions = new Set<string>();
+const deliveringAgentPrompts = new Set<string>();
 const LAN_RETRY_MS = 60_000;
+const TOKEN_ROTATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const clientFor = (machineId: string): ControllerClient | undefined =>
   clients.get(machineId);
 
 export function hasScope(scopes: readonly string[] | undefined, scope: string): boolean {
   return scopes?.includes("*") === true || scopes?.includes(scope) === true;
+}
+
+function activeRelayTicket(relay: StoredRelay): string | null {
+  if (!Array.isArray(relay.tickets)) return null;
+  const now = Date.now();
+  return (
+    relay.tickets.find((ticket) => {
+      const notBefore = Date.parse(ticket.not_before);
+      const expiresAt = Date.parse(ticket.expires_at);
+      return (
+        Number.isFinite(notBefore) &&
+        Number.isFinite(expiresAt) &&
+        notBefore <= now &&
+        now < expiresAt
+      );
+    })?.ticket ?? null
+  );
 }
 
 interface AppState {
@@ -159,6 +199,116 @@ export const useApp = create<AppState>((set, get) => {
     await get().connect(machineId);
   };
 
+  const rotateDeviceTokenIfDue = async (
+    machineId: string,
+    client: ControllerClient,
+    status: MachineStatusResult,
+  ) => {
+    const expiresAt = status.device_token_expires_at;
+    const remaining = expiresAt ? Date.parse(expiresAt) - Date.now() : Number.NaN;
+    if (
+      !Number.isFinite(remaining) ||
+      remaining > TOKEN_ROTATE_WINDOW_MS ||
+      rotatingDeviceTokens.has(machineId)
+    ) {
+      return;
+    }
+    const machine = get().machines.find((item) => item.machine_id === machineId);
+    if (!machine) return;
+    const previousToken = machine.token;
+    rotatingDeviceTokens.add(machineId);
+    try {
+      const rotated = await client.command(DeviceRotateToken, {});
+      const latest = get().machines.find((item) => item.machine_id === machineId);
+      if (!latest || latest.token !== previousToken) return;
+      const updated = {
+        ...latest,
+        token: rotated.token,
+        token_expires_at: rotated.expires_at,
+      };
+      await saveMachine(updated);
+      set((state) => ({
+        machines: state.machines.map((item) => (item.machine_id === machineId ? updated : item)),
+      }));
+      patchRuntime(machineId, {
+        health: { ...status, device_token_expires_at: rotated.expires_at },
+      });
+    } catch {
+      // The current token remains valid; a later refresh can safely try again.
+    } finally {
+      rotatingDeviceTokens.delete(machineId);
+    }
+  };
+
+  const refreshPendingPromptCounts = async (machineId: string) => {
+    try {
+      const pending = await pendingAgentPrompts(machineId);
+      const counts: Record<string, number> = {};
+      for (const item of pending) {
+        counts[item.session_id] = (counts[item.session_id] ?? 0) + 1;
+      }
+      patchRuntime(machineId, { pending_prompt_counts: counts });
+      return pending;
+    } catch {
+      return [];
+    }
+  };
+
+  const deliverPendingAgentPrompts = async (machineId: string) => {
+    const client = clients.get(machineId);
+    if (client?.state !== "ready" || deliveringAgentPrompts.has(machineId)) return;
+    deliveringAgentPrompts.add(machineId);
+    try {
+      for (const item of await refreshPendingPromptCounts(machineId)) {
+        if (clients.get(machineId) !== client || client.state !== "ready") break;
+        try {
+          const result = await client.command(
+            AgentPrompt,
+            { session_id: item.session_id, prompt: item.prompt },
+            { commandId: item.command_id, timeoutMs: 60_000 },
+          );
+          if (!result.accepted) break;
+          await removePendingAgentPrompt(item.command_id);
+        } catch {
+          // The stable command id lets the next connection retry without duplicating the prompt.
+          break;
+        }
+      }
+    } finally {
+      deliveringAgentPrompts.delete(machineId);
+      void refreshPendingPromptCounts(machineId);
+    }
+  };
+
+  const deliverPendingApprovalActions = async (machineId: string) => {
+    const client = clients.get(machineId);
+    if (client?.state !== "ready" || deliveringApprovalActions.has(machineId)) return;
+    deliveringApprovalActions.add(machineId);
+    try {
+      for (const action of await pendingApprovalActions(machineId)) {
+        try {
+          const result = await client.command(ApprovalRespond, {
+            approval_id: action.approval_id,
+            option_id: action.option_id,
+          });
+          // A false result means the approval was answered or expired elsewhere; it is terminal.
+          if (typeof result.resolved === "boolean") {
+            await removePendingApprovalAction(action.action_id);
+          }
+        } catch {
+          // Preserve this and later actions for the next reconnect.
+          break;
+        }
+      }
+    } finally {
+      deliveringApprovalActions.delete(machineId);
+    }
+  };
+
+  onPendingApprovalAction((machineId) => {
+    void deliverPendingApprovalActions(machineId);
+  });
+
   return {
     hydrated: false,
     machines: [],
@@ -184,15 +334,26 @@ export const useApp = create<AppState>((set, get) => {
       if (!machine || clients.has(machineId)) return;
       patchRuntime(machineId, { state: "connecting" });
       // direct LAN first (lowest latency), then relay if the machine advertised one
-      const directCandidates: Array<{ url: string; transport: "direct" | "relay" }> =
-        machine.addrs.map((addr) => ({ url: `${addr}/ws`, transport: "direct" }));
-      const relayCandidates: Array<{ url: string; transport: "direct" | "relay" }> = [];
+      const directCandidates: Array<{
+        url: string;
+        transport: "direct" | "relay";
+        sendTokenInUrl?: boolean;
+      }> = machine.addrs.map((addr) => ({ url: `${addr}/ws`, transport: "direct" }));
+      const relayCandidates: Array<{
+        url: string;
+        transport: "direct" | "relay";
+        sendTokenInUrl?: boolean;
+      }> = [];
       if (machine.relay) {
-        const base = machine.relay.url.replace(/\/$/, "");
-        relayCandidates.push({
-          url: `${base}/tunnel?role=phone&machine=${encodeURIComponent(machine.machine_id)}&rt=${encodeURIComponent(machine.relay.token)}`,
-          transport: "relay",
-        });
+        const ticket = activeRelayTicket(machine.relay);
+        if (ticket) {
+          const base = machine.relay.url.replace(/\/$/, "");
+          relayCandidates.push({
+            url: `${base}/tunnel?role=phone&machine=${encodeURIComponent(machine.machine_id)}&ticket=${encodeURIComponent(ticket)}`,
+            transport: "relay",
+            sendTokenInUrl: false,
+          });
+        }
       }
       const candidates = options.preferRelay
         ? [...relayCandidates, ...directCandidates]
@@ -201,6 +362,7 @@ export const useApp = create<AppState>((set, get) => {
         const client = new ControllerClient({
           url: candidate.url,
           token: machine.token,
+          ...(candidate.sendTokenInUrl === false ? { sendTokenInUrl: false } : {}),
           deviceId: machine.device_id,
           keys: {
             keypair: { publicKey: fromB64(machine.kx_pub), privateKey: fromB64(machine.kx_priv) },
@@ -217,12 +379,16 @@ export const useApp = create<AppState>((set, get) => {
             if (state === "reconnecting" && candidate.transport === "direct") {
               fallBackToRelay(machineId, client);
             }
+            if (state === "ready") {
+              void deliverPendingAgentPrompts(machineId);
+              void deliverPendingApprovalActions(machineId);
+            }
           });
           client.events.on("event", (msg) => {
             if (clients.get(machineId) !== client) return;
             if (msg.type === "machine.health") {
               patchRuntime(machineId, {
-                health: msg.payload,
+                health: { ...get().runtime[machineId]?.health, ...msg.payload },
                 last_refreshed_at: new Date().toISOString(),
               });
             }
@@ -243,6 +409,8 @@ export const useApp = create<AppState>((set, get) => {
           });
           patchRuntime(machineId, { state: client.state, transport: candidate.transport });
           await get().refreshMachine(machineId);
+          void deliverPendingAgentPrompts(machineId);
+          void deliverPendingApprovalActions(machineId);
           if (candidate.transport === "relay") scheduleLanRetry(machineId);
           else clearLanRetry(machineId);
           // dormant in Expo Go (no token); dev builds register for killed-app push
@@ -275,6 +443,7 @@ export const useApp = create<AppState>((set, get) => {
         ...(agentState ? { sessions: agentState.sessions } : {}),
         last_refreshed_at: new Date().toISOString(),
       });
+      void rotateDeviceTokenIfDue(machineId, client, health as MachineStatusResult);
       // persist newly advertised relay so out-of-home connects work next time
       const machine = get().machines.find((m) => m.machine_id === machineId);
       const advertised = (health as MachineStatusResult).relay ?? null;
@@ -465,8 +634,47 @@ export const agentPrompt = (
   machineId: string,
   sessionId: string,
   prompt: string,
-): Promise<{ accepted: boolean; queued: boolean; queued_prompt_count: number }> =>
-  requireClient(machineId).command(AgentPrompt, { session_id: sessionId, prompt });
+): Promise<{
+  accepted: boolean;
+  queued: boolean;
+  queued_prompt_count: number;
+  waiting_to_send?: boolean;
+}> => {
+  const commandId = newCommandId();
+  const saveForLater = async () => {
+    await queueAgentPrompt({
+      command_id: commandId,
+      machine_id: machineId,
+      session_id: sessionId,
+      prompt,
+      created_at: nowIso(),
+    });
+    const pending = await pendingAgentPrompts(machineId);
+    const counts: Record<string, number> = {};
+    for (const item of pending) counts[item.session_id] = (counts[item.session_id] ?? 0) + 1;
+    useApp.setState((state) => ({
+      runtime: {
+        ...state.runtime,
+        [machineId]: {
+          state: "unreachable",
+          ...state.runtime[machineId],
+          pending_prompt_counts: counts,
+        },
+      },
+    }));
+    void useApp.getState().connect(machineId);
+    return { accepted: true, queued: true, queued_prompt_count: 0, waiting_to_send: true };
+  };
+
+  const client = clients.get(machineId);
+  if (client?.state !== "ready") return saveForLater();
+  return client
+    .command(AgentPrompt, { session_id: sessionId, prompt }, { commandId, timeoutMs: 60_000 })
+    .catch((cause: unknown) => {
+      if (client.state === "ready") throw cause;
+      return saveForLater();
+    });
+};
 
 export const agentCancel = (
   machineId: string,

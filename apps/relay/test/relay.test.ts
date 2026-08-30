@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { issueRelayTicket } from "@rdc/security";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import WebSocket from "ws";
 import { buildRelay } from "../src/server.ts";
@@ -29,12 +30,29 @@ describe("relay tunnel", () => {
   });
 
   const url = (params: string) => `ws://127.0.0.1:${port}/tunnel?${params}`;
+  const phoneUrl = (machineId: string, deviceId = "dev_phone") => {
+    const { ticket } = issueRelayTicket(TOKEN, {
+      machine_id: machineId,
+      device_id: deviceId,
+      not_before: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+    });
+    return url(
+      `role=phone&machine=${encodeURIComponent(machineId)}&ticket=${encodeURIComponent(ticket)}`,
+    );
+  };
 
-  test("wrong relay token → 4401; phone with no machine online → 4404", async () => {
+  test("controller credential and phone tickets are separate; offline machines return 4404", async () => {
     const bad = new WebSocket(url("role=controller&machine=m1&rt=nope"));
     expect((await once<{ code?: number } | number>(bad, "close")) as number).toBe(4401);
 
-    const phone = new WebSocket(url(`role=phone&machine=ghost&rt=${TOKEN}&token=d`));
+    const legacyPhone = new WebSocket(url(`role=phone&machine=ghost&rt=${TOKEN}&token=device-tok`));
+    expect((await once<number>(legacyPhone, "close")) as number).toBe(4401);
+
+    const invalidTicket = new WebSocket(url("role=phone&machine=ghost&ticket=not-a-ticket"));
+    expect((await once<number>(invalidTicket, "close")) as number).toBe(4401);
+
+    const phone = new WebSocket(phoneUrl("ghost"));
     expect((await once<number>(phone, "close")) as number).toBe(4404);
   });
 
@@ -42,10 +60,12 @@ describe("relay tunnel", () => {
     const laptop = new WebSocket(url(`role=controller&machine=m2&rt=${TOKEN}`));
     await opened(laptop);
 
-    const phone = new WebSocket(url(`role=phone&machine=m2&rt=${TOKEN}&token=device-tok`));
+    const phone = new WebSocket(phoneUrl("m2", "dev_roundtrip"));
     const openEnvelope = JSON.parse((await nextMessage(laptop)).data.toString());
     expect(openEnvelope.t).toBe("open");
-    expect(openEnvelope.token).toBe("device-tok");
+    expect(openEnvelope.device_id).toBe("dev_roundtrip");
+    expect(openEnvelope.ticket).toEqual(expect.any(String));
+    expect(JSON.stringify(openEnvelope)).not.toContain("device-tok");
     const ch = openEnvelope.ch as string;
 
     // phone → laptop text
@@ -79,7 +99,7 @@ describe("relay tunnel", () => {
   test("machine close envelope closes just that phone; healthz counts", async () => {
     const laptop = new WebSocket(url(`role=controller&machine=m3&rt=${TOKEN}`));
     await opened(laptop);
-    const phone = new WebSocket(url(`role=phone&machine=m3&rt=${TOKEN}&token=t`));
+    const phone = new WebSocket(phoneUrl("m3", "dev_close"));
     const { ch } = JSON.parse((await nextMessage(laptop)).data.toString());
 
     const health = await app.inject({ method: "GET", url: "/healthz" });

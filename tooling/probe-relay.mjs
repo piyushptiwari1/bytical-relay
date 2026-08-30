@@ -5,14 +5,12 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  MachineStatus,
   NotifyRegister,
   NotifyTest,
   ProjectList,
   SysPing,
   TerminalCreate,
-  TerminalKill,
-  TerminalSnapshotCmd,
-  TerminalWrite,
 } from "@rdc/protocol";
 import { fromB64, generateKxKeypair, toB64 } from "@rdc/security";
 import { ControllerClient, pairWithController } from "@rdc/transport";
@@ -110,7 +108,7 @@ export async function pushSuite(t, { port }) {
 }
 
 /** The relay suite body — registered by tooling/probe.mjs. */
-export async function relaySuite(t, { port, relayUrl, relayToken }) {
+export async function relaySuite(t, { port, relayUrl }) {
   let device;
   await t.expect(
     "RL1",
@@ -134,9 +132,35 @@ export async function relaySuite(t, { port, relayUrl, relayToken }) {
     { fatal: true },
   );
 
-  const client = new ControllerClient({
-    url: `${relayUrl.replace(/\/$/, "")}/tunnel?role=phone&machine=${encodeURIComponent(device.machine_id)}&rt=${encodeURIComponent(relayToken)}`,
+  const directClient = new ControllerClient({
+    url: `ws://127.0.0.1:${port}/ws`,
     token: device.token,
+    deviceId: device.device_id,
+    keys: {
+      keypair: { publicKey: fromB64(device.kx_pub), privateKey: fromB64(device.kx_priv) },
+      controllerKxPub: fromB64(device.controller_kx_pub),
+    },
+    backoff: { baseMs: 500, capMs: 2000 },
+  });
+  let relayTicket;
+  try {
+    await directClient.connect(10_000);
+    const status = await directClient.command(MachineStatus, {});
+    const now = Date.now();
+    relayTicket = status.relay?.tickets.find((ticket) => {
+      const notBefore = Date.parse(ticket.not_before);
+      const expiresAt = Date.parse(ticket.expires_at);
+      return notBefore <= now && now < expiresAt;
+    })?.ticket;
+  } finally {
+    directClient.close();
+  }
+  if (!relayTicket) throw new Error("controller did not issue an active relay ticket");
+
+  const client = new ControllerClient({
+    url: `${relayUrl.replace(/\/$/, "")}/tunnel?role=phone&machine=${encodeURIComponent(device.machine_id)}&ticket=${encodeURIComponent(relayTicket)}`,
+    token: device.token,
+    sendTokenInUrl: false,
     deviceId: device.device_id,
     keys: {
       keypair: { publicKey: fromB64(device.kx_pub), privateKey: fromB64(device.kx_priv) },
@@ -161,23 +185,22 @@ export async function relaySuite(t, { port, relayUrl, relayToken }) {
       if (projects.length === 0) throw new Error("no projects");
       return `${projects.length} projects`;
     });
-    await t.expect("RL5", "terminal round-trip over relay", async () => {
-      const marker = `relay_ok_${Date.now() % 100000}`;
-      const { terminal } = await client.command(TerminalCreate, { shell: "cmd" });
-      await sleep(1500);
-      await client.command(TerminalWrite, {
-        terminal_id: terminal.terminal_id,
-        data: `echo ${marker}\r`,
-      });
-      await sleep(1500);
-      const snapshot = await client.command(TerminalSnapshotCmd, {
-        terminal_id: terminal.terminal_id,
-      });
-      const text = snapshot.lines.map((l) => l.spans.map((s) => s.text).join("")).join("\n");
-      await client.command(TerminalKill, { terminal_id: terminal.terminal_id });
-      if (!text.includes(marker)) throw new Error("echo not visible via relay");
-      return `snapshot ${snapshot.lines.length} lines`;
-    });
+    await t.expect(
+      "RL5",
+      "default paired device cannot create an uncontrolled terminal",
+      async () => {
+        try {
+          await client.command(TerminalCreate, { shell: "cmd" });
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          if (message.includes("FORBIDDEN") && message.includes("terminals.control")) {
+            return "controller scope enforced";
+          }
+          throw cause;
+        }
+        throw new Error("terminal control unexpectedly granted to a default paired device");
+      },
+    );
   } finally {
     client.close();
   }

@@ -5,6 +5,7 @@ import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
 import {
+  AgentPrompt,
   DebugEcho,
   EditorList,
   EditorOpenFile,
@@ -123,7 +124,7 @@ describe("ControllerDispatcher", () => {
 
   test("paired connections can only use their granted command scopes", async () => {
     const dispatcher = new ControllerDispatcher(makeDeps());
-    const ctx = newClientContext("dev_paired", ["projects.read"]);
+    const ctx = newClientContext("dev_paired", ["projects.read", "events.read"]);
     await send(
       dispatcher,
       ctx,
@@ -151,6 +152,18 @@ describe("ControllerDispatcher", () => {
       expect(keepAwake.payload.error.message).toContain("machine.control");
     } else {
       throw new Error("expected paired keep-awake denial");
+    }
+
+    const agentStream = await send(
+      dispatcher,
+      ctx,
+      SyncSubscribe.createRequest({ streams: ["agent:ses_not_allowed"] }),
+    );
+    if (agentStream?.type === "sync.subscribe.result" && agentStream.payload.status === "error") {
+      expect(agentStream.payload.error.code).toBe("FORBIDDEN");
+      expect(agentStream.payload.error.message).toContain("agent:ses_not_allowed");
+    } else {
+      throw new Error("expected agent stream denial");
     }
   });
 
@@ -182,6 +195,31 @@ describe("ControllerDispatcher", () => {
     expect(JSON.stringify(entries)).not.toContain("enabled");
     expect(audit.verify()).toEqual({ valid: true });
     audit.close();
+  });
+
+  test("replays an agent prompt result without delivering a duplicate instruction", async () => {
+    const deps = makeDeps();
+    const dispatcher = new ControllerDispatcher(deps);
+    const ctx = newClientContext();
+    await send(dispatcher, ctx, Hello.create({ protocol: SUPPORTED_VERSIONS, device_id: "owner" }));
+    const request = AgentPrompt.createRequest({ session_id: "ses_outbox", prompt: "continue" });
+    deps.eventStore.putCommandResult(
+      request.command_id,
+      { accepted: true, queued: true, queued_prompt_count: 1 },
+      60_000,
+    );
+
+    const retry = await send(dispatcher, ctx, request);
+    if (retry?.type === "agent.prompt.result" && retry.payload.status === "ok") {
+      expect(retry.payload.duplicate).toBe(true);
+      expect(retry.payload.result).toEqual({
+        accepted: true,
+        queued: true,
+        queued_prompt_count: 1,
+      });
+    } else {
+      throw new Error("expected cached agent prompt result");
+    }
   });
 
   test("editor: publish → list → open_file routed to matching window", async () => {

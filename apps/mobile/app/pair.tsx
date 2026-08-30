@@ -45,6 +45,7 @@ export default function Pair() {
             name: grant.machine_name,
             device_id: grant.device_id,
             token: grant.token,
+            token_expires_at: grant.token_expires_at,
             controller_kx_pub: grant.controller_kx_pub,
             kx_pub: toB64(keypair.publicKey),
             kx_priv: toB64(keypair.privateKey),

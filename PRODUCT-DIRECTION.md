@@ -79,8 +79,7 @@ work.
    restart, then retry LAN when it returns.
 3. Complete release-build FCM delivery and actionable approval notifications. A suspended phone
    cannot depend on a WebSocket.
-4. Replace the shared relay secret with device-bound tickets and `wss`; add relay rate limits,
-   monitoring, and failure-mode tests.
+4. Use device-bound tickets and `wss`; add relay rate limits, monitoring, and failure-mode tests.
 
 ### P2: VS Code-native handoff
 
@@ -110,6 +109,42 @@ work.
    until a shipped voice feature requires it.
 4. Add release crash reporting with redaction, accessibility testing, physical-device E2E tests,
    and an uninstall/lost-phone recovery flow.
+
+## Implementation Status (2026-08-30)
+
+The following foundations are implemented in the current workspace and covered by controller,
+protocol, mobile type, bundle, and live-controller checks:
+
+- Paired connections bind the authenticated device record to `hello` identity. Every controller
+  command now checks the paired device's explicit capability scope; local-owner dashboard and VS
+  Code connections retain their local authority. New and legacy default pairings grant supervised
+  agent work and read-only Git/terminal visibility, while Git mutation and raw terminal control
+  remain unavailable by default.
+- Device records have token expiry, encrypted self-token rotation, per-device and all-device
+  revocation, direct/relay last-seen state, and a local-owner-only dashboard device panel. The
+  panel redacts token hashes and device keys. Privileged requests and revocations enter a
+  persistent, hash-chained audit log without prompts, shell input, tokens, or source contents.
+- Agent instructions can be accepted while a turn is active and drain through the controller in
+  FIFO order. Relay also saves an instruction in encrypted phone storage while disconnected,
+  retries it through a stable idempotency key after reconnecting, and visibly distinguishes
+  controller-queued work from phone-saved work waiting to send.
+- The mobile home is an operational Relay inbox: decisions and failures appear first, followed by
+  running and resumable work, then concise computer connection/freshness state. Live direct-LAN
+  sessions can move to the encrypted relay after a failure and later return to LAN.
+- Phone relay access uses a 14-day rolling bundle of daily, short-lived, HMAC-signed tickets bound
+  to the paired device and machine. The controller credential and the paired-device controller
+  token never enter a phone relay URL. Both relay and controller verify tickets before an E2EE
+  channel can begin.
+- The controller push payload is privacy-safe and category-aware. Mobile review/skip actions are
+  registered; a skip is persisted until Relay can deliver it through the encrypted approval route.
+  Release-build FCM/APNs credentials and physical-device push validation remain external setup.
+- `RDC: Open in Agents` is available from the VS Code status bar and Command Palette, starts a
+  controller-owned session for the active indexed workspace, and its extension bundle is built.
+
+Remaining delivery dependencies are intentionally not simulated: project-level grants and
+controller policy profiles, deployment of the ticket-aware relay behind TLS with rate limits and
+monitoring, Firebase/APNs release credentials, physical-device notification testing, the Claude
+Code adapter, and localhost service viewing.
 
 ## Working roles for development
 

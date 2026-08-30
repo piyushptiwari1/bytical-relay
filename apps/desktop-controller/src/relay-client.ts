@@ -1,4 +1,4 @@
-import { hashToken } from "@rdc/security";
+import { verifyRelayTicket } from "@rdc/security";
 import WebSocket from "ws";
 import type { DeviceStore } from "./device-store.ts";
 import type { WsLike } from "./server.ts";
@@ -17,7 +17,8 @@ interface Envelope {
   ch?: string;
   bin?: boolean;
   data?: string;
-  token?: string;
+  device_id?: string;
+  ticket?: string;
 }
 
 const RECONNECT_MIN_MS = 1_000;
@@ -78,7 +79,7 @@ export class RelayClient {
         return;
       }
       if (typeof msg.ch !== "string") return;
-      if (msg.t === "open") this.#openChannel(msg.ch, msg.token ?? "");
+      if (msg.t === "open") this.#openChannel(msg.ch, msg.device_id ?? "", msg.ticket ?? "");
       else if (msg.t === "msg") this.#channels.get(msg.ch)?.receive(msg);
       else if (msg.t === "close") this.#dropChannel(msg.ch);
     });
@@ -100,10 +101,18 @@ export class RelayClient {
     this.#backoffMs = Math.min(this.#backoffMs * 2, RECONNECT_MAX_MS);
   }
 
-  #openChannel(ch: string, deviceToken: string): void {
-    // relay-side connections MUST be paired devices (E2EE enforced by attach)
-    const device = this.#deps.devices.findByTokenHash(hashToken(deviceToken));
-    if (!device) {
+  #openChannel(ch: string, deviceId: string, ticket: string): void {
+    // Verify again locally: the relay may forward channels, but cannot choose a device identity.
+    const claims = verifyRelayTicket(this.#deps.relayToken, ticket);
+    const device = this.#deps.devices.get(deviceId);
+    if (
+      !claims ||
+      claims.machine_id !== this.#deps.machineId ||
+      claims.device_id !== deviceId ||
+      !device ||
+      device.revoked ||
+      device.expires_at <= Date.now()
+    ) {
       this.#send({ t: "close", ch });
       return;
     }

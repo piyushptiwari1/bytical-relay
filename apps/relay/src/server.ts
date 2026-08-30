@@ -1,5 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import websocket from "@fastify/websocket";
+import { verifyRelayTicket } from "@rdc/security";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 
 /**
@@ -8,7 +9,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
  * All command/event payloads are E2EE between phone and laptop — the relay
  * never sees plaintext and never logs payloads. Envelope (controller leg only;
  * the phone leg speaks the exact same protocol as a direct connection):
- *   {t:"open", ch, token}   relay → laptop   phone connected, presented device token
+ *   {t:"open", ch, device_id, ticket}  relay → laptop after ticket validation
  *   {t:"msg",  ch, bin?, data}               both directions, data b64 when bin
  *   {t:"close", ch}                          either side hung up
  */
@@ -31,6 +32,7 @@ interface MachineEntry {
 }
 
 export interface RelayOptions {
+  /** Controller credential and ticket signing secret; never sent to a phone. */
   token: string;
   maxFrameBytes?: number;
   maxChannelsPerMachine?: number;
@@ -64,12 +66,16 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
   app.get("/tunnel", { websocket: true }, (socket: WsLike, req: FastifyRequest) => {
     const q = req.query as Record<string, unknown>;
     const machineId = typeof q.machine === "string" ? q.machine : "";
-    if (!tokenOk(options.token, q.rt) || machineId.length === 0) {
+    if (machineId.length === 0) {
       socket.close(4401, "unauthorized");
       return;
     }
 
     if (q.role === "controller") {
+      if (!tokenOk(options.token, q.rt)) {
+        socket.close(4401, "unauthorized");
+        return;
+      }
       const previous = machines.get(machineId);
       previous?.controller.close(4000, "replaced by new controller connection");
       const entry: MachineEntry = { controller: socket, phones: new Map(), alive: true };
@@ -106,7 +112,19 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
       return;
     }
 
-    // phone leg — raw protocol passthrough, wrapped into envelopes for the laptop
+    // Phone leg: a ticket is short-lived, device-bound, and signed by the controller's
+    // private relay secret. A paired-device controller token must never reach this relay.
+    const ticket = typeof q.ticket === "string" ? q.ticket : "";
+    const claims = verifyRelayTicket(options.token, ticket);
+    if (
+      q.role !== "phone" ||
+      typeof q.token === "string" ||
+      !claims ||
+      claims.machine_id !== machineId
+    ) {
+      socket.close(4401, "unauthorized");
+      return;
+    }
     const entry = machines.get(machineId);
     if (!entry) {
       socket.close(4404, "machine offline");
@@ -118,9 +136,7 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
     }
     const ch = randomUUID();
     entry.phones.set(ch, socket);
-    entry.controller.send(
-      JSON.stringify({ t: "open", ch, token: typeof q.token === "string" ? q.token : "" }),
-    );
+    entry.controller.send(JSON.stringify({ t: "open", ch, device_id: claims.device_id, ticket }));
     socket.on("message", (data, isBinary) => {
       options.onForward?.("to_laptop", data);
       entry.controller.send(

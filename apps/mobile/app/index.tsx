@@ -19,6 +19,7 @@ type SessionItem = {
   machineId: string;
   machineName: string;
   projectName: string;
+  waitingToSend: number;
   session: AgentSession;
 };
 
@@ -86,6 +87,7 @@ export default function RelayHome() {
       projectName:
         machineRuntime?.projects?.find((project) => project.project_id === session.project_id)
           ?.name ?? "Workspace",
+      waitingToSend: machineRuntime?.pending_prompt_counts?.[session.session_id] ?? 0,
       session,
     }));
   });
@@ -264,6 +266,9 @@ function WorkRow(props: { item: SessionItem; quiet?: boolean }) {
           {item.projectName} · {item.machineName} · {relativeTime(item.session.updated_at)}
         </Text>
         {queuedPromptCount > 0 ? <Pill tone="accent">{queuedPromptCount} queued</Pill> : null}
+        {item.waitingToSend > 0 ? (
+          <Pill tone="warn">{item.waitingToSend} waiting to send</Pill>
+        ) : null}
       </View>
     </Pressable>
   );

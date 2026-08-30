@@ -3,8 +3,11 @@ import {
   appendAuditEntry,
   type ChainedAuditEntry,
   hasScope,
+  issueRelayTicket,
+  issueRelayTicketBundle,
   issueToken,
   verifyAuditChain,
+  verifyRelayTicket,
   verifyToken,
 } from "../src/index.ts";
 
@@ -68,5 +71,38 @@ describe("hash-chained audit log", () => {
 
     const reordered = buildChain().reverse();
     expect(verifyAuditChain(reordered).valid).toBe(false);
+  });
+});
+
+describe("relay access tickets", () => {
+  test("are device-bound, signed, and time-bounded", () => {
+    const now = 1_000_000;
+    const issued = issueRelayTicket("relay-secret", {
+      machine_id: "mch_1",
+      device_id: "dev_1",
+      not_before: now - 1,
+      expires_at: now + 60_000,
+    });
+    expect(verifyRelayTicket("relay-secret", issued.ticket, now)).toMatchObject({
+      machine_id: "mch_1",
+      device_id: "dev_1",
+    });
+    expect(verifyRelayTicket("other-secret", issued.ticket, now)).toBeNull();
+    expect(verifyRelayTicket("relay-secret", `${issued.ticket}x`, now)).toBeNull();
+    expect(verifyRelayTicket("relay-secret", issued.ticket, now + 60_000)).toBeNull();
+  });
+
+  test("issues a rolling bundle with one active current ticket", () => {
+    const now = 1_234_567_890;
+    const tickets = issueRelayTicketBundle("relay-secret", {
+      machineId: "mch_1",
+      deviceId: "dev_1",
+      now,
+      windows: 3,
+    });
+    expect(tickets).toHaveLength(3);
+    expect(
+      tickets.filter((ticket) => verifyRelayTicket("relay-secret", ticket.ticket, now)),
+    ).toHaveLength(1);
   });
 });

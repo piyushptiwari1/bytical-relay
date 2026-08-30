@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  rdc-relay: zero-knowledge websocket relay for remote-dev-control (S7).
+  rdc-relay: zero-knowledge websocket relay for Relay by Bytical (S7).
   Fully isolated stack — own VPC, no dependencies on other resources in the
   account. All resources are rdc-prefixed. Teardown: delete this stack.
 
@@ -9,7 +9,7 @@ Parameters:
     Type: String
     NoEcho: true
     MinLength: 16
-    Description: Shared relay auth token (laptop + phones present it)
+    Description: Controller-only relay credential and signed phone-ticket secret
   RelayPort:
     Type: Number
     Default: 8443

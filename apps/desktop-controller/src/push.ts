@@ -12,13 +12,17 @@ export interface PushTicket {
   details?: { error?: string };
 }
 
+export interface PushMessage {
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+  categoryId?: string;
+}
+
 const ENDPOINT = "https://exp.host/--/api/v2/push/send";
 const CHUNK = 100;
 
-export async function sendExpoPush(
-  tokens: string[],
-  message: { title: string; body: string; data?: Record<string, string> },
-): Promise<PushTicket[]> {
+export async function sendExpoPush(tokens: string[], message: PushMessage): Promise<PushTicket[]> {
   const tickets: PushTicket[] = [];
   for (let i = 0; i < tokens.length; i += CHUNK) {
     const chunk = tokens.slice(i, i + CHUNK).map((to) => ({
@@ -28,6 +32,7 @@ export async function sendExpoPush(
       data: message.data ?? {},
       priority: "high",
       channelId: "agent",
+      ...(message.categoryId ? { categoryId: message.categoryId } : {}),
     }));
     const response = await fetch(ENDPOINT, {
       method: "POST",

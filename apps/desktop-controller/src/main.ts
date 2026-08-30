@@ -145,7 +145,7 @@ async function start(): Promise<void> {
       relayToken: relay.token,
       machineId: config.machine_id,
       devices,
-      attach: (socket, device) => attachProtocolSocket(socket, device ?? undefined),
+      attach: (socket, device) => attachProtocolSocket(socket, device ?? undefined, "relay"),
       log: (msg, extra) => logger.info(extra ?? {}, msg),
     });
     relayClient.start();

@@ -2,9 +2,15 @@ import type { AddressInfo } from "node:net";
 import { MemoryEventStore } from "@rdc/event-store";
 import { FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
-import { FileChanged, fsStream, type KnownMessage, ProjectList } from "@rdc/protocol";
+import {
+  FileChanged,
+  fsStream,
+  type KnownMessage,
+  MachineStatus,
+  ProjectList,
+} from "@rdc/protocol";
 import { buildRelay } from "@rdc/relay";
-import { generateKxKeypair, hashToken, toB64 } from "@rdc/security";
+import { generateKxKeypair, hashToken, issueRelayTicket, toB64 } from "@rdc/security";
 import { newEventId, nowIso } from "@rdc/shared";
 import { TerminalManager } from "@rdc/terminal";
 import { ControllerClient } from "@rdc/transport";
@@ -68,6 +74,7 @@ beforeAll(async () => {
     kx_pub: toB64(phone.keys.publicKey),
     token_hash: hashToken(DEVICE_TOKEN),
     scopes: ["*"],
+    expires_at: Date.now() + 60_000,
   });
 
   const relay = await buildRelay({
@@ -88,7 +95,7 @@ beforeAll(async () => {
     relayToken: RELAY_TOKEN,
     machineId: MACHINE,
     devices,
-    attach: (socket, device) => attachProtocolSocket(socket, device ?? undefined),
+    attach: (socket, device) => attachProtocolSocket(socket, device ?? undefined, "relay"),
   });
   closers.push(() => relayClient.stop());
   relayClient.start();
@@ -129,11 +136,18 @@ function appendFsEvent(relativePath: string): void {
 }
 
 describe("S7 gate: phone ↔ relay ↔ laptop, E2EE preserved", () => {
-  test("paired device connects through relay: commands, live push, machine.status relay info", async () => {
+  test("paired device connects through a ticket: commands, live push, and no relay secret", async () => {
     const phone = phoneIdentity();
+    const relayTicket = issueRelayTicket(RELAY_TOKEN, {
+      machine_id: MACHINE,
+      device_id: "dev_relayphone",
+      not_before: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+    });
     const client = new ControllerClient({
-      url: `ws://127.0.0.1:${relayPort}/tunnel?role=phone&machine=${MACHINE}&rt=${RELAY_TOKEN}`,
+      url: `ws://127.0.0.1:${relayPort}/tunnel?role=phone&machine=${MACHINE}&ticket=${encodeURIComponent(relayTicket.ticket)}`,
       token: DEVICE_TOKEN,
+      sendTokenInUrl: false,
       deviceId: "dev_relayphone",
       keys: { keypair: phone.keys, controllerKxPub: deps.keys.publicKey },
       backoff: { baseMs: 50, capMs: 250 },
@@ -141,6 +155,12 @@ describe("S7 gate: phone ↔ relay ↔ laptop, E2EE preserved", () => {
     closers.push(() => client.close());
     await client.connect();
     expect(client.isSecure).toBe(true);
+    expect(deps.devices.get("dev_relayphone")).toMatchObject({ last_transport: "relay" });
+
+    const status = await client.command(MachineStatus, {});
+    expect(status.relay?.url).toBe("ws://placeholder");
+    expect(status.relay?.tickets).toHaveLength(14);
+    expect(JSON.stringify(status.relay)).not.toContain(RELAY_TOKEN);
 
     forwarded = []; // only inspect post-handshake traffic for the zero-knowledge check
 
@@ -166,10 +186,17 @@ describe("S7 gate: phone ↔ relay ↔ laptop, E2EE preserved", () => {
     }
   });
 
-  test("unpaired token is rejected at the laptop, not the relay", async () => {
+  test("ticket for an unpaired device is rejected at the laptop, not the relay", async () => {
+    const ticket = issueRelayTicket(RELAY_TOKEN, {
+      machine_id: MACHINE,
+      device_id: "dev_evil",
+      not_before: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+    });
     const stranger = new ControllerClient({
-      url: `ws://127.0.0.1:${relayPort}/tunnel?role=phone&machine=${MACHINE}&rt=${RELAY_TOKEN}`,
+      url: `ws://127.0.0.1:${relayPort}/tunnel?role=phone&machine=${MACHINE}&ticket=${encodeURIComponent(ticket.ticket)}`,
       token: "not-a-paired-device-token-000000",
+      sendTokenInUrl: false,
       deviceId: "dev_evil",
       backoff: { baseMs: 50, capMs: 100 },
     });
@@ -177,10 +204,17 @@ describe("S7 gate: phone ↔ relay ↔ laptop, E2EE preserved", () => {
     stranger.close();
   });
 
-  test("wrong relay token cannot even reach the machine", async () => {
+  test("ticket signed with the wrong relay secret cannot reach the machine", async () => {
+    const ticket = issueRelayTicket("WRONG", {
+      machine_id: MACHINE,
+      device_id: "dev_relayphone",
+      not_before: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+    });
     const blocked = new ControllerClient({
-      url: `ws://127.0.0.1:${relayPort}/tunnel?role=phone&machine=${MACHINE}&rt=WRONG`,
+      url: `ws://127.0.0.1:${relayPort}/tunnel?role=phone&machine=${MACHINE}&ticket=${encodeURIComponent(ticket.ticket)}`,
       token: DEVICE_TOKEN,
+      sendTokenInUrl: false,
       deviceId: "dev_relayphone",
       backoff: { baseMs: 50, capMs: 100 },
     });

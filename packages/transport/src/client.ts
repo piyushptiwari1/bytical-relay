@@ -25,6 +25,8 @@ export interface ControllerClientOptions {
   /** ws://host:port/ws */
   url: string;
   token: string;
+  /** Relay connections use a signed ticket in the URL and must not forward this controller token. */
+  sendTokenInUrl?: boolean;
   deviceId: string;
   /** present for paired devices → E2EE is mandatory */
   keys?: ClientKeys;
@@ -38,7 +40,7 @@ export type ClientState = "idle" | "connecting" | "ready" | "reconnecting" | "cl
 
 interface CommandDefLike<TArgs, TResult> {
   name: string;
-  createRequest(args: TArgs, opts?: Record<string, never>): { command_id: string };
+  createRequest(args: TArgs, opts?: { command_id?: string }): { command_id: string };
   createOk(commandId: string, result: TResult, opts?: { duplicate?: boolean }): unknown;
 }
 
@@ -131,9 +133,12 @@ export class ControllerClient {
   async command<TArgs, TResult>(
     def: CommandDefLike<TArgs, TResult>,
     args: TArgs,
-    opts: { timeoutMs?: number } = {},
+    opts: { timeoutMs?: number; commandId?: string } = {},
   ): Promise<TResult> {
-    const request = def.createRequest(args);
+    const request = def.createRequest(
+      args,
+      opts.commandId ? { command_id: opts.commandId } : undefined,
+    );
     const json = JSON.stringify(request);
     return new Promise<TResult>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -197,9 +202,11 @@ export class ControllerClient {
       : null;
     const factory = this.#opts.webSocketFactory ?? defaultWebSocketFactory;
     const separator = this.#opts.url.includes("?") ? "&" : "?";
-    const ws = factory(
-      `${this.#opts.url}${separator}token=${encodeURIComponent(this.#opts.token)}`,
-    );
+    const url =
+      this.#opts.sendTokenInUrl === false
+        ? this.#opts.url
+        : `${this.#opts.url}${separator}token=${encodeURIComponent(this.#opts.token)}`;
+    const ws = factory(url);
     ws.binaryType = "arraybuffer";
     this.#ws = ws;
     ws.addEventListener("open", () => {

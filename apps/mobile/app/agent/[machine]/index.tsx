@@ -54,6 +54,9 @@ export default function AgentsHome() {
   const router = useRouter();
   const projects = useApp((s) => (machine ? (s.runtime[machine]?.projects ?? []) : []));
   const scopes = useApp((s) => (machine ? s.runtime[machine]?.health?.scopes : undefined));
+  const pendingPromptCounts = useApp((s) =>
+    machine ? (s.runtime[machine]?.pending_prompt_counts ?? {}) : {},
+  );
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [external, setExternal] = useState<ExternalSession[]>([]);
   const [resuming, setResuming] = useState<string | null>(null);
@@ -178,6 +181,9 @@ export default function AgentsHome() {
         </Text>
         {(session.queued_prompt_count ?? 0) > 0 ? (
           <Pill tone="accent">{session.queued_prompt_count} queued</Pill>
+        ) : null}
+        {(pendingPromptCounts[session.session_id] ?? 0) > 0 ? (
+          <Pill tone="warn">{pendingPromptCounts[session.session_id]} waiting to send</Pill>
         ) : null}
       </View>
     </Card>

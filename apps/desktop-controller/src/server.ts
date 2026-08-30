@@ -9,6 +9,7 @@ import type { FilesystemService, FsIndex } from "@rdc/filesystem";
 import type { GitService } from "@rdc/git";
 import {
   AgentStatusChanged,
+  type ApprovalRequest,
   decodeFrame,
   EditorStateChanged,
   encodeFrame,
@@ -27,12 +28,18 @@ import QRCode from "qrcode";
 import type { AgentManager } from "./agent-manager.ts";
 import type { AuditLog } from "./audit-log.ts";
 import type { DeviceRecord, DeviceStore } from "./device-store.ts";
-import { type ClientContext, ControllerDispatcher, newClientContext } from "./dispatcher.ts";
+import {
+  type ClientContext,
+  ControllerDispatcher,
+  canAccessStream,
+  hasClientScope,
+  newClientContext,
+} from "./dispatcher.ts";
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
 import type { PairingCoordinator } from "./pairing-coordinator.ts";
-import { sendExpoPush } from "./push.ts";
+import { type PushMessage, sendExpoPush } from "./push.ts";
 
 export interface ServerDeps {
   machineId: string;
@@ -124,6 +131,20 @@ interface ConnectedClient {
   sendJson: (json: string) => void;
 }
 
+function publicDevice(device: DeviceRecord, connected: boolean) {
+  return {
+    device_id: device.device_id,
+    name: device.name,
+    scopes: device.scopes,
+    expires_at: new Date(device.expires_at).toISOString(),
+    created_at: device.created_at,
+    revoked: device.revoked,
+    connected,
+    last_seen_at: device.last_seen_at,
+    last_transport: device.last_transport,
+  };
+}
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -136,12 +157,33 @@ const dec = new TextDecoder();
 export async function buildServer(deps: ServerDeps): Promise<{
   app: FastifyInstance;
   /** feed a protocol connection from any transport (direct ws or relay tunnel) */
-  attachProtocolSocket: (socket: WsLike, device: DeviceRecord | undefined) => void;
+  attachProtocolSocket: (
+    socket: WsLike,
+    device: DeviceRecord | undefined,
+    transport?: "direct" | "relay",
+  ) => void;
 }> {
   const app = Fastify({ logger: false });
   await app.register(websocket);
   const dispatcher = new ControllerDispatcher(deps);
   const clients = new Map<WsLike, ConnectedClient>();
+  const sendAgentPush = (message: PushMessage) => {
+    const tokens = deps.devices.allPushTokens("agents.control");
+    if (tokens.length === 0) return;
+    void sendExpoPush(tokens, message)
+      .then((tickets) => {
+        // Tickets align with recipient tokens; remove registrations Expo says are no longer valid.
+        tickets.forEach((ticket, index) => {
+          const token = tokens[index];
+          if (token && ticket.details?.error === "DeviceNotRegistered") {
+            deps.devices.removePushToken(token);
+          }
+        });
+      })
+      .catch(() => {
+        // Push is best effort; a connected client still receives the live event stream.
+      });
+  };
   // Wi-Fi roaming/DHCP changes IPs while running — recompute, cached briefly.
   let allowedHosts = collectAllowedHostnames();
   let allowedHostsAt = Date.now();
@@ -153,6 +195,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
     return allowedHosts;
   };
   const requestDevices = new WeakMap<FastifyRequest, DeviceRecord>();
+  const localRequests = new WeakSet<FastifyRequest>();
 
   app.addHook("onRequest", async (req, reply) => {
     const hosts = freshAllowedHosts();
@@ -162,7 +205,10 @@ export async function buildServer(deps: ServerDeps): Promise<{
     const routePath = req.url.split("?")[0];
     if (routePath === "/healthz" || routePath === "/pair") return;
     const presented = extractToken(req);
-    if (tokenMatches(deps.localToken, presented)) return; // local caller (dashboard/extension)
+    if (tokenMatches(deps.localToken, presented)) {
+      localRequests.add(req);
+      return; // local caller (dashboard/extension)
+    }
     if (presented) {
       const device = deps.devices.findByTokenHash(hashToken(presented));
       if (device) {
@@ -221,7 +267,61 @@ export async function buildServer(deps: ServerDeps): Promise<{
     return { ok: true };
   });
 
-  app.get("/api/devices", async () => ({ devices: deps.devices.list() }));
+  const closePairedDeviceSockets = (deviceId?: string) => {
+    for (const [socket, client] of clients) {
+      if (
+        client.ctx.authenticatedDeviceId !== null &&
+        (deviceId === undefined || client.ctx.authenticatedDeviceId === deviceId)
+      ) {
+        socket.close(1008, "paired device access revoked");
+      }
+    }
+  };
+
+  app.get("/api/devices", async (req, reply) => {
+    if (!localRequests.has(req))
+      return reply.code(403).send({ error: "local owner token required" });
+    const connectedDeviceIds = new Set(
+      [...clients.values()]
+        .map((client) => client.ctx.authenticatedDeviceId)
+        .filter((deviceId): deviceId is string => deviceId !== null),
+    );
+    return {
+      devices: deps.devices
+        .list()
+        .map((device) => publicDevice(device, connectedDeviceIds.has(device.device_id))),
+    };
+  });
+
+  app.post("/api/devices/:deviceId/revoke", async (req, reply) => {
+    if (!localRequests.has(req))
+      return reply.code(403).send({ error: "local owner token required" });
+    const deviceId = (req.params as { deviceId?: string }).deviceId;
+    if (!deviceId || !deps.devices.revoke(deviceId))
+      return reply.code(404).send({ error: "paired device not found" });
+    closePairedDeviceSockets(deviceId);
+    deps.audit?.append({
+      ts: new Date().toISOString(),
+      actor: "local_owner",
+      action: "device.revoke",
+      details: { device_id: deviceId },
+    });
+    return { revoked: true };
+  });
+
+  app.post("/api/devices/revoke-all", async (req, reply) => {
+    if (!localRequests.has(req))
+      return reply.code(403).send({ error: "local owner token required" });
+    const revoked = deps.devices.revokeAll();
+    closePairedDeviceSockets();
+    deps.audit?.append({
+      ts: new Date().toISOString(),
+      actor: "local_owner",
+      action: "device.revoke_all",
+      details: { count: String(revoked) },
+    });
+    return { revoked };
+  });
 
   /** Unauthenticated by design — gated by the one-time code + lockout inside the coordinator. */
   app.get("/pair", { websocket: true }, (socket: WsLike) => {
@@ -241,8 +341,16 @@ export async function buildServer(deps: ServerDeps): Promise<{
   });
 
   // ── Protocol endpoint (E2EE mandatory for paired devices) ──────────────────
-  const attachProtocolSocket = (socket: WsLike, device: DeviceRecord | undefined): void => {
-    const ctx = newClientContext(device?.device_id ?? null, device?.scopes ?? null);
+  const attachProtocolSocket = (
+    socket: WsLike,
+    device: DeviceRecord | undefined,
+    transport: "direct" | "relay" = "direct",
+  ): void => {
+    const ctx = newClientContext(
+      device?.device_id ?? null,
+      device?.scopes ?? null,
+      device ? transport : null,
+    );
     const secure = device ? new SecureChannel("server", deps.keys, fromB64(device.kx_pub)) : null;
     let ownHeaderSent = false;
     let peerHeaderAccepted = false;
@@ -348,7 +456,11 @@ export async function buildServer(deps: ServerDeps): Promise<{
       if (!envelope.ok) continue;
       const json = JSON.stringify(envelope.value);
       for (const [, client] of clients) {
-        if (client.ctx.helloDone && client.ctx.subscriptions.has(record.stream))
+        if (
+          client.ctx.helloDone &&
+          client.ctx.subscriptions.has(record.stream) &&
+          canAccessStream(client.ctx, record.stream)
+        )
           client.sendJson(json);
       }
     }
@@ -366,7 +478,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
       }),
     );
     for (const [, client] of clients) {
-      if (client.ctx.helloDone) client.sendJson(json);
+      if (client.ctx.helloDone && hasClientScope(client.ctx, "machine.read")) client.sendJson(json);
     }
   }, 5_000);
   (healthTimer as { unref?: () => void }).unref?.();
@@ -380,7 +492,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
       GitStatusChanged.create(gitStream(state.project_id), gitSeq, state),
     );
     for (const [, client] of clients) {
-      if (client.ctx.helloDone) client.sendJson(json);
+      if (client.ctx.helloDone && hasClientScope(client.ctx, "git.read")) client.sendJson(json);
     }
   });
 
@@ -390,7 +502,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
     editorSeq += 1;
     const json = JSON.stringify(EditorStateChanged.create("editor", editorSeq, { editors }));
     for (const [, client] of clients) {
-      if (client.ctx.helloDone) client.sendJson(json);
+      if (client.ctx.helloDone && hasClientScope(client.ctx, "editor.read")) client.sendJson(json);
     }
   });
 
@@ -402,9 +514,36 @@ export async function buildServer(deps: ServerDeps): Promise<{
       if (!envelope.ok) continue;
       const json = JSON.stringify(envelope.value);
       for (const [, client] of clients) {
-        if (client.ctx.helloDone && client.ctx.subscriptions.has(record.stream))
+        if (
+          client.ctx.helloDone &&
+          client.ctx.subscriptions.has(record.stream) &&
+          canAccessStream(client.ctx, record.stream)
+        )
           client.sendJson(json);
       }
+      if (record.type !== "approval.requested") continue;
+      const approval = record.payload as Partial<ApprovalRequest>;
+      if (
+        typeof approval.session_id !== "string" ||
+        typeof approval.approval_id !== "string" ||
+        !Array.isArray(approval.options)
+      ) {
+        continue;
+      }
+      const skipOption = approval.options.find(
+        (option) => option.option_kind === "reject_once",
+      )?.option_id;
+      sendAgentPush({
+        title: "Approval needed",
+        body: "A Relay agent needs a decision.",
+        categoryId: "relay_approval",
+        data: {
+          machine: deps.machineId,
+          session: approval.session_id,
+          approval_id: approval.approval_id,
+          ...(skipOption ? { skip_option_id: skipOption } : {}),
+        },
+      });
     }
   });
   let agentSeq = 0;
@@ -413,40 +552,24 @@ export async function buildServer(deps: ServerDeps): Promise<{
     agentSeq += 1;
     const json = JSON.stringify(AgentStatusChanged.create("agent", agentSeq, { session }));
     for (const [, client] of clients) {
-      if (client.ctx.helloDone) client.sendJson(json);
+      if (client.ctx.helloDone && hasClientScope(client.ctx, "agents.read")) client.sendJson(json);
     }
     // S7b: remote push for killed-app delivery (no-op until tokens registered)
     const previous = pushStatus.get(session.session_id);
     pushStatus.set(session.session_id, session.status);
     if (previous === session.status) return;
     const title =
-      session.status === "awaiting_approval"
-        ? "🔐 Approval needed"
-        : session.status === "failed"
-          ? "⚠️ Agent failed"
-          : session.status === "idle" && previous === "running"
-            ? "✅ Agent finished"
-            : null;
+      session.status === "failed"
+        ? "Agent needs review"
+        : session.status === "idle" && previous === "running"
+          ? "Agent finished"
+          : null;
     if (!title) return;
-    const tokens = deps.devices.allPushTokens();
-    if (tokens.length === 0) return;
-    void sendExpoPush(tokens, {
+    sendAgentPush({
       title,
-      body: session.title?.slice(0, 100) || "Agent session",
+      body: "Open Relay to review the result.",
       data: { machine: deps.machineId, session: session.session_id },
-    })
-      .then((tickets) => {
-        // tickets align with tokens — drop dead registrations so we stop retrying
-        tickets.forEach((ticket, i) => {
-          const token = tokens[i];
-          if (token && ticket.details?.error === "DeviceNotRegistered") {
-            deps.devices.removePushToken(token);
-          }
-        });
-      })
-      .catch(() => {
-        // push is best-effort; local notifications still cover attached devices
-      });
+    });
   });
 
   // Live push: terminal output pings + close events (ephemeral).
@@ -455,14 +578,16 @@ export async function buildServer(deps: ServerDeps): Promise<{
     terminalSeq += 1;
     const json = JSON.stringify(TerminalChanged.create("terminal", terminalSeq, event));
     for (const [, client] of clients) {
-      if (client.ctx.helloDone) client.sendJson(json);
+      if (client.ctx.helloDone && hasClientScope(client.ctx, "terminals.read"))
+        client.sendJson(json);
     }
   });
   deps.terminals.emitter.on("closed", (event) => {
     terminalSeq += 1;
     const json = JSON.stringify(TerminalClosed.create("terminal", terminalSeq, event));
     for (const [, client] of clients) {
-      if (client.ctx.helloDone) client.sendJson(json);
+      if (client.ctx.helloDone && hasClientScope(client.ctx, "terminals.read"))
+        client.sendJson(json);
     }
   });
 

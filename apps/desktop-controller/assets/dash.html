@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>rdc — controller dashboard</title>
+<title>Relay — controller dashboard</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -27,15 +27,15 @@
   @keyframes flash { from { background: #1f6feb44; } to { background: transparent; } }
   #log { position: fixed; bottom: 0; right: 0; max-width: 46%; max-height: 30%; overflow: auto;
          font-size: 11px; color: #8b949e; padding: 8px 12px; background: #0d1117dd; }
-  #pairBtn, #awakeBtn { margin-left: auto; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+  #pairBtn, #devicesBtn, #awakeBtn { margin-left: auto; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
              border-radius: 6px; padding: 4px 12px; cursor: pointer; font: inherit; }
-  #awakeBtn { margin-left: 0; }
+  #devicesBtn, #awakeBtn { margin-left: 0; }
   #awakeBtn.on { color: #3fb950; border-color: #3fb950; }
-  #pairBtn:hover, #awakeBtn:hover { background: #30363d; }
-  #pairPanel { position: fixed; inset: 0; background: #000a; display: flex;
+  #pairBtn:hover, #devicesBtn:hover, #awakeBtn:hover { background: #30363d; }
+  #pairPanel, #devicesPanel { position: fixed; inset: 0; background: #000a; display: flex;
                align-items: center; justify-content: center; }
-  #pairPanel[hidden] { display: none; }
-  #pairCard { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  #pairPanel[hidden], #devicesPanel[hidden] { display: none; }
+  #pairCard, #devicesCard { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
               padding: 24px; text-align: center; max-width: 340px; }
   #pairCard img { border-radius: 8px; background: #fff; padding: 6px; }
   #pairCode { font-size: 22px; letter-spacing: 4px; margin: 10px 0; color: #79c0ff; }
@@ -44,15 +44,30 @@
   #pairCard button { margin: 8px 4px 0; background: #238636; border: 0; color: #fff;
                      border-radius: 6px; padding: 6px 16px; cursor: pointer; font: inherit; }
   #pairCard button.secondary { background: #21262d; border: 1px solid #30363d; }
+  #devicesCard { max-height: min(620px, calc(100vh - 48px)); overflow: auto; text-align: left; width: min(520px, calc(100vw - 32px)); }
+  #devicesCard h2 { font-size: 16px; margin: 0 0 5px; }
+  #devicesCard > p { color: #8b949e; font-size: 12px; margin: 0 0 18px; }
+  #deviceList { border-top: 1px solid #30363d; }
+  .device { align-items: center; border-bottom: 1px solid #30363d; display: flex; gap: 12px; padding: 13px 0; }
+  .device-copy { flex: 1; min-width: 0; }
+  .device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .device-meta { color: #8b949e; font-size: 11px; margin-top: 3px; }
+  .device-state { color: #3fb950; font-size: 11px; }
+  .device-state.warn { color: #d29922; }.device-state.bad { color: #f85149; }
+  #devicesCard .device button { background: transparent; border: 1px solid #f8514966; border-radius: 5px; color: #f85149; cursor: pointer; font: inherit; font-size: 12px; padding: 5px 8px; }
+  #devicesFooter { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  #devicesFooter button { background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; cursor: pointer; font: inherit; padding: 7px 11px; }
+  #devicesFooter #revokeAllBtn { border-color: #f8514966; color: #f85149; }
 </style>
 </head>
 <body>
 <header>
-  <h1>rdc controller</h1>
+  <h1>Relay controller</h1>
   <span id="status">connecting…</span>
   <span id="machine" style="color:#8b949e;font-size:12px"></span>
   <span id="health" style="color:#8b949e;font-size:12px"></span>
   <button id="pairBtn" type="button">Pair device</button>
+  <button id="devicesBtn" type="button">Devices</button>
   <button id="awakeBtn" type="button" hidden>☕ keep awake</button>
 </header>
 <div id="pairPanel" hidden>
@@ -65,6 +80,17 @@
     <div id="pairState"></div>
     <button id="pairConfirm" type="button" hidden>Confirm pairing</button>
     <button id="pairCancel" type="button" class="secondary">Close</button>
+  </div>
+</div>
+<div id="devicesPanel" hidden>
+  <div id="devicesCard" role="dialog" aria-modal="true" aria-labelledby="devicesTitle">
+    <h2 id="devicesTitle">Paired devices</h2>
+    <p>Devices can view or control only the access granted by this controller.</p>
+    <div id="deviceList"></div>
+    <div id="devicesFooter">
+      <button id="devicesClose" type="button">Close</button>
+      <button id="revokeAllBtn" type="button">Revoke all</button>
+    </div>
   </div>
 </div>
 <main>
@@ -256,6 +282,80 @@
     clearInterval(pairPoll);
     await api("POST", "/api/pairing/cancel").catch(() => {});
     $("pairPanel").hidden = true;
+  };
+
+  // ── paired-device management ────────────────────────────────────────
+  const formatTime = (iso) => {
+    if (!iso) return "not seen yet";
+    const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+    if (minutes < 1) return "seen just now";
+    if (minutes < 60) return `seen ${minutes}m ago`;
+    if (minutes < 1440) return `seen ${Math.round(minutes / 60)}h ago`;
+    return `seen ${Math.round(minutes / 1440)}d ago`;
+  };
+
+  function deviceState(device) {
+    if (device.revoked) return { label: "revoked", className: "bad" };
+    if (Date.parse(device.expires_at) <= Date.now()) return { label: "expired", className: "bad" };
+    if (device.connected) return { label: "connected", className: "" };
+    if (device.last_seen_at) return { label: "last seen", className: "warn" };
+    return { label: "paired", className: "warn" };
+  }
+
+  async function loadDevices() {
+    const { devices } = await api("GET", "/api/devices");
+    const list = $("deviceList");
+    list.replaceChildren();
+    if (devices.length === 0) {
+      const empty = document.createElement("p");
+      empty.textContent = "No phones are paired with this controller.";
+      empty.style.color = "#8b949e";
+      empty.style.fontSize = "12px";
+      list.appendChild(empty);
+      return;
+    }
+    for (const device of devices) {
+      const row = document.createElement("div");
+      row.className = "device";
+      const copy = document.createElement("div");
+      copy.className = "device-copy";
+      const name = document.createElement("div");
+      name.className = "device-name";
+      name.textContent = device.name;
+      const meta = document.createElement("div");
+      meta.className = "device-meta";
+      const access = device.scopes.includes("agents.control") ? "supervised work" : "read only";
+      meta.textContent = `${access} · ${device.connected ? "connected" : (device.last_transport ?? "not connected")} · ${formatTime(device.last_seen_at)}`;
+      copy.append(name, meta);
+      const state = deviceState(device);
+      const badge = document.createElement("div");
+      badge.className = `device-state ${state.className}`;
+      badge.textContent = state.label;
+      row.append(copy, badge);
+      if (!device.revoked) {
+        const revoke = document.createElement("button");
+        revoke.type = "button";
+        revoke.textContent = "Revoke";
+        revoke.onclick = async () => {
+          if (!confirm(`Revoke access for ${device.name}? This phone will need to pair again.`)) return;
+          await api("POST", `/api/devices/${encodeURIComponent(device.device_id)}/revoke`);
+          await loadDevices();
+        };
+        row.appendChild(revoke);
+      }
+      list.appendChild(row);
+    }
+  }
+
+  $("devicesBtn").onclick = async () => {
+    $("devicesPanel").hidden = false;
+    try { await loadDevices(); } catch (err) { log(`devices: ${err.message}`); }
+  };
+  $("devicesClose").onclick = () => { $("devicesPanel").hidden = true; };
+  $("revokeAllBtn").onclick = async () => {
+    if (!confirm("Revoke access for every paired phone? Each phone will need to pair again.")) return;
+    await api("POST", "/api/devices/revoke-all");
+    await loadDevices();
   };
 
   // ── machine health + keep-awake ───────────────────────────────────────
