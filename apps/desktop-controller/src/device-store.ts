@@ -35,6 +35,7 @@ export interface DeviceRecord {
   revoked: boolean;
   last_seen_at: string | null;
   last_transport: "direct" | "relay" | null;
+  install_id: string | null;
 }
 
 /** Paired-device registry (PairingGrant persistence, PLAN §20). */
@@ -67,6 +68,7 @@ export class DeviceStore {
     this.#addColumn("expires_at INTEGER");
     this.#addColumn("last_seen_at TEXT");
     this.#addColumn("last_transport TEXT");
+    this.#addColumn("install_id TEXT");
     this.#db
       .prepare("UPDATE devices SET expires_at = ? WHERE expires_at IS NULL")
       .run(Date.now() + DEVICE_TOKEN_TTL_MS);
@@ -74,12 +76,15 @@ export class DeviceStore {
   }
 
   add(
-    device: Omit<DeviceRecord, "created_at" | "revoked" | "last_seen_at" | "last_transport">,
+    device: Omit<
+      DeviceRecord,
+      "created_at" | "revoked" | "last_seen_at" | "last_transport" | "install_id"
+    > & { install_id?: string | null },
   ): void {
     this.#db
       .prepare(
-        `INSERT INTO devices (device_id, name, kx_pub, token_hash, scopes, expires_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO devices (device_id, name, kx_pub, token_hash, scopes, expires_at, created_at, install_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         device.device_id,
@@ -89,7 +94,40 @@ export class DeviceStore {
         JSON.stringify(device.scopes),
         device.expires_at,
         new Date().toISOString(),
+        device.install_id ?? null,
       );
+  }
+
+  /** Latest device row for a physical install (revoked rows included so a
+   * re-confirmed pairing resurrects the same identity, PLAN §20). */
+  findByInstallId(installId: string): DeviceRecord | undefined {
+    const row = this.#db
+      .prepare("SELECT * FROM devices WHERE install_id = ? ORDER BY created_at DESC LIMIT 1")
+      .get(installId) as Record<string, unknown> | undefined;
+    return row ? this.#toRecord(row) : undefined;
+  }
+
+  /** Re-pair an existing device: rotate crypto + token, reset to safe default
+   * scopes, un-revoke. The previous token dies immediately. */
+  repair(
+    deviceId: string,
+    next: { name: string; kx_pub: string; token_hash: string; expires_at: number },
+  ): boolean {
+    const info = this.#db
+      .prepare(
+        `UPDATE devices
+         SET name = ?, kx_pub = ?, token_hash = ?, expires_at = ?, scopes = ?, revoked = 0
+         WHERE device_id = ?`,
+      )
+      .run(
+        next.name,
+        next.kx_pub,
+        next.token_hash,
+        next.expires_at,
+        JSON.stringify(DEFAULT_DEVICE_SCOPES),
+        deviceId,
+      );
+    return Number(info.changes) > 0;
   }
 
   findByTokenHash(tokenHash: string): DeviceRecord | undefined {
@@ -200,6 +238,7 @@ export class DeviceStore {
       revoked: Number(row.revoked) === 1,
       last_seen_at: (row.last_seen_at as string | null) ?? null,
       last_transport: (row.last_transport as DeviceRecord["last_transport"]) ?? null,
+      install_id: (row.install_id as string | null) ?? null,
     };
   }
 

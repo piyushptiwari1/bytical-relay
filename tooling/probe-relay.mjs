@@ -39,6 +39,7 @@ export async function ensureProbeDevice(port) {
     url: `ws://127.0.0.1:${port}/pair`,
     code: started.code,
     deviceName: "probe-device",
+    installId: "probe-relay-fixed-install-0001",
     keypair,
     controllerKxPub: fromB64(started.qr_payload.kx_pub),
   });

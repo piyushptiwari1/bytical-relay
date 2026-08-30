@@ -346,6 +346,12 @@ export async function buildServer(deps: ServerDeps): Promise<{
   app.post("/api/pairing/confirm", async (_req, reply) => {
     const granted = deps.pairing.confirm();
     if (!granted) return reply.code(409).send({ error: "nothing pending confirmation" });
+    deps.audit?.append({
+      ts: new Date().toISOString(),
+      actor: "local_owner",
+      action: granted.repaired ? "device.repaired" : "device.paired",
+      details: { device_id: granted.device_id, device_name: granted.device_name },
+    });
     return { ok: true, ...granted };
   });
 

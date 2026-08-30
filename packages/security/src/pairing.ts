@@ -26,6 +26,7 @@ export function generatePairingCode(length = 8): string {
 export interface PendingDevice {
   deviceName: string;
   deviceKxPubB64: string;
+  installId?: string;
 }
 
 export class PairingSession {

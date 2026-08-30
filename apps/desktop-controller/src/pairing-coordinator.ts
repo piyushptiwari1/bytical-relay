@@ -121,8 +121,12 @@ export class PairingCoordinator {
       socket.close(1000);
       return;
     }
-    const { code, device_name, kx_pub } = parsed.value.payload;
-    const result = session.attempt(code, { deviceName: device_name, deviceKxPubB64: kx_pub });
+    const { code, device_name, kx_pub, install_id } = parsed.value.payload;
+    const result = session.attempt(code, {
+      deviceName: device_name,
+      deviceKxPubB64: kx_pub,
+      ...(install_id ? { installId: install_id } : {}),
+    });
     switch (result) {
       case "pending_confirm": {
         const fingerprint = emojiFingerprint(this.deps.keys.publicKey, fromB64(kx_pub));
@@ -142,21 +146,36 @@ export class PairingCoordinator {
     }
   }
 
-  /** Dashboard confirmation → persist device, seal + push the grant. */
-  confirm(): { device_id: string; device_name: string } | null {
+  /** Dashboard confirmation → persist device, seal + push the grant.
+   * A known install_id re-pairs IN PLACE: same device_id, rotated keys/token,
+   * scopes reset to defaults — one row per physical device, old token dead. */
+  confirm(): { device_id: string; device_name: string; repaired: boolean } | null {
     const session = this.#session;
     const pending = session?.pendingDevice;
     if (!session || !pending || !session.confirm()) return null;
-    const deviceId = `dev_${newId()}`;
+    const existing = pending.installId
+      ? this.deps.devices.findByInstallId(pending.installId)
+      : undefined;
+    const deviceId = existing?.device_id ?? `dev_${newId()}`;
     const issued = issueToken(deviceId, DEFAULT_DEVICE_SCOPES, DEVICE_TOKEN_TTL_MS);
-    this.deps.devices.add({
-      device_id: deviceId,
-      name: pending.deviceName,
-      kx_pub: pending.deviceKxPubB64,
-      token_hash: issued.record.token_hash,
-      scopes: [...DEFAULT_DEVICE_SCOPES],
-      expires_at: issued.record.expires_at,
-    });
+    if (existing) {
+      this.deps.devices.repair(deviceId, {
+        name: pending.deviceName,
+        kx_pub: pending.deviceKxPubB64,
+        token_hash: issued.record.token_hash,
+        expires_at: issued.record.expires_at,
+      });
+    } else {
+      this.deps.devices.add({
+        device_id: deviceId,
+        name: pending.deviceName,
+        kx_pub: pending.deviceKxPubB64,
+        token_hash: issued.record.token_hash,
+        scopes: [...DEFAULT_DEVICE_SCOPES],
+        expires_at: issued.record.expires_at,
+        install_id: pending.installId ?? null,
+      });
+    }
     const grant: PairGrant = {
       device_id: deviceId,
       token: issued.token,
@@ -174,7 +193,7 @@ export class PairingCoordinator {
     this.#socket?.close(1000, "paired");
     this.#socket = null;
     this.#grantedDeviceId = deviceId;
-    return { device_id: deviceId, device_name: pending.deviceName };
+    return { device_id: deviceId, device_name: pending.deviceName, repaired: Boolean(existing) };
   }
 
   cancel(): void {

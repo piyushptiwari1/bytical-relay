@@ -2,11 +2,20 @@ import { PairQrSchema } from "@rdc/protocol";
 import { fromB64, generateKxKeypair, toB64 } from "@rdc/security/client";
 import { pairWithController } from "@rdc/transport";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Device from "expo-device";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import { Platform, Text, View } from "react-native";
+import { getInstallId } from "../src/install-id.ts";
 import { useApp } from "../src/machines.ts";
 import { Button, Card, colors, space, type_ } from "../src/theme.tsx";
+
+/** "Samsung Galaxy S23" beats "Android (rdc)" in the device list. */
+function deviceLabel(): string {
+  const parts = [Device.manufacturer, Device.modelName].filter(Boolean) as string[];
+  const label = parts.join(" ").trim();
+  return label || (Platform.OS === "ios" ? "iPhone" : "Android device");
+}
 
 type Phase =
   | { step: "scan" }
@@ -28,13 +37,15 @@ export default function Pair() {
       const qr = PairQrSchema.parse(JSON.parse(data));
       setPhase({ step: "connecting", name: qr.name });
       const keypair = generateKxKeypair();
+      const installId = await getInstallId();
       let lastError = "no reachable address";
       for (const addr of qr.addrs) {
         try {
           const grant = await pairWithController({
             url: `${addr}/pair`,
             code: qr.code,
-            deviceName: `${Platform.OS === "ios" ? "iPhone" : "Android"} (rdc)`,
+            deviceName: deviceLabel(),
+            installId,
             keypair,
             controllerKxPub: fromB64(qr.kx_pub),
             timeoutMs: 90_000,

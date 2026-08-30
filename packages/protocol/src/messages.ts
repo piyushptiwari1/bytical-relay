@@ -63,6 +63,9 @@ export const PairRequest = defineMessage(
     code: z.string().min(4).max(16),
     device_name: z.string().min(1).max(64),
     kx_pub: z.string().min(1),
+    /** Stable per-install identity: re-pairing the same install updates the
+     * existing device record instead of minting a duplicate. */
+    install_id: z.string().min(8).max(80).optional(),
   }),
 );
 

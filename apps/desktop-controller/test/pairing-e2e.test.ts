@@ -254,4 +254,48 @@ describe("S2 gate: pair → E2EE session → live push → drop → replay resum
       }),
     ).rejects.toThrow();
   }, 30_000);
+
+  test("re-pairing the same install updates the device instead of duplicating it", async () => {
+    const pairOnce = async (deviceName: string) => {
+      const started = (await api("POST", "/api/pairing/start")) as {
+        code: string;
+        qr_payload: { kx_pub: string };
+      };
+      const keys = generateKxKeypair();
+      const grantPromise = pairWithController({
+        url: `ws://127.0.0.1:${port}/pair`,
+        code: started.code,
+        deviceName,
+        installId: "inst_e2e_same_phone_0001",
+        keypair: keys,
+        controllerKxPub: fromB64(started.qr_payload.kx_pub),
+      });
+      await expect
+        .poll(async () => ((await api("GET", "/api/pairing/status")) as { state: string }).state, {
+          timeout: 5000,
+        })
+        .toBe("pending_confirm");
+      const confirmed = (await api("POST", "/api/pairing/confirm")) as { repaired: boolean };
+      return { grant: await grantPromise, confirmed };
+    };
+
+    const countBefore = deps.devices.list().length;
+    const first = await pairOnce("Pixel 7");
+    expect(first.confirmed.repaired).toBe(false);
+
+    // owner revokes, then the SAME phone re-pairs (e.g. after reinstalling nothing — just re-scan)
+    await api("POST", `/api/devices/${first.grant.device_id}/revoke`);
+    const second = await pairOnce("Pixel 7 Pro");
+    expect(second.confirmed.repaired).toBe(true);
+
+    // same identity, no duplicate row, fresh credential, old one dead
+    expect(second.grant.device_id).toBe(first.grant.device_id);
+    expect(deps.devices.list().length).toBe(countBefore + 1);
+    const record = deps.devices.get(first.grant.device_id);
+    expect(record).toMatchObject({ name: "Pixel 7 Pro", revoked: false });
+    expect(deps.devices.findByTokenHash(hashToken(first.grant.token))).toBeUndefined();
+    expect(deps.devices.findByTokenHash(hashToken(second.grant.token))?.device_id).toBe(
+      first.grant.device_id,
+    );
+  }, 30_000);
 });

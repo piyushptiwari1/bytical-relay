@@ -7,6 +7,8 @@ export interface PairOptions {
   url: string;
   code: string;
   deviceName: string;
+  /** Stable per-install id — lets the controller update the same device on re-pair. */
+  installId?: string;
   keypair: KxKeypair;
   /** from the QR payload — authenticates the controller */
   controllerKxPub: Uint8Array;
@@ -51,6 +53,7 @@ export function pairWithController(options: PairOptions): Promise<PairGrant> {
             code: options.code,
             device_name: options.deviceName,
             kx_pub: toB64(options.keypair.publicKey),
+            ...(options.installId ? { install_id: options.installId } : {}),
           }),
         ),
       );

@@ -5,6 +5,47 @@ import { describe, expect, test } from "vitest";
 import { DEFAULT_DEVICE_SCOPES, DeviceStore } from "../src/device-store.ts";
 
 describe("DeviceStore", () => {
+  test("install_id: find latest row and repair in place", () => {
+    const store = new DeviceStore(":memory:");
+    store.add({
+      device_id: "dev_phone",
+      name: "Pixel 7",
+      kx_pub: "pk-1",
+      token_hash: "th-1",
+      scopes: ["projects.read"],
+      expires_at: Date.now() + 60_000,
+      install_id: "inst_abc",
+    });
+    expect(store.findByInstallId("inst_abc")?.device_id).toBe("dev_phone");
+    expect(store.findByInstallId("inst_missing")).toBeUndefined();
+
+    // revoked devices are still found — a confirmed re-pair resurrects them
+    store.revoke("dev_phone");
+    expect(store.findByInstallId("inst_abc")?.revoked).toBe(true);
+
+    const expiresAt = Date.now() + 120_000;
+    expect(
+      store.repair("dev_phone", {
+        name: "Pixel 7 Pro",
+        kx_pub: "pk-2",
+        token_hash: "th-2",
+        expires_at: expiresAt,
+      }),
+    ).toBe(true);
+    const repaired = store.get("dev_phone");
+    expect(repaired).toMatchObject({
+      name: "Pixel 7 Pro",
+      kx_pub: "pk-2",
+      revoked: false,
+      install_id: "inst_abc",
+    });
+    expect(repaired?.scopes).toEqual([...DEFAULT_DEVICE_SCOPES]);
+    expect(store.findByTokenHash("th-1")).toBeUndefined(); // old credential dead
+    expect(store.findByTokenHash("th-2")?.device_id).toBe("dev_phone");
+    expect(store.list()).toHaveLength(1); // still one row per physical device
+    store.close();
+  });
+
   test("upgrades only the former implicit default grant", () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "rdc-device-"));
     const dbPath = path.join(dir, "devices.db");
