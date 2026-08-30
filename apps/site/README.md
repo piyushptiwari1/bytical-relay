@@ -18,8 +18,9 @@ with `vercel login` or set a freshly rotated `VERCEL_TOKEN` directly in your own
 
 The live Vercel project is `relay-bytical`, connected to `piyushptiwari1/bytical-relay` and rooted
 at `apps/site`. Vercel automatically creates production deployments for `main` and preview
-deployments for pull requests. The current public deployment is
-[relay-bytical.vercel.app](https://relay-bytical.vercel.app).
+deployments for pull requests. The production address is
+[relay.bytical.ai](https://relay.bytical.ai), with
+[relay-bytical.vercel.app](https://relay-bytical.vercel.app) retained as the Vercel fallback.
 
 The project uses these settings:
 
@@ -31,9 +32,8 @@ The project uses these settings:
 | Output directory | `dist` |
 | Install command | `pnpm install --frozen-lockfile` |
 
-The intended production hostname is `relay.bytical.ai`. Its public DNS is delegated to AWS Route 53,
-but the AWS `rdc-dev` profile does not own that hosted zone. Vercel must first associate the domain
-with the `relay-bytical` project, then displays a unique CNAME value for the subdomain. Use the AWS
-profile that owns the `bytical.ai` hosted zone to replace **only** the existing `relay` record with
-that Vercel-provided CNAME. Do not modify `bytical.ai`, `www`, `nerva`, other records, AWS stacks, or
-the existing Bytical host. Vercel will automatically issue TLS after DNS verification.
+The production hostname `relay.bytical.ai` is associated with the `relay-bytical` Vercel project,
+uses its project-unique Vercel CNAME, and has valid HTTPS. Its public DNS is delegated to AWS Route
+53, but the AWS `rdc-dev` profile does not own that hosted zone. Future changes must modify only the
+`relay` record. Do not modify `bytical.ai`, `www`, `nerva`, other records, AWS stacks, or the
+existing Bytical host.

@@ -78,10 +78,10 @@ The public product site lives in [apps/site](apps/site). Run it locally with:
 pnpm --filter @bytical/relay-site dev
 ```
 
-The public alpha is live at [relay-bytical.vercel.app](https://relay-bytical.vercel.app). It is
-automatically deployed from this repository's `main` branch by an isolated Vercel project rooted at
-`apps/site`. The intended branded address is `relay.bytical.ai`; its DNS cutover is the only
-remaining website-hosting step. Deployment details are in [apps/site/README.md](apps/site/README.md).
+The public alpha is live at [relay.bytical.ai](https://relay.bytical.ai). It is automatically
+deployed from this repository's `main` branch by an isolated Vercel project rooted at `apps/site`.
+The Vercel fallback address remains [relay-bytical.vercel.app](https://relay-bytical.vercel.app).
+Deployment details are in [apps/site/README.md](apps/site/README.md).
 
 ## Contributing
 
