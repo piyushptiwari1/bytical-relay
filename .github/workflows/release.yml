@@ -21,14 +21,19 @@ jobs:
       - name: Download and verify APK
         run: |
           python3 - <<'EOF'
-          import hashlib, json, pathlib, urllib.request
+          import json, pathlib
           spec = json.loads(pathlib.Path("release/artifact.json").read_text())
           tag = "${{ github.ref_name }}"
           if spec["tag"] != tag:
               raise SystemExit(f"artifact.json is for {spec['tag']}, not {tag} — update it before tagging")
-          out = pathlib.Path(f"relay-by-bytical-{tag}.apk")
-          print("downloading", spec["apk_url"])
-          urllib.request.urlretrieve(spec["apk_url"], out)
+          pathlib.Path("apk_url.txt").write_text(spec["apk_url"])
+          EOF
+          # expo.dev 403s non-browser UAs like python-urllib; curl passes
+          curl -fsSL -o "relay-by-bytical-${{ github.ref_name }}.apk" "$(cat apk_url.txt)"
+          python3 - <<'EOF'
+          import hashlib, json, pathlib
+          spec = json.loads(pathlib.Path("release/artifact.json").read_text())
+          out = pathlib.Path("relay-by-bytical-${{ github.ref_name }}.apk")
           digest = hashlib.sha256(out.read_bytes()).hexdigest()
           if digest != spec["sha256"]:
               raise SystemExit(f"sha256 mismatch: got {digest}, expected {spec['sha256']}")
