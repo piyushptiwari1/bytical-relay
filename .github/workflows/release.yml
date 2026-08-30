@@ -1,0 +1,45 @@
+name: Release
+
+# Tag-driven releases: push a v* tag and CI publishes the GitHub Release using
+# the repo-scoped GITHUB_TOKEN — no personal tokens, no local account juggling.
+# The APK is downloaded from the pinned URL in release/artifact.json and its
+# sha256 is verified so the release ships exactly the build that was tested.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and verify APK
+        run: |
+          python3 - <<'EOF'
+          import hashlib, json, pathlib, urllib.request
+          spec = json.loads(pathlib.Path("release/artifact.json").read_text())
+          tag = "${{ github.ref_name }}"
+          if spec["tag"] != tag:
+              raise SystemExit(f"artifact.json is for {spec['tag']}, not {tag} — update it before tagging")
+          out = pathlib.Path(f"relay-by-bytical-{tag}.apk")
+          print("downloading", spec["apk_url"])
+          urllib.request.urlretrieve(spec["apk_url"], out)
+          digest = hashlib.sha256(out.read_bytes()).hexdigest()
+          if digest != spec["sha256"]:
+              raise SystemExit(f"sha256 mismatch: got {digest}, expected {spec['sha256']}")
+          print(f"verified {out} ({out.stat().st_size} bytes, sha256 {digest})")
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "relay-by-bytical-${{ github.ref_name }}.apk#Relay for Android (APK)" \
+            --title "Relay by Bytical — ${{ github.ref_name }}" \
+            --notes-file release/notes.md

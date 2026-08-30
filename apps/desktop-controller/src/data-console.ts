@@ -193,7 +193,7 @@ export class DataConsole {
       const devices = db
         .prepare(
           `SELECT name, scopes, revoked, expires_at, last_seen_at, last_transport, created_at
-           FROM devices ORDER BY last_seen_at DESC NULLS LAST`,
+           FROM devices ORDER BY revoked ASC, last_seen_at DESC NULLS LAST`,
         )
         .all() as Array<Record<string, unknown>>;
       const pushTokens = (db.prepare("SELECT COUNT(*) n FROM push_tokens").get() as { n: number })
