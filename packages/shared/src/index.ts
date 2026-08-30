@@ -3,3 +3,4 @@ export * from "./emitter.ts";
 export * from "./ids.ts";
 export * from "./json.ts";
 export * from "./result.ts";
+export * from "./version.ts";

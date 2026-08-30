@@ -4,17 +4,39 @@ import {
   andThen,
   err,
   isErr,
+  isNewerVersion,
   isOk,
   map,
   newId,
   nextDelayMs,
   ok,
+  parseVersion,
   safeJsonParse,
   stableStringify,
   TypedEmitter,
   unwrap,
   unwrapOr,
 } from "../src/index.ts";
+
+describe("version", () => {
+  test("parses tags and plain versions, rejects junk", () => {
+    expect(parseVersion("v0.1.0-alpha")).toEqual([0, 1, 0]);
+    expect(parseVersion("1.2.3")).toEqual([1, 2, 3]);
+    expect(parseVersion("v10.0.7+build.9")).toEqual([10, 0, 7]);
+    expect(parseVersion("latest")).toBeNull();
+    expect(parseVersion("v1.2")).toBeNull();
+  });
+
+  test("newer-version comparison", () => {
+    expect(isNewerVersion("0.1.0", "v0.1.1-alpha")).toBe(true);
+    expect(isNewerVersion("0.1.0", "v0.2.0")).toBe(true);
+    expect(isNewerVersion("0.1.0", "v1.0.0")).toBe(true);
+    expect(isNewerVersion("0.1.0", "v0.1.0-beta")).toBe(false); // same core → not newer
+    expect(isNewerVersion("0.2.0", "v0.1.9")).toBe(false);
+    expect(isNewerVersion("0.1.0", "garbage")).toBe(false);
+    expect(isNewerVersion("junk", "v1.0.0")).toBe(false);
+  });
+});
 
 describe("Result", () => {
   test("ok/err discrimination and combinators", () => {

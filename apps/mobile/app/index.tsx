@@ -1,5 +1,7 @@
 import type { AgentSession } from "@rdc/protocol";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useApp } from "../src/machines.ts";
 import {
@@ -14,6 +16,7 @@ import {
   space,
   type_,
 } from "../src/theme.tsx";
+import { type AvailableUpdate, checkForUpdate } from "../src/update-check.ts";
 
 type SessionItem = {
   machineId: string;
@@ -65,10 +68,46 @@ export default function RelayHome() {
   const runtime = useApp((s) => s.runtime);
   const connect = useApp((s) => s.connect);
   const refreshMachine = useApp((s) => s.refreshMachine);
+  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+
+  useEffect(() => {
+    void checkForUpdate().then(setUpdate);
+  }, []);
+
+  const updateBanner = update ? (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => void Linking.openURL(update.url)}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.sm,
+        borderLeftWidth: 2,
+        borderLeftColor: colors.ok,
+        paddingLeft: space.md,
+        paddingVertical: space.xs,
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ ...type_.body, fontSize: 13 }}>
+          Relay {update.version} is available — tap to download.
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss update notice"
+        hitSlop={8}
+        onPress={() => setUpdate(null)}
+      >
+        <Text style={{ ...type_.caption, fontSize: 13 }}>✕</Text>
+      </Pressable>
+    </Pressable>
+  ) : null;
 
   if (machines.length === 0) {
     return (
       <View style={{ flex: 1, justifyContent: "center", padding: space.xl, gap: space.lg }}>
+        {updateBanner}
         <EmptyState
           icon=""
           title="Connect your computer"
@@ -121,6 +160,8 @@ export default function RelayHome() {
           Follow what needs you now. Your computer keeps the work and its context.
         </Text>
       </View>
+
+      {updateBanner}
 
       <SectionLabel>Needs your attention</SectionLabel>
       {attention.length > 0 ? (
