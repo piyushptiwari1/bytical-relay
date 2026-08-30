@@ -21,6 +21,7 @@ import * as THREE from "three";
 import "./relay.css";
 
 const GITHUB_URL = "https://github.com/piyushptiwari1/bytical-relay";
+const DOWNLOAD_URL = "https://github.com/piyushptiwari1/bytical-relay/releases/latest";
 
 type ScreenKind = "desktop" | "phone";
 
@@ -237,7 +238,8 @@ function App() {
           <nav aria-label="Primary navigation">
             <a href="#workflow">Experience</a>
             <a href="#security">Trust</a>
-            <a href="#contribute">Open source</a>
+            <a href="#faq">FAQ</a>
+            <a href="#download">Download</a>
           </nav>
           <a className="nav-action" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <Github size={16} strokeWidth={2.2} />
@@ -258,8 +260,8 @@ function App() {
             your phone. Return with every decision and change in context.
           </p>
           <div className="hero-actions">
-            <a className="button button-primary" href="#start">
-              See Relay in motion <ArrowDown size={17} />
+            <a className="button button-primary" href="#download" data-track="hero-download">
+              Get Relay for Android <ArrowDown size={17} />
             </a>
             <a
               className="button button-secondary"
@@ -458,6 +460,102 @@ function App() {
         </div>
       </section>
 
+      <section className="download section" id="download">
+        <div className="section-heading">
+          <p className="eyebrow eyebrow-ink">
+            <Smartphone size={15} /> Android alpha
+          </p>
+          <h2>Take Relay with you.</h2>
+          <p>
+            Relay is in open alpha. The app is free, open source, and works with the machines you
+            pair — nothing else.
+          </p>
+        </div>
+        <div className="download-grid">
+          <div className="download-card">
+            <h3>1 · Get the app</h3>
+            <p>Download the Android APK from the latest GitHub release and install it.</p>
+            <a
+              className="button button-primary"
+              href={DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              data-track="android-apk"
+            >
+              Download for Android <ArrowUpRight size={17} />
+            </a>
+          </div>
+          <div className="download-card">
+            <h3>2 · Run the controller</h3>
+            <p>On your development machine, clone the project and start the local controller.</p>
+            <code>git clone {GITHUB_URL.replace("https://", "")}</code>
+            <code>pnpm install && pnpm --filter @rdc/desktop-controller dev</code>
+          </div>
+          <div className="download-card">
+            <h3>3 · Pair once</h3>
+            <p>
+              Open the dashboard, choose Pair device, and scan the QR with Relay on the same Wi-Fi.
+              After that, Relay works from anywhere.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="faq section" id="faq">
+        <div className="section-heading">
+          <p className="eyebrow eyebrow-ink">
+            <Sparkles size={15} /> Common questions
+          </p>
+          <h2>Direct answers.</h2>
+        </div>
+        <div className="faq-grid">
+          <details>
+            <summary>Is my source code uploaded anywhere?</summary>
+            <p>
+              No. Code, files, Git data, terminal output, and agent conversations stay on your
+              machine and your paired phone, end-to-end encrypted in transit. The optional relay
+              server forwards ciphertext it cannot read.
+            </p>
+          </details>
+          <details>
+            <summary>Which AI coding agents does Relay work with?</summary>
+            <p>
+              GitHub Copilot is supported today through a durable session model on your machine.
+              Claude Code, Codex, and other providers follow the same adapter contract next.
+            </p>
+          </details>
+          <details>
+            <summary>Does it work when I leave home or the office?</summary>
+            <p>
+              Yes. On the same Wi-Fi, your phone connects directly. Anywhere else it falls back to
+              an encrypted relay automatically — as long as your computer is on and online.
+            </p>
+          </details>
+          <details>
+            <summary>Can my phone run destructive commands?</summary>
+            <p>
+              Not by default. A paired phone can supervise agents and review Git and terminal
+              output, but Git mutations and raw terminal control require explicit elevated access.
+              Every privileged action lands in a tamper-evident audit log.
+            </p>
+          </details>
+          <details>
+            <summary>Do I need an account?</summary>
+            <p>
+              No accounts. Pairing is a QR handshake between your phone and your machine. Your
+              model-provider accounts (like Copilot) stay configured on the machine itself.
+            </p>
+          </details>
+          <details>
+            <summary>Is Relay free?</summary>
+            <p>
+              Relay is open source under Apache-2.0 and free during alpha. Live, transparent usage
+              numbers are published on our <a href="/stats">stats page</a>.
+            </p>
+          </details>
+        </div>
+      </section>
+
       <section className="open-source" id="contribute">
         <div className="open-source-art" aria-hidden="true">
           <span>git status</span>
@@ -491,9 +589,14 @@ function App() {
           <span className="product-name">Relay</span>
         </a>
         <p>Relay is a product of Bytical.</p>
-        <a href={GITHUB_URL} target="_blank" rel="noreferrer">
-          GitHub <ArrowUpRight size={15} />
-        </a>
+        <nav className="footer-links" aria-label="Footer">
+          <a href="#download">Download</a>
+          <a href="/stats">Live stats</a>
+          <a href="/privacy">Privacy</a>
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+            GitHub <ArrowUpRight size={15} />
+          </a>
+        </nav>
       </footer>
     </main>
   );

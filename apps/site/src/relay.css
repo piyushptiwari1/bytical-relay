@@ -797,3 +797,93 @@ footer a:last-child {
     transition-duration: 0.01ms;
   }
 }
+
+/* ── Download ─────────────────────────────────────────────────────────── */
+.download-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-top: 34px;
+}
+.download-card {
+  background: #edf0ee;
+  border: 1px solid #dde4e1;
+  border-radius: 16px;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.download-card h3 {
+  font-size: 16px;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+.download-card p {
+  margin: 0;
+  color: #4c5b58;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.download-card code {
+  background: #172421;
+  color: #cfe7de;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.download-card .button {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* ── FAQ ──────────────────────────────────────────────────────────────── */
+.faq-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: 34px;
+}
+.faq-grid details {
+  background: #edf0ee;
+  border: 1px solid #dde4e1;
+  border-radius: 14px;
+  padding: 18px 22px;
+}
+.faq-grid summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15.5px;
+  letter-spacing: 0.1px;
+}
+.faq-grid details p {
+  color: #4c5b58;
+  font-size: 14.5px;
+  line-height: 1.65;
+  margin: 12px 0 2px;
+}
+.faq-grid details a {
+  color: #2c6e5c;
+  text-decoration: underline;
+}
+
+/* ── Footer links ─────────────────────────────────────────────────────── */
+.footer-links {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: #4c5b58;
+}
+.footer-links a:hover {
+  color: #172421;
+}

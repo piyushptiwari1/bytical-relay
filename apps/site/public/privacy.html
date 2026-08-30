@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy — Relay by Bytical</title>
+<meta name="description" content="Relay's privacy policy: local-first by design, end-to-end encrypted, no third-party trackers, aggregate-only first-party analytics." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<style>
+  body { background:#f5f6f3; color:#172421; font:16px/1.7 "Segoe UI", system-ui, sans-serif; margin:0; }
+  main { max-width:760px; margin:0 auto; padding:64px 24px 80px; }
+  h1 { font-size:30px; letter-spacing:-.5px; } h2 { font-size:19px; margin-top:36px; }
+  p, li { color:#3c4a47; } a { color:#2c6e5c; }
+  .updated { color:#687b79; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="/">← relay.bytical.ai</a></p>
+  <h1>Privacy</h1>
+  <p class="updated">Last updated: 30 August 2026 · Applies to the Relay website, mobile app, and desktop controller.</p>
+
+  <h2>The short version</h2>
+  <p>Relay is local-first. Your source code, prompts, terminal input, files, and credentials stay on your own machine. We do not have servers that store them, and we cannot read them.</p>
+
+  <h2>What the product handles — and where it stays</h2>
+  <ul>
+    <li><strong>Code, files, Git data, terminal output, agent conversations:</strong> processed only on your computer and your paired phone, end-to-end encrypted in transit. Never stored by Bytical.</li>
+    <li><strong>Relay tunnel:</strong> when your phone is away from your network, encrypted frames pass through our relay server. The relay sees only ciphertext and short-lived signed access tickets — it cannot decrypt content and stores none of it.</li>
+    <li><strong>Provider accounts (e.g. GitHub Copilot):</strong> remain configured on your own machine. Relay never receives or transmits those credentials.</li>
+  </ul>
+
+  <h2>First-party analytics (no third parties)</h2>
+  <p>We run our own small analytics service. It is cookieless and stores no raw IP addresses. For website visits and app launches we record: page path, referrer, country (derived server-side), coarse device class, and a visitor hash that is salted and rotated daily so visits cannot be linked across days. Aggregate numbers are published openly at <a href="/stats">relay.bytical.ai/stats</a>.</p>
+  <p>We use no Google Analytics, no advertising pixels, no fingerprinting, and no cross-site tracking of any kind.</p>
+
+  <h2>What we never collect</h2>
+  <ul>
+    <li>Source code, file contents, or file paths from your machine</li>
+    <li>Prompts, agent conversations, or terminal input</li>
+    <li>Tokens, keys, or credentials</li>
+    <li>Precise location, contacts, or advertising identifiers</li>
+  </ul>
+
+  <h2>Data on your devices</h2>
+  <p>Pairing credentials are stored in your phone's secure storage and your computer's local configuration. You can revoke any paired device at any time from the controller dashboard; revocation takes effect immediately.</p>
+
+  <h2>Open source</h2>
+  <p>Everything described here is verifiable in the <a href="https://github.com/piyushptiwari1/bytical-relay">public source code</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Questions: open an issue on GitHub, or reach Bytical at <a href="https://bytical.ai">bytical.ai</a>.</p>
+</main>
+</body>
+</html>
