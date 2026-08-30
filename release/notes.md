@@ -6,6 +6,7 @@ First public alpha of **Relay by Bytical** — control your dev machine and AI c
 - End-to-end encrypted channel between phone and laptop — the relay only ever forwards ciphertext.
 - Agent chat, session control, scoped terminals, git status, push notifications, offline outbox.
 - One device row per physical phone: re-pairing updates your existing device (keys and token rotate, old credential dies instantly).
+- **Self-announcing updates**: from this version on, the app checks the public releases feed (at most every 6 hours) and shows a banner when a newer build is available. No account, no tracking — just this repo's releases API.
 
 ## Desktop controller (required)
 
