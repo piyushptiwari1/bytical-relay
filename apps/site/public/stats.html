@@ -49,12 +49,12 @@ async function load() {
   const s = await response.json();
   const pill = document.getElementById("relayPill");
   pill.textContent = s.relay_online ? "relay service online" : "relay service offline";
-  pill.className = "pill " + (s.relay_online ? "ok" : "bad");
-  document.getElementById("meta").textContent = "Updated " + new Date(s.generated_at).toLocaleString();
+  pill.className = `pill ${s.relay_online ? "ok" : "bad"}`;
+  document.getElementById("meta").textContent = `Updated ${new Date(s.generated_at).toLocaleString()}`;
   document.getElementById("kpis").innerHTML =
     `<div class="kpi"><div class="v">${fmt(s.totals.pageviews)}</div><div class="l">site visits</div></div>` +
     `<div class="kpi"><div class="v">${fmt(s.totals.downloads)}</div><div class="l">downloads</div></div>` +
-    `<div class="kpi"><div class="v">${fmt((s.per_day.at(-1) || {}).visitors)}</div><div class="l">visitors today</div></div>`;
+    `<div class="kpi"><div class="v">${fmt(s.per_day.at(-1)?.visitors)}</div><div class="l">visitors today</div></div>`;
   const days = [...Array(30)].map((_, i) => new Date(Date.now() - (29 - i) * 864e5).toISOString().slice(0, 10));
   const byDay = Object.fromEntries(s.per_day.map((r) => [r.day, r.views]));
   const values = days.map((d) => byDay[d] ?? 0);

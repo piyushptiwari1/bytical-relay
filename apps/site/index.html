@@ -59,11 +59,11 @@
               headers: { "content-type": "application/json" },
               body: JSON.stringify(payload),
             }).catch(() => {});
-          } catch (e) {}
+          } catch {}
         };
         send({ kind: "pageview", path: location.pathname, referrer: document.referrer });
         document.addEventListener("click", (event) => {
-          var link = event.target && event.target.closest ? event.target.closest("a[data-track]") : null;
+          const link = event.target?.closest?.("a[data-track]") ?? null;
           if (link) send({ kind: "download", path: location.pathname, detail: link.getAttribute("data-track") });
         });
       })();
