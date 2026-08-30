@@ -12,6 +12,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     void setupNotifications().catch(() => {});
+    // content-free first-party launch ping (our own service; no IDs, no data)
+    fetch("https://ws.relay.bytical.ai/a/collect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "app_launch", detail: "android" }),
+    }).catch(() => {});
     hydrate()
       .then(() => setReady(true))
       .catch(() => setReady(true));

@@ -136,10 +136,29 @@ async function start(): Promise<void> {
     audit,
     ...(relay ? { relay } : {}),
     ...(config.data_password
-      ? { dataConsole: { password: config.data_password, dataDir: dir } }
+      ? {
+          dataConsole: {
+            password: config.data_password,
+            dataDir: dir,
+            ...(config.analytics ? { analytics: config.analytics } : {}),
+          },
+        }
       : {}),
   });
   await app.listen({ port: config.port, host: config.lan ? "0.0.0.0" : "127.0.0.1" });
+
+  // content-free platform lifecycle ping to our own analytics (best effort)
+  if (config.analytics) {
+    fetch(`${config.analytics.url.replace(/\/$/, "")}/ingest`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${config.analytics.token}`,
+      },
+      body: JSON.stringify({ kind: "platform_up", detail: `controller ${process.platform}` }),
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => {});
+  }
 
   let relayClient: RelayClient | null = null;
   if (relay) {

@@ -20,10 +20,13 @@ export class DataConsole {
   readonly #password: string;
   readonly #dataDir: string;
   readonly #sessions = new Map<string, ConsoleSession>();
+  readonly #analytics: { url: string; token: string } | null;
+  #productCache: { at: number; body: Record<string, unknown> } | null = null;
 
-  constructor(password: string, dataDir: string) {
+  constructor(password: string, dataDir: string, analytics?: { url: string; token: string }) {
     this.#password = password;
     this.#dataDir = dataDir;
+    this.#analytics = analytics ?? null;
   }
 
   checkPassword(presented: string): boolean {
@@ -51,7 +54,7 @@ export class DataConsole {
   }
 
   /** All aggregates for the console — each store opened read-only, best effort. */
-  stats(): Record<string, unknown> {
+  async stats(): Promise<Record<string, unknown>> {
     return {
       generated_at: new Date().toISOString(),
       uptime_s: Math.floor((Date.now() - startedAt) / 1000),
@@ -59,7 +62,59 @@ export class DataConsole {
       events: this.#eventStats(),
       devices: this.#deviceStats(),
       audit: this.#auditStats(),
+      product: await this.#productStats(),
     };
+  }
+
+  /** Website + app + community numbers — fetched from rdc-analytics and GitHub, cached 5 min. */
+  async #productStats(): Promise<Record<string, unknown>> {
+    if (this.#productCache && Date.now() - this.#productCache.at < 5 * 60_000) {
+      return this.#productCache.body;
+    }
+    const body: Record<string, unknown> = { website: null, community: null };
+    if (this.#analytics) {
+      try {
+        const response = await fetch(`${this.#analytics.url.replace(/\/$/, "")}/stats`, {
+          headers: { authorization: `Bearer ${this.#analytics.token}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (response.ok) body.website = await response.json();
+      } catch {
+        // analytics offline — console still works
+      }
+    }
+    try {
+      const repo = await fetch("https://api.github.com/repos/piyushptiwari1/bytical-relay", {
+        headers: { accept: "application/vnd.github+json" },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (repo.ok) {
+        const data = (await repo.json()) as Record<string, unknown>;
+        const releases = await fetch(
+          "https://api.github.com/repos/piyushptiwari1/bytical-relay/releases",
+          { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(5000) },
+        );
+        let downloads = 0;
+        if (releases.ok) {
+          for (const release of (await releases.json()) as Array<{
+            assets?: Array<{ download_count?: number }>;
+          }>) {
+            for (const asset of release.assets ?? []) downloads += asset.download_count ?? 0;
+          }
+        }
+        body.community = {
+          stars: data.stargazers_count,
+          forks: data.forks_count,
+          watchers: data.subscribers_count,
+          open_issues: data.open_issues_count,
+          release_downloads: downloads,
+        };
+      }
+    } catch {
+      // rate limited or offline
+    }
+    this.#productCache = { at: Date.now(), body };
+    return body;
   }
 
   #open(file: string): DatabaseSync | null {

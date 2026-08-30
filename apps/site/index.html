@@ -13,5 +13,27 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // First-party, cookieless beacon — our own rdc-analytics service, no third parties.
+      (() => {
+        if (/bot|crawl|spider/i.test(navigator.userAgent)) return;
+        var endpoint = "https://ws.relay.bytical.ai/a/collect";
+        var send = (payload) => {
+          try {
+            fetch(endpoint, {
+              method: "POST",
+              keepalive: true,
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(payload),
+            }).catch(() => {});
+          } catch (e) {}
+        };
+        send({ kind: "pageview", path: location.pathname, referrer: document.referrer });
+        document.addEventListener("click", (event) => {
+          var link = event.target && event.target.closest ? event.target.closest("a[data-track]") : null;
+          if (link) send({ kind: "download", path: location.pathname, detail: link.getAttribute("data-track") });
+        });
+      })();
+    </script>
   </body>
 </html>

@@ -58,6 +58,15 @@
   <div class="row">
     <div class="card" style="grid-column: 1 / -1;"><h2>Paired devices</h2><div id="deviceTable"></div></div>
   </div>
+  <div class="row">
+    <div class="card"><h2>Website · visits & downloads (30d)</h2><div id="webTrend"></div><div id="webKpis" style="margin-top:10px"></div></div>
+    <div class="card"><h2>Website · visitors by country</h2><div id="webCountries"></div></div>
+    <div class="card"><h2>Website · referrers & devices</h2><div id="webRefs"></div></div>
+  </div>
+  <div class="row">
+    <div class="card"><h2>Product · app & platform</h2><div id="productBars"></div></div>
+    <div class="card"><h2>Community · GitHub</h2><div id="community"></div></div>
+  </div>
   <footer>Local-only console. Data never leaves this machine. Auto-refreshes every 60s.</footer>
 <script>
 const fmt = (n) => Number(n ?? 0).toLocaleString();
@@ -136,6 +145,35 @@ async function refresh() {
   barList("domainBars", s.events.by_domain ?? [], "domain", "var(--chart2)");
   barList("actionBars", s.audit.by_action ?? [], "action", "var(--chart3)");
   deviceTable(s.devices.devices ?? []);
+  renderProduct(s.product ?? {});
+}
+
+function renderProduct(product) {
+  const web = product.website;
+  if (web) {
+    lineChart("webTrend", (web.per_day ?? []).map((r) => ({ day: r.day, n: r.views })), "var(--chart4)");
+    document.getElementById("webKpis").innerHTML =
+      `<span class="pill ok">${fmt(web.totals.pageviews)} visits</span> ` +
+      `<span class="pill">${fmt(web.totals.visitors_today)} visitors today</span> ` +
+      `<span class="pill">${fmt(web.totals.downloads)} downloads</span> ` +
+      `<span class="pill">${fmt(web.totals.app_launches)} app launches</span>`;
+    barList("webCountries", (web.by_country ?? []).map((r) => ({ country: r.country ?? "?", n: r.n })), "country", "var(--chart4)");
+    const refs = [
+      ...(web.by_referrer ?? []).map((r) => ({ name: r.referrer, n: r.n })),
+      ...(web.by_device ?? []).map((r) => ({ name: "device: " + r.device, n: r.n })),
+    ];
+    barList("webRefs", refs.map((r) => ({ ref: r.name, n: r.n })), "ref", "var(--chart2)");
+    barList("productBars", (web.platform ?? []).map((r) => ({ kind: r.kind, n: r.n })), "kind", "var(--chart1)");
+  } else {
+    document.getElementById("webTrend").innerHTML = '<span class="meta">analytics service unreachable</span>';
+  }
+  const community = product.community;
+  document.getElementById("community").innerHTML = community
+    ? `<div class="grid" style="margin:0">
+        ${["stars", "forks", "watchers", "open_issues", "release_downloads"].map((k) =>
+          `<div class="kpi" style="padding:12px 14px"><div class="v" style="font-size:20px">${fmt(community[k])}</div><div class="l">${k.replaceAll("_", " ")}</div></div>`).join("")}
+       </div>`
+    : '<span class="meta">github unreachable</span>';
 }
 refresh();
 setInterval(refresh, 60_000);

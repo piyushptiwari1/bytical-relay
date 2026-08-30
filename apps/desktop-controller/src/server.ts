@@ -61,7 +61,7 @@ export interface ServerDeps {
   audit?: AuditLog;
   relay?: { url: string; token: string };
   /** owner analytics console (/data) — password + data dir; absent = disabled */
-  dataConsole?: { password: string; dataDir: string };
+  dataConsole?: { password: string; dataDir: string; analytics?: { url: string; token: string } };
 }
 
 /** localhost names + this machine's own interface IPs (LAN clients send Host: <lan-ip>:port). */
@@ -261,7 +261,11 @@ export async function buildServer(deps: ServerDeps): Promise<{
 
   // ── Owner analytics console (/data) — password-gated, local data only ──────
   const dataConsole = deps.dataConsole
-    ? new DataConsole(deps.dataConsole.password, deps.dataConsole.dataDir)
+    ? new DataConsole(
+        deps.dataConsole.password,
+        deps.dataConsole.dataDir,
+        deps.dataConsole.analytics,
+      )
     : null;
 
   app.get("/data", async (req, reply) => {

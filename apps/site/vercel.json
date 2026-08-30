@@ -1,5 +1,6 @@
 {
   "framework": "vite",
   "buildCommand": "pnpm build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [{ "source": "/stats", "destination": "/stats.html" }]
 }

@@ -17,6 +17,8 @@ export const ConfigSchema = z.object({
   relay: z.object({ url: z.string().min(1), token: z.string().min(16) }).optional(),
   /** owner-only /data analytics console — unset disables the page entirely */
   data_password: z.string().min(6).optional(),
+  /** first-party rdc-analytics service (owner stats + platform pings) */
+  analytics: z.object({ url: z.string().min(1), token: z.string().min(16) }).optional(),
 });
 export type ControllerConfig = z.infer<typeof ConfigSchema>;
 
