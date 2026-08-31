@@ -84,11 +84,18 @@ const suites = {
     }
   },
 
-  /** Live-continue a laptop chat through the Copilot CLI (args: <native_id> [--keep]). */
+  /** Live-continue a laptop chat through the Copilot CLI (args: [native_id] [--keep]).
+   * No id → auto-picks the most recent project-mapped VS Code chat. */
   async resume(client, t, args) {
-    const nativeId = args.find((a) => !a.startsWith("--"));
+    let nativeId = args.find((a) => !a.startsWith("--"));
     const keep = args.includes("--keep");
-    if (!nativeId) throw new Error("usage: pnpm probe resume <native_id> [--keep]");
+    if (!nativeId) {
+      const { external } = await client.command("agent.list", {});
+      const candidate = external.find((e) => e.provider === "vscode-chat" && e.project_id);
+      if (!candidate) throw new Error("no project-mapped vscode-chat to resume");
+      nativeId = candidate.native_id;
+      console.log(`   auto-picked "${candidate.title.slice(0, 50)}" (${nativeId})`);
+    }
     let sessionId;
     await t.expect(
       "RS1",
@@ -115,14 +122,17 @@ const suites = {
       }
       throw new Error("never settled to idle");
     });
-    await t.expect("RS3", "journal contains imported turns", async () => {
+    await t.expect("RS3", "journal has imported turns + a live CLI reply", async () => {
       const replay = await client.command("sync.replay", {
         stream: `agent:${sessionId}`,
         since: 0,
-        limit: 5,
+        limit: 500,
       });
-      if (replay.head_seq === 0) throw new Error("journal empty");
-      return `head_seq=${replay.head_seq}`;
+      const kinds = replay.events.map((e) => e.payload?.update?.kind).filter(Boolean);
+      if (!kinds.includes("user_message")) throw new Error("no imported user turn");
+      const ends = kinds.filter((k) => k === "turn_ended").length;
+      if (ends < 2) throw new Error(`import marker + live reply expected, got ${ends} turn_ended`);
+      return `head_seq=${replay.head_seq}, ${kinds.length} updates, ${ends} turns ended`;
     });
     if (sessionId && !keep) {
       await t.expect("RS4", "archive probe session (cleanup)", async () => {
