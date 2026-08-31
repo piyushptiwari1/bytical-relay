@@ -19,3 +19,4 @@ tooling/.probe-device.json
 *.key
 *.pem
 *.vsix
+.assets-tmp/

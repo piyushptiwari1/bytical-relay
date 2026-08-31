@@ -1,4 +1,0 @@
-#!/bin/sh
-# lint is fast (<1s) and the one gate that slipped past local discipline once
-cd "$(git rev-parse --show-toplevel)" && pnpm exec biome check . || {
-  echo "pre-push: lint failed — fix or bypass with --no-verify (CI will still fail)"; exit 1; }
