@@ -494,12 +494,12 @@ function App() {
             </p>
             <a
               className="button"
-              href={DOWNLOAD_URL}
+              href="https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical"
               target="_blank"
               rel="noreferrer"
-              data-track="vscode-vsix"
+              data-track="vscode-marketplace"
             >
-              Get the extension (VSIX) <ArrowUpRight size={17} />
+              Get it on the VS Code Marketplace <ArrowUpRight size={17} />
             </a>
             <details>
               <summary>Prefer the terminal?</summary>
