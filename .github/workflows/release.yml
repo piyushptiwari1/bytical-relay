@@ -75,7 +75,8 @@ jobs:
             echo "VSCE_PAT not set — skipping Marketplace publish"
             exit 0
           fi
-          pnpm --filter relay-by-bytical exec vsce publish --no-dependencies --packagePath ../../*.vsix -p "$VSCE_PAT"
+          cd extensions/vscode
+          pnpm exec vsce publish --no-dependencies --packagePath ../../relay-by-bytical-*.vsix -p "$VSCE_PAT"
 
   # Manually triggered: republish just the extension (e.g. icon/metadata fix)
   publish-extension:
@@ -95,4 +96,5 @@ jobs:
           if [ -z "$VSCE_PAT" ]; then echo "VSCE_PAT not set"; exit 1; fi
           pnpm install --frozen-lockfile
           pnpm --filter relay-by-bytical package
-          pnpm --filter relay-by-bytical exec vsce publish --no-dependencies --packagePath *.vsix -p "$VSCE_PAT"
+          cd extensions/vscode
+          pnpm exec vsce publish --no-dependencies --packagePath ./relay-by-bytical-*.vsix -p "$VSCE_PAT"
