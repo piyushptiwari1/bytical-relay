@@ -61,3 +61,16 @@ jobs:
             *.vsix#"Relay for VS Code (VSIX)" \
             --title "Relay by Bytical — ${{ github.ref_name }}" \
             --notes-file release/notes.md
+
+      # Auto-publish to the VS Code Marketplace when the VSCE_PAT secret is set
+      # (Azure DevOps PAT, scope "Marketplace: Manage", all orgs). Skipped
+      # silently otherwise so releases never block on Marketplace availability.
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "VSCE_PAT not set — skipping Marketplace publish"
+            exit 0
+          fi
+          pnpm --filter relay-by-bytical exec vsce publish --no-dependencies --packagePath ../../*.vsix -p "$VSCE_PAT"
