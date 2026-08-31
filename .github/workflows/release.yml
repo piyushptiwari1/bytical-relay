@@ -8,12 +8,14 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch: # marketplace-only publish of the extension from main
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,3 +76,23 @@ jobs:
             exit 0
           fi
           pnpm --filter relay-by-bytical exec vsce publish --no-dependencies --packagePath ../../*.vsix -p "$VSCE_PAT"
+
+  # Manually triggered: republish just the extension (e.g. icon/metadata fix)
+  publish-extension:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then echo "VSCE_PAT not set"; exit 1; fi
+          pnpm install --frozen-lockfile
+          pnpm --filter relay-by-bytical package
+          pnpm --filter relay-by-bytical exec vsce publish --no-dependencies --packagePath *.vsix -p "$VSCE_PAT"
