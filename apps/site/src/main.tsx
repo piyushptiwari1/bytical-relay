@@ -486,16 +486,32 @@ function App() {
             </a>
           </div>
           <div className="download-card">
-            <h3>2 · Run the controller</h3>
-            <p>On your development machine, clone the project and start the local controller.</p>
-            <code>git clone {GITHUB_URL.replace("https://", "")}</code>
-            <code>pnpm install && pnpm --filter @rdc/desktop-controller dev</code>
+            <h3>2 · Set up your computer</h3>
+            <p>
+              Install the <strong>Relay by Bytical</strong> VS Code extension and run{" "}
+              <em>“Relay: Set up this computer”</em> — it installs, starts, and opens pairing for
+              you.
+            </p>
+            <a
+              className="button"
+              href={DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              data-track="vscode-vsix"
+            >
+              Get the extension (VSIX) <ArrowUpRight size={17} />
+            </a>
+            <details>
+              <summary>Prefer the terminal?</summary>
+              <code>git clone {GITHUB_URL.replace("https://", "")}</code>
+              <code>pnpm install && pnpm --filter @rdc/desktop-controller dev</code>
+            </details>
           </div>
           <div className="download-card">
             <h3>3 · Pair once</h3>
             <p>
-              Open the dashboard, choose Pair device, and scan the QR with Relay on the same Wi-Fi.
-              After that, Relay works from anywhere.
+              The pairing panel shows a QR — scan it with Relay on the same Wi-Fi, check the emoji
+              match, confirm. After that, Relay works from anywhere.
             </p>
           </div>
         </div>

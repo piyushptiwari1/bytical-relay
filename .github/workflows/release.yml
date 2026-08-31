@@ -18,6 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Build VS Code extension (.vsix)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter relay-by-bytical package
+          mv extensions/vscode/*.vsix .
+
       - name: Download and verify APK
         run: |
           python3 - <<'EOF'
@@ -46,5 +58,6 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             "relay-by-bytical-${{ github.ref_name }}.apk#Relay for Android (APK)" \
+            *.vsix#"Relay for VS Code (VSIX)" \
             --title "Relay by Bytical — ${{ github.ref_name }}" \
             --notes-file release/notes.md

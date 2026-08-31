@@ -1,10 +1,24 @@
 {
-  "name": "rdc-vscode",
-  "displayName": "Remote Dev Control",
-  "description": "Publishes editor presence (active file, diagnostics, tasks, terminal commands) to the local rdc controller so your phone can see and drive VS Code.",
-  "version": "0.0.1",
+  "name": "relay-by-bytical",
+  "displayName": "Relay by Bytical",
+  "description": "Control your dev machine and AI coding agents from your phone. One-click setup: this extension installs and runs the Relay controller, then pairs your phone with a QR code — end-to-end encrypted.",
+  "version": "0.1.1",
   "private": true,
-  "publisher": "rdc",
+  "publisher": "bytical",
+  "license": "Apache-2.0",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/piyushptiwari1/bytical-relay.git"
+  },
+  "homepage": "https://relay.bytical.ai",
+  "keywords": [
+    "remote",
+    "phone",
+    "agents",
+    "copilot",
+    "mobile"
+  ],
   "engines": {
     "vscode": "^1.101.0"
   },
@@ -18,18 +32,55 @@
   "contributes": {
     "commands": [
       {
+        "command": "relay.setup",
+        "title": "Relay: Set up this computer"
+      },
+      {
+        "command": "relay.pair",
+        "title": "Relay: Pair phone"
+      },
+      {
+        "command": "relay.menu",
+        "title": "Relay: Menu"
+      },
+      {
+        "command": "relay.stop",
+        "title": "Relay: Stop controller"
+      },
+      {
+        "command": "relay.logs",
+        "title": "Relay: Show logs"
+      },
+      {
         "command": "rdc.reconnect",
-        "title": "RDC: Reconnect to controller"
+        "title": "Relay: Reconnect to controller"
       },
       {
         "command": "rdc.openAgents",
-        "title": "RDC: Open in Agents"
+        "title": "Relay: Open in Agents"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Relay",
+      "properties": {
+        "relay.appPath": {
+          "type": "string",
+          "default": "",
+          "description": "Existing Relay checkout to use instead of the extension-managed install (for contributors)."
+        },
+        "relay.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the Relay controller automatically when VS Code opens."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package": "pnpm build && vsce package --no-dependencies",
+    "publish:marketplace": "pnpm build && vsce publish --no-dependencies"
   },
   "dependencies": {
     "@rdc/protocol": "workspace:*",
@@ -39,6 +90,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/vscode": "^1.101.0",
+    "@vscode/vsce": "^3.4.0",
     "esbuild": "^0.28.0",
     "typescript": "catalog:"
   }

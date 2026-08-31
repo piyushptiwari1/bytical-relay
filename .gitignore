@@ -18,3 +18,4 @@ tooling/.probe-device.json
 !.env.example
 *.key
 *.pem
+*.vsix

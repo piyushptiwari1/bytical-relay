@@ -3,6 +3,8 @@ import { AgentList, AgentStart, EditorPublishState, ProjectList } from "@rdc/pro
 import { ControllerClient } from "@rdc/transport";
 import * as vscode from "vscode";
 import { readControllerTarget } from "./config.ts";
+import { openPairPanel } from "./pair.ts";
+import { ControllerLauncher } from "./setup.ts";
 import {
   collectState,
   fromProjectRelative,
@@ -17,30 +19,95 @@ const PUBLISH_DEBOUNCE_MS = 500;
 let client: ControllerClient | null = null;
 let status: vscode.StatusBarItem;
 let openInAgents: (() => Promise<void>) | null = null;
+let launcher: ControllerLauncher;
+let connectionState = "connecting";
+
+function renderStatus(): void {
+  if (connectionState === "ready") {
+    status.text = "$(broadcast) Relay";
+    status.tooltip = "Relay: connected — click for actions";
+  } else if (launcher.mode === "off") {
+    status.text = "$(circle-slash) Relay";
+    status.tooltip = "Relay: controller not running — click to set up or start";
+  } else {
+    status.text = "$(sync~spin) Relay";
+    status.tooltip = `Relay: ${connectionState}…`;
+  }
+}
+
+async function showMenu(context: vscode.ExtensionContext): Promise<void> {
+  const running = launcher.mode !== "off";
+  const items: Array<vscode.QuickPickItem & { action: () => unknown }> = [
+    { label: "$(device-mobile) Pair phone", action: () => openPairPanel(context) },
+    {
+      label: "$(rocket) Open in Agents",
+      action: () => vscode.commands.executeCommand("rdc.openAgents"),
+    },
+    {
+      label: "$(dashboard) Open dashboard",
+      action: () => {
+        const target = readControllerTarget();
+        if (target)
+          void vscode.env.openExternal(
+            vscode.Uri.parse(`http://127.0.0.1:${target.port}/dash?token=${target.token}`),
+          );
+      },
+    },
+    running
+      ? { label: "$(debug-stop) Stop controller", action: () => launcher.stop() }
+      : { label: "$(play) Start controller", action: () => launcher.start() },
+    { label: "$(cloud-download) Set up / update this computer", action: () => launcher.setup() },
+    {
+      label: "$(output) Show Relay logs",
+      action: () => vscode.commands.executeCommand("relay.logs"),
+    },
+  ];
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: "Relay" });
+  if (pick) await pick.action();
+}
 
 export function activate(context: vscode.ExtensionContext): void {
+  const output = vscode.window.createOutputChannel("Relay");
+  launcher = new ControllerLauncher(context, output, () => renderStatus());
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
-  status.text = "rdc: connecting…";
-  status.command = "rdc.openAgents";
+  status.command = "relay.menu";
+  renderStatus();
   status.show();
-  context.subscriptions.push(status);
+  context.subscriptions.push(status, output);
   context.subscriptions.push(
+    vscode.commands.registerCommand("relay.setup", async () => {
+      try {
+        await launcher.setup();
+        start(context);
+        await openPairPanel(context);
+      } catch (cause) {
+        output.show(true);
+        void vscode.window.showErrorMessage(
+          `Relay setup failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      }
+    }),
+    vscode.commands.registerCommand("relay.pair", () => openPairPanel(context)),
+    vscode.commands.registerCommand("relay.menu", () => showMenu(context)),
+    vscode.commands.registerCommand("relay.stop", () => launcher.stop()),
+    vscode.commands.registerCommand("relay.logs", () => output.show(true)),
     vscode.commands.registerCommand("rdc.reconnect", () => start(context)),
     vscode.commands.registerCommand("rdc.openAgents", async () => {
       if (!openInAgents) {
-        await vscode.window.showWarningMessage("RDC is not connected to the local controller.");
+        await vscode.window.showWarningMessage("Relay is not connected to the local controller.");
         return;
       }
       await openInAgents();
     }),
   );
-  start(context);
+  void launcher.autoAttach().then(() => start(context));
 }
 
 export function deactivate(): void {
   client?.close();
   client = null;
   openInAgents = null;
+  void launcher?.stop();
 }
 
 function start(context: vscode.ExtensionContext): void {
@@ -50,11 +117,13 @@ function start(context: vscode.ExtensionContext): void {
 
   const target = readControllerTarget();
   if (!target) {
-    status.text = "rdc: controller not set up";
+    connectionState = "not set up";
+    renderStatus();
     return;
   }
   if (typeof globalThis.WebSocket !== "function") {
-    status.text = "rdc: needs VS Code ≥ 1.101";
+    connectionState = "needs VS Code ≥ 1.101";
+    renderStatus();
     return;
   }
 
@@ -152,7 +221,8 @@ function start(context: vscode.ExtensionContext): void {
   };
 
   rdc.events.on("state", (state) => {
-    status.text = state === "ready" ? "rdc: connected" : `rdc: ${state}`;
+    connectionState = state;
+    renderStatus();
     if (state === "ready") {
       void rdc
         .command(ProjectList, {})
