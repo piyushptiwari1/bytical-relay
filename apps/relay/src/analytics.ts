@@ -18,10 +18,14 @@ export interface AnalyticsOptions {
   relayHealthUrl?: string;
   /** disable external geo lookups in tests */
   geoLookup?: boolean;
+  /** /public cache TTL (default 60s; 0 in tests) */
+  publicCacheMs?: number;
 }
 
 const PUBLIC_KINDS = new Set(["pageview", "download", "app_launch", "app_pair"]);
 const ALL_KINDS = new Set([...PUBLIC_KINDS, "event", "platform_up"]);
+const FEEDBACK_KINDS = new Set(["review", "feature", "update_request", "bug"]);
+const FEEDBACK_SURFACES = new Set(["website", "android", "ios", "vscode", "controller", "other"]);
 const MAX_BODY = 4 * 1024;
 
 const clean = (value: unknown, max = 200): string | null =>
@@ -131,6 +135,21 @@ export function buildAnalytics(options: AnalyticsOptions): FastifyInstance {
       detail TEXT
     );
     CREATE INDEX IF NOT EXISTS hits_by_day ON hits (day, kind);
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts TEXT NOT NULL,
+      day TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      rating INTEGER,
+      message TEXT NOT NULL,
+      contact TEXT,
+      surface TEXT NOT NULL,
+      version TEXT,
+      country TEXT,
+      device TEXT,
+      visitor TEXT
+    );
+    CREATE INDEX IF NOT EXISTS feedback_by_day ON feedback (day, kind);
   `);
 
   const limiter = new RateLimiter();
@@ -161,6 +180,11 @@ export function buildAnalytics(options: AnalyticsOptions): FastifyInstance {
   };
 
   app.options("/collect", async (req, reply) => {
+    corsHeaders(req, reply);
+    return reply.code(204).send();
+  });
+
+  app.options("/feedback", async (req, reply) => {
     corsHeaders(req, reply);
     return reply.code(204).send();
   });
@@ -272,12 +296,85 @@ export function buildAnalytics(options: AnalyticsOptions): FastifyInstance {
     };
   });
 
+  const insertFeedback = db.prepare(
+    `INSERT INTO feedback (ts, day, kind, rating, message, contact, surface, version, country, device, visitor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  /** Public feedback intake: reviews, feature asks, update requests, bugs —
+   * from every surface (website, apps, extension, controller). */
+  app.post("/feedback", async (req, reply) => {
+    corsHeaders(req, reply);
+    const ip = clientIp(req);
+    if (!limiter.allow(ip)) return reply.code(429).send({ ok: false });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const kind = typeof body.kind === "string" && FEEDBACK_KINDS.has(body.kind) ? body.kind : null;
+    const message = clean(body.message, 2000);
+    if (!kind || !message)
+      return reply.code(400).send({ ok: false, error: "kind and message required" });
+    const rating =
+      typeof body.rating === "number" && body.rating >= 1 && body.rating <= 5
+        ? Math.round(body.rating)
+        : null;
+    if (kind === "review" && rating === null)
+      return reply.code(400).send({ ok: false, error: "reviews need a 1-5 rating" });
+    const surface =
+      typeof body.surface === "string" && FEEDBACK_SURFACES.has(body.surface)
+        ? body.surface
+        : "other";
+    const ua = req.headers["user-agent"];
+    const now = new Date();
+    const day = now.toISOString().slice(0, 10);
+    const { country } = await geo.lookup(ip);
+    insertFeedback.run(
+      now.toISOString(),
+      day,
+      kind,
+      rating,
+      message,
+      clean(body.contact),
+      surface,
+      clean(body.version, 40),
+      country,
+      deviceClass(typeof ua === "string" ? ua : undefined),
+      visitorHash(ip, String(ua ?? ""), day),
+    );
+    return reply.code(201).send({ ok: true });
+  });
+
+  /** Owner feedback inbox: rows + aggregates (feeds the /data console). */
+  app.get("/feedback", async (req, reply) => {
+    if (!tokenOk(options.token, req.headers.authorization)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const all = <T>(sql: string): T[] => db.prepare(sql).all() as T[];
+    return {
+      generated_at: new Date().toISOString(),
+      rating: db
+        .prepare(
+          "SELECT ROUND(AVG(rating), 2) avg, COUNT(*) n FROM feedback WHERE rating IS NOT NULL",
+        )
+        .get(),
+      by_kind: all("SELECT kind, COUNT(*) n FROM feedback GROUP BY kind ORDER BY n DESC"),
+      by_surface: all("SELECT surface, COUNT(*) n FROM feedback GROUP BY surface ORDER BY n DESC"),
+      per_day: all(
+        `SELECT day, COUNT(*) n FROM feedback WHERE day >= date('now', '-30 days')
+         GROUP BY day ORDER BY day`,
+      ),
+      items: all(
+        `SELECT ts, kind, rating, message, contact, surface, version, country, device
+         FROM feedback ORDER BY id DESC LIMIT 200`,
+      ),
+    };
+  });
+
   // ── Public transparency feed: heavily aggregated, no auth, cached ─────────
   let publicCache: { at: number; body: unknown } | null = null;
+  const publicCacheMs = options.publicCacheMs ?? 60_000;
   app.get("/public", async (req, reply) => {
     corsHeaders(req, reply);
     reply.header("cache-control", "public, max-age=60");
-    if (publicCache && Date.now() - publicCache.at < 60_000) return publicCache.body;
+    if (publicCache && Date.now() - publicCache.at < publicCacheMs) return publicCache.body;
     const all = <T>(sql: string): T[] => db.prepare(sql).all() as T[];
     const one = (sql: string): number => (db.prepare(sql).get() as { n: number }).n;
     let relayOnline = false;
@@ -296,6 +393,11 @@ export function buildAnalytics(options: AnalyticsOptions): FastifyInstance {
         pageviews: one("SELECT COUNT(*) n FROM hits WHERE kind = 'pageview'"),
         downloads: one("SELECT COUNT(*) n FROM hits WHERE kind = 'download'"),
       },
+      rating: db
+        .prepare(
+          "SELECT ROUND(AVG(rating), 2) avg, COUNT(*) n FROM feedback WHERE rating IS NOT NULL",
+        )
+        .get(),
       per_day: all(
         `SELECT day, SUM(kind = 'pageview') views, COUNT(DISTINCT visitor) visitors
          FROM hits WHERE kind = 'pageview' AND day >= date('now', '-30 days')

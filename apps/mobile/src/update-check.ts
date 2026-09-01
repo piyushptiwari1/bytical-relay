@@ -2,7 +2,7 @@ import { isNewerVersion } from "@rdc/shared";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 
-export const RELEASE_PAGE_URL = "https://github.com/piyushptiwari1/bytical-relay/releases/latest";
+export const RELEASE_PAGE_URL = "https://relay.bytical.ai/download";
 const RELEASES_API_URL =
   "https://api.github.com/repos/piyushptiwari1/bytical-relay/releases/latest";
 const LAST_CHECK_KEY = "rdc_update_last_check";
@@ -24,7 +24,8 @@ export async function checkForUpdate(now = Date.now()): Promise<AvailableUpdate 
     await SecureStore.setItemAsync(LAST_CHECK_KEY, String(now));
     const release = await fetchLatestRelease();
     if (release && isNewerVersion(current, release.tag)) {
-      return { version: release.tag.replace(/^v/, ""), url: release.url };
+      // evergreen redirect → one-tap APK download, always the newest build
+      return { version: release.tag.replace(/^v/, ""), url: RELEASE_PAGE_URL };
     }
     return null;
   } catch {

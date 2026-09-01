@@ -887,3 +887,119 @@ footer a:last-child {
 .footer-links a:hover {
   color: #172421;
 }
+
+/* ── Feedback widget ─────────────────────────────────────────────── */
+.feedback-root {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+}
+.feedback-fab {
+  background: #172421;
+  color: #f5f6f3;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(23, 36, 33, 0.28);
+}
+.feedback-fab:hover {
+  transform: translateY(-1px);
+}
+.feedback-panel {
+  width: min(340px, calc(100vw - 44px));
+  background: #ffffff;
+  border: 1px solid #dde4e1;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 18px 48px rgba(23, 36, 33, 0.18);
+  color: #172421;
+}
+.feedback-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.feedback-head button {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: #172421;
+  line-height: 1;
+}
+.feedback-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.feedback-kinds button {
+  border: 1px solid #dde4e1;
+  background: #f5f6f3;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: #172421;
+}
+.feedback-kinds button.on {
+  background: #172421;
+  color: #f5f6f3;
+  border-color: #172421;
+}
+.feedback-stars {
+  display: flex;
+  gap: 4px;
+}
+.feedback-stars button {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #d4dcda;
+  padding: 0 2px;
+}
+.feedback-stars button.on {
+  color: #e8a13c;
+}
+.feedback-panel textarea,
+.feedback-panel input {
+  border: 1px solid #dde4e1;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: #fbfcfb;
+  color: #172421;
+  resize: vertical;
+}
+.feedback-send {
+  background: #172421;
+  color: #f5f6f3;
+  border: none;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.feedback-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.feedback-error {
+  color: #b3261e;
+  font-size: 12.5px;
+  margin: 0;
+}
+.feedback-note {
+  color: #6b7a76;
+  font-size: 11.5px;
+  margin: 0;
+}

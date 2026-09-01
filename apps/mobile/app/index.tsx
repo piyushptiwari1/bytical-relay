@@ -263,6 +263,16 @@ export default function RelayHome() {
           Pair another computer
         </Text>
       </Card>
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push("/feedback")}
+        style={{ alignItems: "center", paddingVertical: space.sm }}
+      >
+        <Text style={{ ...type_.caption, textDecorationLine: "underline" }}>
+          Review · request · report — send feedback
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }

@@ -57,6 +57,7 @@ ws.relay.bytical.ai {{
 EOF
 systemctl daemon-reload
 systemctl enable --now rdc-analytics
+systemctl restart rdc-analytics
 systemctl restart caddy
 sleep 4
 systemctl is-active rdc-analytics caddy

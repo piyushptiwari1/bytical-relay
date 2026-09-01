@@ -105,4 +105,78 @@ describe("rdc-analytics service", () => {
     const foreign = await fetch(`${base}/public`, { headers: { origin: "https://evil.example" } });
     expect(foreign.headers.get("access-control-allow-origin")).toBeNull();
   });
+
+  test("feedback: validates, stores, aggregates into owner inbox + public rating", async () => {
+    // isolated instance: own db, uncached /public (vitest retry must not see prior data)
+    const fb = buildAnalytics({ token: TOKEN, geoLookup: false, publicCacheMs: 0 });
+    await fb.listen({ port: 0, host: "127.0.0.1" });
+    const fbase = `http://127.0.0.1:${(fb.server.address() as AddressInfo).port}`;
+    try {
+      // review without rating rejected
+      const noRating = await fetch(`${fbase}/feedback`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "review", message: "great" }),
+      });
+      expect(noRating.status).toBe(400);
+      // junk kind rejected
+      expect(
+        (
+          await fetch(`${fbase}/feedback`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ kind: "spam", message: "x" }),
+          })
+        ).status,
+      ).toBe(400);
+
+      const review = await fetch(`${fbase}/feedback`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "user-agent": "test-phone android mobile" },
+        body: JSON.stringify({
+          kind: "review",
+          rating: 5,
+          message: "Relay saved my evening — approved an agent plan from the couch.",
+          surface: "android",
+          version: "0.1.2",
+        }),
+      });
+      expect(review.status).toBe(201);
+      const bug = await fetch(`${fbase}/feedback`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "bug",
+          message: "QR scanner slow on cold start",
+          surface: "android",
+          contact: "user@example.com",
+        }),
+      });
+      expect(bug.status).toBe(201);
+
+      // owner inbox requires token
+      expect((await fetch(`${fbase}/feedback`)).status).toBe(401);
+      const inbox = (await (
+        await fetch(`${fbase}/feedback`, { headers: { authorization: `Bearer ${TOKEN}` } })
+      ).json()) as {
+        rating: { avg: number; n: number };
+        by_kind: Array<{ kind: string; n: number }>;
+        by_surface: Array<{ surface: string; n: number }>;
+        items: Array<{ kind: string; message: string; contact: string | null; device: string }>;
+      };
+      expect(inbox.rating).toMatchObject({ avg: 5, n: 1 });
+      expect(inbox.by_surface[0]).toMatchObject({ surface: "android", n: 2 });
+      expect(inbox.items).toHaveLength(2);
+      expect(inbox.items[1]?.device).toBe("mobile");
+      expect(inbox.items[0]?.contact).toBe("user@example.com");
+
+      // public feed exposes ONLY the aggregate score, never messages/contacts
+      const pub = (await (await fetch(`${fbase}/public`)).json()) as Record<string, unknown>;
+      expect(pub.rating).toMatchObject({ avg: 5, n: 1 });
+      expect(JSON.stringify(pub)).not.toContain("example.com");
+      expect(JSON.stringify(pub)).not.toContain("couch");
+    } finally {
+      await fb.close();
+    }
+  });
 });

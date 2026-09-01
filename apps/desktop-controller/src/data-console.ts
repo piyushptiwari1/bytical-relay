@@ -71,14 +71,25 @@ export class DataConsole {
     if (this.#productCache && Date.now() - this.#productCache.at < 5 * 60_000) {
       return this.#productCache.body;
     }
-    const body: Record<string, unknown> = { website: null, community: null };
+    const body: Record<string, unknown> = { website: null, community: null, feedback: null };
     if (this.#analytics) {
+      const authed = { authorization: `Bearer ${this.#analytics.token}` };
+      const base = this.#analytics.url.replace(/\/$/, "");
       try {
-        const response = await fetch(`${this.#analytics.url.replace(/\/$/, "")}/stats`, {
-          headers: { authorization: `Bearer ${this.#analytics.token}` },
+        const response = await fetch(`${base}/stats`, {
+          headers: authed,
           signal: AbortSignal.timeout(5000),
         });
         if (response.ok) body.website = await response.json();
+      } catch {
+        // analytics offline — console still works
+      }
+      try {
+        const response = await fetch(`${base}/feedback`, {
+          headers: authed,
+          signal: AbortSignal.timeout(5000),
+        });
+        if (response.ok) body.feedback = await response.json();
       } catch {
         // analytics offline — console still works
       }
@@ -109,6 +120,23 @@ export class DataConsole {
           open_issues: data.open_issues_count,
           release_downloads: downloads,
         };
+        const issues = await fetch(
+          "https://api.github.com/repos/piyushptiwari1/bytical-relay/issues?state=open&per_page=20",
+          { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(5000) },
+        );
+        if (issues.ok) {
+          body.github_issues = ((await issues.json()) as Array<Record<string, unknown>>)
+            .filter((issue) => !issue.pull_request)
+            .map((issue) => ({
+              number: issue.number,
+              title: issue.title,
+              author: (issue.user as { login?: string } | null)?.login ?? null,
+              created_at: issue.created_at,
+              comments: issue.comments,
+              url: issue.html_url,
+              labels: ((issue.labels as Array<{ name?: string }>) ?? []).map((l) => l.name),
+            }));
+        }
       }
     } catch {
       // rate limited or offline

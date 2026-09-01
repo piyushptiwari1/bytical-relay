@@ -15,13 +15,138 @@ import {
   Sparkles,
   TerminalSquare,
 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import * as THREE from "three";
 import "./relay.css";
 
 const GITHUB_URL = "https://github.com/piyushptiwari1/bytical-relay";
-const DOWNLOAD_URL = "https://github.com/piyushptiwari1/bytical-relay/releases/latest";
+// evergreen: always redirects to the newest APK asset (vercel.json)
+const DOWNLOAD_URL = "/download";
+const FEEDBACK_URL = "https://ws.relay.bytical.ai/a/feedback";
+
+type FeedbackKind = "review" | "feature" | "update_request" | "bug";
+const FEEDBACK_LABELS: Record<FeedbackKind, string> = {
+  review: "Review",
+  feature: "Feature idea",
+  update_request: "Update request",
+  bug: "Bug",
+};
+
+function FeedbackWidget() {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<FeedbackKind>("review");
+  const [rating, setRating] = useState(0);
+  const [message, setMessage] = useState("");
+  const [contact, setContact] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
+
+  const submit = async () => {
+    if (!message.trim() || (kind === "review" && rating === 0)) return;
+    setState("sending");
+    try {
+      const response = await fetch(FEEDBACK_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          rating: kind === "review" ? rating : undefined,
+          message: message.trim(),
+          contact: contact.trim() || undefined,
+          surface: "website",
+        }),
+      });
+      setState(response.ok ? "done" : "error");
+      if (response.ok) {
+        setMessage("");
+        setContact("");
+        setRating(0);
+        setTimeout(() => {
+          setOpen(false);
+          setState("idle");
+        }, 2200);
+      }
+    } catch {
+      setState("error");
+    }
+  };
+
+  return (
+    <div className="feedback-root">
+      {open ? (
+        <div className="feedback-panel" role="dialog" aria-label="Send feedback">
+          <div className="feedback-head">
+            <strong>Tell us anything</strong>
+            <button type="button" aria-label="Close" onClick={() => setOpen(false)}>
+              ×
+            </button>
+          </div>
+          <div className="feedback-kinds">
+            {(Object.keys(FEEDBACK_LABELS) as FeedbackKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={k === kind ? "on" : ""}
+                onClick={() => setKind(k)}
+              >
+                {FEEDBACK_LABELS[k]}
+              </button>
+            ))}
+          </div>
+          {kind === "review" ? (
+            <div className="feedback-stars" role="radiogroup" aria-label="Rating">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={n <= rating ? "on" : ""}
+                  aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                  onClick={() => setRating(n)}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            maxLength={2000}
+            rows={4}
+            placeholder={
+              kind === "bug"
+                ? "What broke? What did you expect?"
+                : kind === "review"
+                  ? "How is Relay working for you?"
+                  : "What should Relay do?"
+            }
+          />
+          <input
+            type="text"
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            maxLength={200}
+            placeholder="Email or GitHub (optional — only if you want a reply)"
+          />
+          <button
+            type="button"
+            className="feedback-send"
+            disabled={state === "sending" || !message.trim() || (kind === "review" && rating === 0)}
+            onClick={() => void submit()}
+          >
+            {state === "sending" ? "Sending…" : state === "done" ? "Thank you!" : "Send"}
+          </button>
+          {state === "error" ? <p className="feedback-error">Could not send — try again.</p> : null}
+          <p className="feedback-note">Goes straight to the maintainers. No account needed.</p>
+        </div>
+      ) : (
+        <button type="button" className="feedback-fab" onClick={() => setOpen(true)}>
+          Feedback
+        </button>
+      )}
+    </div>
+  );
+}
 
 type ScreenKind = "desktop" | "phone";
 
@@ -474,7 +599,7 @@ function App() {
         <div className="download-grid">
           <div className="download-card">
             <h3>1 · Get the app</h3>
-            <p>Download the Android APK from the latest GitHub release and install it.</p>
+            <p>One tap — the newest version, straight from our releases. Android 10+.</p>
             <a
               className="button button-primary"
               href={DOWNLOAD_URL}
@@ -614,6 +739,7 @@ function App() {
           </a>
         </nav>
       </footer>
+      <FeedbackWidget />
     </main>
   );
 }

@@ -5,5 +5,22 @@
   "rewrites": [
     { "source": "/stats", "destination": "/stats.html" },
     { "source": "/privacy", "destination": "/privacy.html" }
+  ],
+  "redirects": [
+    {
+      "source": "/download",
+      "destination": "https://github.com/piyushptiwari1/bytical-relay/releases/latest/download/relay-by-bytical.apk",
+      "permanent": false
+    },
+    {
+      "source": "/download/android",
+      "destination": "https://github.com/piyushptiwari1/bytical-relay/releases/latest/download/relay-by-bytical.apk",
+      "permanent": false
+    },
+    {
+      "source": "/vscode",
+      "destination": "https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical",
+      "permanent": false
+    }
   ]
 }

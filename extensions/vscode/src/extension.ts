@@ -3,6 +3,7 @@ import { AgentList, AgentStart, EditorPublishState, ProjectList } from "@rdc/pro
 import { ControllerClient } from "@rdc/transport";
 import * as vscode from "vscode";
 import { readControllerTarget } from "./config.ts";
+import { sendFeedback } from "./feedback.ts";
 import { openPairPanel } from "./pair.ts";
 import { ControllerLauncher } from "./setup.ts";
 import {
@@ -58,6 +59,10 @@ async function showMenu(context: vscode.ExtensionContext): Promise<void> {
       : { label: "$(play) Start controller", action: () => launcher.start() },
     { label: "$(cloud-download) Set up / update this computer", action: () => launcher.setup() },
     {
+      label: "$(comment-discussion) Send feedback",
+      action: () => vscode.commands.executeCommand("relay.feedback"),
+    },
+    {
       label: "$(output) Show Relay logs",
       action: () => vscode.commands.executeCommand("relay.logs"),
     },
@@ -89,6 +94,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("relay.pair", () => openPairPanel(context)),
     vscode.commands.registerCommand("relay.menu", () => showMenu(context)),
+    vscode.commands.registerCommand("relay.feedback", () =>
+      sendFeedback(String(context.extension.packageJSON.version ?? "dev")),
+    ),
     vscode.commands.registerCommand("relay.stop", () => launcher.stop()),
     vscode.commands.registerCommand("relay.logs", () => output.show(true)),
     vscode.commands.registerCommand("rdc.reconnect", () => start(context)),

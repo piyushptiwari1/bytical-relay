@@ -66,6 +66,10 @@
   <div class="row">
     <div class="card"><h2>Product · app & platform</h2><div id="productBars"></div></div>
     <div class="card"><h2>Community · GitHub</h2><div id="community"></div></div>
+    <div class="card"><h2>Feedback · pulse</h2><div id="feedbackKpis"></div><div id="feedbackBars" style="margin-top:10px"></div></div>
+  </div>
+  <div class="row">
+    <div class="card" style="grid-column: 1 / -1;"><h2>Feedback inbox · all surfaces</h2><div id="feedbackTable"></div></div>
   </div>
   <footer>Local-only console. Data never leaves this machine. Auto-refreshes every 60s.</footer>
 <script>
@@ -174,6 +178,45 @@ function renderProduct(product) {
           `<div class="kpi" style="padding:12px 14px"><div class="v" style="font-size:20px">${fmt(community[k])}</div><div class="l">${k.replaceAll("_", " ")}</div></div>`).join("")}
        </div>`
     : '<span class="meta">github unreachable</span>';
+  renderFeedback(product.feedback, product.github_issues ?? []);
+}
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+function renderFeedback(fb, issues) {
+  const kpis = document.getElementById("feedbackKpis");
+  const stars = fb?.rating?.avg ? `★ ${fb.rating.avg} (${fb.rating.n})` : "no ratings yet";
+  kpis.innerHTML =
+    `<span class="pill ok">${esc(stars)}</span> ` +
+    `<span class="pill">${fmt((fb?.items ?? []).length)} recent items</span> ` +
+    `<span class="pill">${fmt(issues.length)} open github issues</span>`;
+  barList("feedbackBars", [
+    ...((fb?.by_kind ?? []).map((r) => ({ k: r.kind, n: r.n }))),
+    ...((fb?.by_surface ?? []).map((r) => ({ k: `via ${r.surface}`, n: r.n }))),
+  ], "k", "var(--chart3)");
+
+  const rows = [
+    ...((fb?.items ?? []).map((f) => ({
+      when: f.ts, source: f.surface + (f.version ? ` ${f.version}` : ""),
+      kind: f.kind + (f.rating ? ` ★${f.rating}` : ""),
+      who: f.contact || (f.country ? `anon · ${f.country} · ${f.device ?? ""}` : "anon"),
+      what: f.message, link: null,
+    }))),
+    ...issues.map((i) => ({
+      when: i.created_at, source: "github",
+      kind: (i.labels ?? []).join(", ") || "issue",
+      who: i.author ?? "unknown",
+      what: `#${i.number} ${i.title} (${fmt(i.comments)} comments)`, link: i.url,
+    })),
+  ].sort((a, b) => String(b.when).localeCompare(String(a.when)));
+
+  document.getElementById("feedbackTable").innerHTML = rows.length
+    ? `<table><thead><tr><th>When</th><th>Source</th><th>Kind</th><th>Who</th><th>What</th></tr></thead>
+       <tbody>${rows.slice(0, 60).map((r) =>
+         `<tr><td class="meta">${esc(String(r.when).slice(0, 16).replace("T", " "))}</td>
+          <td>${esc(r.source)}</td><td>${esc(r.kind)}</td><td>${esc(r.who)}</td>
+          <td>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noreferrer">${esc(r.what)}</a>` : esc(r.what)}</td></tr>`).join("")}</tbody></table>`
+    : '<span class="meta">nothing yet — widgets are live on the site, app, and extension</span>';
 }
 refresh();
 setInterval(refresh, 60_000);
