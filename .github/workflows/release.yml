@@ -60,10 +60,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VSIX=$(ls *.vsix)
           gh release create "${{ github.ref_name }}" \
             "relay-by-bytical.apk#Relay for Android — direct download (APK)" \
             "relay-by-bytical-${{ github.ref_name }}.apk#Relay for Android (versioned APK)" \
-            *.vsix#"Relay for VS Code (VSIX)" \
+            "${VSIX}#Relay for VS Code (VSIX)" \
             --title "Relay by Bytical — ${{ github.ref_name }}" \
             --notes-file release/notes.md
 
