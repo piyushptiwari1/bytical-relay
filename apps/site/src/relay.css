@@ -1,6 +1,6 @@
 
 :root {
-  /* Relay dark system � same family as the product mark */
+  /* Relay dark system - same family as the product mark */
   --bg: #0a0d14;
   --bg-soft: #0e1220;
   --surface: #131827;
@@ -815,7 +815,7 @@ footer a:last-child {
   }
 }
 
-/* ── Download ─────────────────────────────────────────────────────────── */
+/* -- Download ----------------------------------------------------------- */
 .download-grid {
   display: grid;
   gap: 18px;
@@ -857,7 +857,7 @@ footer a:last-child {
   margin-top: 4px;
 }
 
-/* ── FAQ ──────────────────────────────────────────────────────────────── */
+/* -- FAQ ---------------------------------------------------------------- */
 .faq-grid {
   display: grid;
   gap: 12px;
@@ -887,7 +887,7 @@ footer a:last-child {
   text-decoration: underline;
 }
 
-/* ── Footer links ─────────────────────────────────────────────────────── */
+/* -- Footer links ------------------------------------------------------- */
 .footer-links {
   display: flex;
   gap: 22px;
@@ -905,7 +905,7 @@ footer a:last-child {
   color: var(--ink);
 }
 
-/* ── Feedback widget ─────────────────────────────────────────────── */
+/* -- Feedback widget ----------------------------------------------- */
 .feedback-root {
   position: fixed;
   right: 22px;
@@ -1039,7 +1039,7 @@ footer a:last-child {
   max-width: 200px;
 }
 
-/* ══ Modern layer: fluid type, mobile-first, brand gradient ══ */
+/* == Modern layer: fluid type, mobile-first, brand gradient == */
 :root { color-scheme: dark; }
 body { -webkit-font-smoothing: antialiased; }
 
@@ -1075,7 +1075,7 @@ a.button, button { border-radius: 12px; transition: transform 0.15s ease, filter
 .feedback-send { background: var(--grad); color: #0a0d14; }
 .feedback-panel textarea, .feedback-panel input { background: var(--bg-soft); color: var(--ink); border-color: var(--line); }
 
-/* ── phones ── */
+/* -- phones -- */
 @media (max-width: 640px) {
   .hero { height: auto; min-height: 100svh; padding-bottom: 24px; }
   .hero::after { width: 100%; background: linear-gradient(180deg, rgba(10,13,20,0.2) 0%, rgba(10,13,20,0.86) 78%); }
