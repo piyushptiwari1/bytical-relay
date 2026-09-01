@@ -65,6 +65,9 @@ export default function AgentsHome() {
   >([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState<"build" | "plan" | "ask">("build");
+  const [model, setModel] = useState("");
+  const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +114,7 @@ export default function AgentsHome() {
         chosenProject.project_id,
         "copilot",
         prompt.trim(),
+        { mode, ...(model.trim() ? { model: model.trim() } : {}) },
       );
       setPrompt("");
       router.push(`/agent/${machine}/${session.session_id}`);
@@ -230,7 +234,13 @@ export default function AgentsHome() {
         <TextInput
           value={prompt}
           onChangeText={setPrompt}
-          placeholder="Describe what to build…"
+          placeholder={
+            mode === "build"
+              ? "Describe what to build…"
+              : mode === "plan"
+                ? "What should be planned? (read-only — no changes)"
+                : "Ask about this workspace (read-only)"
+          }
           placeholderTextColor={colors.faint}
           multiline
           style={{
@@ -245,6 +255,65 @@ export default function AgentsHome() {
             textAlignVertical: "top",
           }}
         />
+
+        {/* job profile — controller-ENFORCED permissions, not a suggestion */}
+        <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
+          {(
+            [
+              { id: "build", label: "▸ Build", hint: "full edit" },
+              { id: "plan", label: "▤ Plan", hint: "read-only" },
+              { id: "ask", label: "? Ask", hint: "read-only" },
+            ] as const
+          ).map((profile) => {
+            const active = mode === profile.id;
+            return (
+              <Pressable
+                key={profile.id}
+                onPress={() => setMode(profile.id)}
+                style={{
+                  backgroundColor: active ? colors.accentSoft : "transparent",
+                  borderColor: active ? colors.accent : colors.border,
+                  borderWidth: 1,
+                  borderRadius: 999,
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                }}
+              >
+                <Text style={{ color: active ? colors.accent : colors.dim, fontSize: 12.5 }}>
+                  {profile.label}
+                  {active ? ` · ${profile.hint}` : ""}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <View style={{ flex: 1 }} />
+          <Text
+            style={{ ...type_.caption, textDecorationLine: "underline" }}
+            onPress={() => setAdvanced((v) => !v)}
+          >
+            {advanced ? "less" : "advanced"}
+          </Text>
+        </View>
+
+        {advanced ? (
+          <TextInput
+            value={model}
+            onChangeText={setModel}
+            placeholder="Model override (e.g. claude-sonnet-4.5) — blank = provider default"
+            placeholderTextColor={colors.faint}
+            autoCapitalize="none"
+            style={{
+              backgroundColor: colors.bg,
+              borderColor: colors.borderSoft,
+              borderWidth: 1,
+              borderRadius: 10,
+              color: colors.text,
+              paddingHorizontal: space.md,
+              paddingVertical: 8,
+              fontSize: 13,
+            }}
+          />
+        ) : null}
 
         <ScrollView
           horizontal

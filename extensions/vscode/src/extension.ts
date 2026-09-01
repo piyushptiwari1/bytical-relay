@@ -92,7 +92,32 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
-    vscode.commands.registerCommand("relay.pair", () => openPairPanel(context)),
+    vscode.commands.registerCommand("relay.pair", async () => {
+      // fresh machine / stopped controller must never dead-end — chain into readiness
+      if (await launcher.healthy()) return openPairPanel(context);
+      if (!launcher.isSetUp()) {
+        const pick = await vscode.window.showInformationMessage(
+          "Relay will set up this computer first (one time, a few minutes) — pairing opens automatically after.",
+          { modal: true },
+          "Set up & pair",
+        );
+        if (pick) await vscode.commands.executeCommand("relay.setup");
+        return;
+      }
+      launcher.start();
+      const healthy = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Relay: starting the controller…",
+        },
+        () => launcher.waitUntilHealthy(),
+      );
+      if (healthy) return openPairPanel(context);
+      output.show(true);
+      void vscode.window.showErrorMessage(
+        "Relay controller did not start — see the Relay logs for details.",
+      );
+    }),
     vscode.commands.registerCommand("relay.menu", () => showMenu(context)),
     vscode.commands.registerCommand("relay.feedback", () =>
       sendFeedback(String(context.extension.packageJSON.version ?? "dev")),
@@ -108,7 +133,23 @@ export function activate(context: vscode.ExtensionContext): void {
       await openInAgents();
     }),
   );
-  void launcher.autoAttach().then(() => start(context));
+  void launcher.autoAttach().then(async () => {
+    start(context);
+    // first-run nudge: fresh machine, nothing running — offer the one-click path
+    if (
+      launcher.mode === "off" &&
+      !launcher.isSetUp() &&
+      !context.globalState.get("relay.welcomed")
+    ) {
+      await context.globalState.update("relay.welcomed", true);
+      const pick = await vscode.window.showInformationMessage(
+        "Relay: set up this computer to pair your phone (one time, a few minutes).",
+        "Set up now",
+        "Later",
+      );
+      if (pick === "Set up now") void vscode.commands.executeCommand("relay.setup");
+    }
+  });
 }
 
 export function deactivate(): void {

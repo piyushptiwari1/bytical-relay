@@ -35,7 +35,12 @@ export interface NativeSession {
 export interface AgentAdapter {
   readonly id: string;
   detect(): Promise<{ available: boolean; detail: string }>;
-  createSession(opts: { cwd: string; callbacks: AdapterCallbacks }): Promise<AgentSessionHandle>;
+  createSession(opts: {
+    cwd: string;
+    /** Provider model id — best-effort; adapters ignore it when unsupported. */
+    model?: string;
+    callbacks: AdapterCallbacks;
+  }): Promise<AgentSessionHandle>;
   /** Resume a provider-native session with full context (ACP session/load). */
   resumeSession?(opts: {
     nativeId: string;

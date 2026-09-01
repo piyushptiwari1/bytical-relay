@@ -145,12 +145,19 @@ export const AgentSessionStatusSchema = z.enum([
 ]);
 export type AgentSessionStatus = z.infer<typeof AgentSessionStatusSchema>;
 
+/** Job profile: what the agent is ALLOWED to do (controller-enforced, PLAN M1).
+ * build = full permissions · plan/ask = read-only, mutating tool calls auto-denied. */
+export const AgentModeSchema = z.enum(["build", "plan", "ask"]);
+export type AgentMode = z.infer<typeof AgentModeSchema>;
+
 export const AgentSessionSchema = z.object({
   session_id: z.string().min(1),
   project_id: z.string().min(1),
   provider: z.string().min(1),
   title: z.string(),
   status: AgentSessionStatusSchema,
+  mode: AgentModeSchema.optional(),
+  model: z.string().max(80).optional(),
   /** Instructions accepted while a turn is active and waiting to run in FIFO order. */
   queued_prompt_count: nonNegInt.optional(),
   created_at: z.iso.datetime(),

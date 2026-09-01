@@ -1,6 +1,7 @@
 import { err, ok, type Result, safeJsonParse } from "@rdc/shared";
 import { z } from "zod";
 import {
+  AgentModeSchema,
   AgentSessionSchema,
   AgentUpdateSchema,
   ApprovalRequestSchema,
@@ -328,7 +329,12 @@ export const EditorChatRequested = defineEvent(
 // ── Agent domain (S4) ─────────────────────────────────────────────────────
 export const AgentStart = defineCommand(
   "agent.start",
-  projectRef.extend({ provider: z.string().min(1), prompt: z.string().min(1).max(32_000) }),
+  projectRef.extend({
+    provider: z.string().min(1),
+    prompt: z.string().min(1).max(32_000),
+    mode: AgentModeSchema.optional(),
+    model: z.string().max(80).optional(),
+  }),
   z.object({ session: AgentSessionSchema }),
 );
 

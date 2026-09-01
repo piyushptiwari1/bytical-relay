@@ -100,11 +100,23 @@ export class AcpAdapter implements AgentAdapter {
 
   async createSession(opts: {
     cwd: string;
+    model?: string;
     callbacks: AdapterCallbacks;
   }): Promise<AgentSessionHandle> {
-    return this.#boot(opts.cwd, opts.callbacks, (rpc) =>
-      rpc.request<{ sessionId: string }>("session/new", { cwd: opts.cwd, mcpServers: [] }),
-    );
+    return this.#boot(opts.cwd, opts.callbacks, async (rpc) => {
+      if (opts.model) {
+        try {
+          return await rpc.request<{ sessionId: string }>("session/new", {
+            cwd: opts.cwd,
+            mcpServers: [],
+            model: opts.model,
+          });
+        } catch {
+          // agent rejects unknown params — fall through without the model
+        }
+      }
+      return rpc.request<{ sessionId: string }>("session/new", { cwd: opts.cwd, mcpServers: [] });
+    });
   }
 
   /** ACP session/load: the agent replays the full conversation as updates, then we can prompt. */

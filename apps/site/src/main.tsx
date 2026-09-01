@@ -385,16 +385,11 @@ function App() {
             your phone. Return with every decision and change in context.
           </p>
           <div className="hero-actions">
-            <a className="button button-primary" href="#download" data-track="hero-download">
+            <a className="button button-primary" href={DOWNLOAD_URL} data-track="hero-download">
               Get Relay for Android <ArrowDown size={17} />
             </a>
-            <a
-              className="button button-secondary"
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Github size={17} /> Follow the build
+            <a className="button button-secondary" href="#download">
+              How it works <ChevronRight size={17} />
             </a>
           </div>
         </div>
@@ -600,15 +595,18 @@ function App() {
           <div className="download-card">
             <h3>1 · Get the app</h3>
             <p>One tap — the newest version, straight from our releases. Android 10+.</p>
-            <a
-              className="button button-primary"
-              href={DOWNLOAD_URL}
-              target="_blank"
-              rel="noreferrer"
-              data-track="android-apk"
-            >
+            <a className="button button-primary" href={DOWNLOAD_URL} data-track="android-apk">
               Download for Android <ArrowUpRight size={17} />
             </a>
+            <div className="download-qr">
+              <img
+                src="/qr-download.svg"
+                alt="QR code — scan with your phone to install Relay"
+                width={96}
+                height={96}
+              />
+              <span>On your laptop? Scan with your phone — it downloads straight away.</span>
+            </div>
           </div>
           <div className="download-card">
             <h3>2 · Set up your computer</h3>

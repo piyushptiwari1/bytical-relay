@@ -143,6 +143,20 @@ export class ControllerLauncher {
     if (autoStart && existsSync(this.appPath())) this.start();
   }
 
+  isSetUp(): boolean {
+    return existsSync(this.appPath());
+  }
+
+  /** Poll healthz until the controller answers (first boot indexes projects). */
+  async waitUntilHealthy(timeoutMs = 120_000): Promise<boolean> {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      if (await this.healthy()) return true;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    return false;
+  }
+
   #setMode(mode: ControllerMode): void {
     this.mode = mode;
     this.onModeChange(mode);

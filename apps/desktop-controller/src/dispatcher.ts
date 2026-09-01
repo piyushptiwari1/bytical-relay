@@ -358,6 +358,10 @@ export class ControllerDispatcher {
               msg.payload.project_id,
               msg.payload.provider,
               msg.payload.prompt,
+              {
+                ...(msg.payload.mode ? { mode: msg.payload.mode } : {}),
+                ...(msg.payload.model ? { model: msg.payload.model } : {}),
+              },
             ),
           })),
         ];

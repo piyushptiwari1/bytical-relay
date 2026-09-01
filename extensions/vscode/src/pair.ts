@@ -13,9 +13,12 @@ interface PairingStatus {
 export async function openPairPanel(context: vscode.ExtensionContext): Promise<void> {
   const target = readControllerTarget();
   if (!target) {
-    void vscode.window.showErrorMessage(
-      "Relay controller is not running yet — run “Relay: Set up this computer” first.",
+    const pick = await vscode.window.showInformationMessage(
+      "Relay needs to set up this computer first (one time). Pairing opens automatically after.",
+      { modal: true },
+      "Set up & pair",
     );
+    if (pick) await vscode.commands.executeCommand("relay.setup");
     return;
   }
   const api = async (pathname: string, method = "POST"): Promise<Record<string, unknown>> => {

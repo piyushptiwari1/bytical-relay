@@ -621,10 +621,11 @@ export const agentStart = (
   projectId: string,
   provider: string,
   prompt: string,
+  opts: { mode?: "build" | "plan" | "ask"; model?: string } = {},
 ): Promise<{ session: AgentSession }> =>
   requireClient(machineId).command(
     AgentStart,
-    { project_id: projectId, provider, prompt },
+    { project_id: projectId, provider, prompt, ...opts },
     {
       timeoutMs: 60_000,
     },

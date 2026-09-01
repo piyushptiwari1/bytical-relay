@@ -45,6 +45,13 @@ export class SessionStore {
     } catch {
       // column already exists
     }
+    for (const column of ["mode TEXT", "model TEXT"]) {
+      try {
+        this.#db.exec(`ALTER TABLE agent_sessions ADD COLUMN ${column}`);
+      } catch {
+        // column already exists
+      }
+    }
   }
 
   /** Provider-native ids already represented by an rdc session (dedupe). */
@@ -147,10 +154,11 @@ export class SessionStore {
   upsert(session: AgentSession): void {
     this.#db
       .prepare(
-        `INSERT INTO agent_sessions (session_id, project_id, provider, title, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO agent_sessions (session_id, project_id, provider, title, status, created_at, updated_at, mode, model)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
-           title = excluded.title, status = excluded.status, updated_at = excluded.updated_at`,
+           title = excluded.title, status = excluded.status, updated_at = excluded.updated_at,
+           mode = excluded.mode, model = excluded.model`,
       )
       .run(
         session.session_id,
@@ -160,6 +168,8 @@ export class SessionStore {
         session.status,
         session.created_at,
         session.updated_at,
+        session.mode ?? null,
+        session.model ?? null,
       );
   }
 
@@ -178,6 +188,8 @@ export class SessionStore {
       provider: r.provider as string,
       title: r.title as string,
       status: r.status as AgentSession["status"],
+      ...(r.mode ? { mode: r.mode as AgentSession["mode"] } : {}),
+      ...(r.model ? { model: r.model as string } : {}),
       queued_prompt_count: this.queuedPromptCount(sessionId),
       created_at: r.created_at as string,
       updated_at: r.updated_at as string,

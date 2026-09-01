@@ -62,6 +62,60 @@ work.
 - The app must clearly show whether it is on LAN or relay, when its displayed state was last
   refreshed, and whether the paired phone is presently reachable.
 
+## Mobile 1.0 — VS Code-grade app plan
+
+The bar: the phone app should feel like a **mature sibling of VS Code**, not a demo. Dense but
+calm, keyboard-fast equivalents (gestures/quick actions), every state designed, zero dead ends.
+
+### M1 · Session composer (create agents properly)
+
+The "new session" flow becomes a first-class composer, mirroring VS Code's chat affordances:
+
+- **Job profile** (primary choice, not model names): `Build` (full edit permissions),
+  `Plan` (read-only — agent proposes a plan; file/exec permission requests are auto-denied and
+  surfaced as "planned changes"), `Ask` (read-only Q&A about the workspace). Profiles are
+  controller-enforced, not prompt-suggested: deny-by-policy on ACP permission requests.
+- **Provider picker** under an "advanced" reveal (Copilot now, Claude Code next) with live
+  availability from `agent.list`.
+- **Model picker** per provider, populated from adapter capability discovery; stored per-project
+  as the default for next time. Params (e.g. reasoning effort) appear only when a provider
+  actually supports them — no fake dials.
+- **Context chips**: project (required), optional starting file/path, optional "continue from"
+  session. Prompt box with template shortcuts (`Fix failing tests`, `Review my diff`, …).
+- Protocol: `agent.start` gains optional `mode` + `model`; capability discovery rides
+  `agent.list` provider entries (`models[]`, `supports_modes`).
+
+### M2 · Chat surface parity
+
+- Tool-call cards: collapsed by default with icon + one-line status (like VS Code's chat),
+  expandable to full detail; diff previews for file edits with old/new counts.
+- Approval sheet: allow once / allow for session / deny, with the exact command shown, and the
+  job profile visible so the user knows why it was blocked or allowed.
+- Message actions: copy, quote-reply, re-run turn; queued prompts visible and reorderable;
+  stop button that actually cancels the turn (`agent.cancel`).
+- Session header: provider + model + profile + connection path (LAN/relay) + last-refresh, in one
+  compact strip; tap to open session settings (rename, archive, change model for next turn).
+
+### M3 · Workspace hub + quick actions
+
+- Workspace screen tabs: Sessions · Changes (git status/diff read) · Terminals (scoped) ·
+  Presence (active file, diagnostics from the editor extension).
+- Global quick-switcher (long-press home / search icon): fuzzy jump to any session, project, or
+  action — the phone's command palette.
+- "While you were away" digest on reconnect: what finished, what's blocked, what failed.
+
+### M4 · Polish pass
+
+- Design tokens audit (spacing/typography/hit targets ≥44px), haptics on state changes,
+  skeleton loaders everywhere, landscape + tablet layouts, reduced-motion support.
+- Deep links from push notifications into the exact session turn; notification actions
+  (approve/deny) where the OS allows.
+- Settings: per-device name, notification rules per project, appearance, diagnostics screen
+  (connection, versions, ping) for support.
+
+Sequencing note: M1 protocol/controller work lands first (it unblocks Claude Code = same
+contract), then M2, M3, M4. Each milestone ships behind the normal tag train.
+
 ## Delivery sequence
 
 ### P0: Trust before reachability

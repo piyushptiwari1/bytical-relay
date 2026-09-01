@@ -84,6 +84,42 @@ describe("AgentManager end-to-end with scripted ACP agent", () => {
 
     await manager.stop();
   });
+
+  test("plan mode: mutating permission is auto-denied, never surfaces an approval", async () => {
+    const { manager, eventStore } = makeManager();
+
+    const approvals: string[] = [];
+    manager.emitter.on("journaled", (records) => {
+      for (const record of records) {
+        if (record.type === "approval.requested") {
+          approvals.push((record.payload as { approval_id: string }).approval_id);
+        }
+      }
+    });
+
+    const session = await manager.start("git_agent", "fake", "plan the hello feature", {
+      mode: "plan",
+    });
+    expect(session.mode).toBe("plan");
+    await waitFor(() => manager.list()[0]?.status === "idle");
+
+    // no human approval was ever requested — policy denied the edit outright
+    expect(approvals).toHaveLength(0);
+    const journal = eventStore.read(agentStream(session.session_id), 0, 200);
+    const updates = journal
+      .filter((r) => r.type === "agent.updated")
+      .map((r) => (r.payload as { update: { kind: string; title?: string } }).update);
+    const blocked = updates.find((u) => u.title?.includes("blocked by plan mode"));
+    expect(blocked).toBeDefined();
+    // the mode preamble told the agent up front
+    expect(
+      journal.some(
+        (r) => r.type === "agent.updated" && JSON.stringify(r.payload).includes("PLAN mode"),
+      ),
+    ).toBe(true);
+
+    await manager.stop();
+  });
 });
 
 describe("AgentManager queued prompts", () => {

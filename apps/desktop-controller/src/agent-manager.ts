@@ -7,6 +7,7 @@ import {
 import type { EventStore, StoredEvent } from "@rdc/event-store";
 import type { FsIndex } from "@rdc/filesystem";
 import {
+  type AgentMode,
   type AgentSession,
   type AgentSessionStatus,
   AgentStatusChanged,
@@ -19,6 +20,9 @@ import {
 import { newEventId, nowIso, TypedEmitter } from "@rdc/shared";
 import type { SessionStore } from "./session-store.ts";
 import type { VsCodeChatReader } from "./vscode-chats.ts";
+
+/** ACP tool kinds a plan/ask session may use — everything else is denied. */
+const READ_ONLY_TOOL_KINDS = new Set(["read", "fetch", "think", "search"]);
 
 interface ManagedSession {
   session: AgentSession;
@@ -104,7 +108,12 @@ export class AgentManager {
     return this.deps.sessions.list().map((row) => live.get(row.session_id) ?? row);
   }
 
-  async start(projectId: string, providerId: string, prompt: string): Promise<AgentSession> {
+  async start(
+    projectId: string,
+    providerId: string,
+    prompt: string,
+    opts: { mode?: AgentMode; model?: string } = {},
+  ): Promise<AgentSession> {
     const adapter = this.#adapters.get(providerId);
     if (!adapter) throw new Error(`unknown agent provider: ${providerId}`);
     const root = this.deps.fsIndex.getProjectRoot(projectId);
@@ -114,14 +123,32 @@ export class AgentManager {
       projectId,
       providerId,
       prompt.split("\n", 1)[0]?.slice(0, 80) ?? "session",
+      opts,
     );
     managed.handle = await adapter.createSession({
       cwd: root,
+      ...(opts.model ? { model: opts.model } : {}),
       callbacks: this.#callbacksFor(managed),
     });
     this.deps.sessions?.setNativeId(managed.session.session_id, managed.handle.providerSessionId);
-    this.#runTurn(managed, prompt);
+    this.#runTurn(managed, this.#modePreamble(opts.mode) + prompt);
     return managed.session;
+  }
+
+  /** Plan/Ask are enforced by permission denial; the preamble just tells the
+   * agent up front so it works WITH the restriction instead of against it. */
+  #modePreamble(mode: AgentMode | undefined): string {
+    if (mode === "plan")
+      return (
+        "You are in PLAN mode: produce a concrete, step-by-step plan. " +
+        "Do not modify files or run commands — mutating tool calls will be denied.\n\n"
+      );
+    if (mode === "ask")
+      return (
+        "You are in ASK mode: answer using read-only exploration. " +
+        "Do not modify files or run commands — mutating tool calls will be denied.\n\n"
+      );
+    return "";
   }
 
   /** Continue a provider-native (laptop CLI) conversation — full context replays. */
@@ -294,13 +321,20 @@ export class AgentManager {
     return managed.session;
   }
 
-  #createManaged(projectId: string, providerId: string, title: string): ManagedSession {
+  #createManaged(
+    projectId: string,
+    providerId: string,
+    title: string,
+    opts: { mode?: AgentMode; model?: string } = {},
+  ): ManagedSession {
     const session: AgentSession = {
       session_id: `ses_${newEventId().slice(0, 13)}`,
       project_id: projectId,
       provider: providerId,
       title,
       status: "starting",
+      ...(opts.mode ? { mode: opts.mode } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
       queued_prompt_count: 0,
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -319,6 +353,19 @@ export class AgentManager {
         this.#journalUpdate(sessionId, update);
       },
       onPermission: async (ask: PermissionAsk) => {
+        // job-profile enforcement: plan/ask sessions are read-only BY POLICY
+        const mode = managed.session.mode ?? "build";
+        if (mode !== "build" && !READ_ONLY_TOOL_KINDS.has(ask.tool_kind)) {
+          this.#journalUpdate(sessionId, {
+            kind: "tool_call",
+            tool_id: `blk_${newEventId().slice(0, 10)}`,
+            title: `${ask.title} — blocked by ${mode} mode`,
+            tool_kind: ask.tool_kind,
+            status: "failed",
+          });
+          const reject = ask.options.find((o) => o.option_kind.startsWith("reject"));
+          return reject ? { option_id: reject.option_id } : { cancelled: true as const };
+        }
         const { request, answer } = this.approvals.create(sessionId, ask);
         this.#journal(sessionId, ApprovalRequested.type, request);
         this.#setStatus(managed, "awaiting_approval");
