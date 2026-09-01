@@ -37,10 +37,10 @@ jobs:
           pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
           mkdir -p standalone
           cp apps/desktop-controller/dist/controller.mjs standalone/
-          # natives with the exact versions the monorepo tested, resolved by npm
-          PTY=$(node -p "require('@lydell/node-pty/package.json').version")
-          WATCHER=$(node -p "require('@parcel/watcher/package.json').version")
-          KOFFI=$(node -p "require('koffi/package.json').version")
+          # pnpm doesn't hoist — resolve each native from its owning package
+          PTY=$(cd packages/terminal && node -p "require('@lydell/node-pty/package.json').version")
+          WATCHER=$(cd apps/desktop-controller && node -p "require('@parcel/watcher/package.json').version")
+          KOFFI=$(cd apps/desktop-controller && node -p "require('koffi/package.json').version")
           cd standalone
           npm install --omit=dev --no-audit --no-fund --force \
             "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
@@ -128,9 +128,10 @@ jobs:
           pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
           mkdir -p standalone
           cp apps/desktop-controller/dist/controller.mjs standalone/
-          PTY=$(node -p "require('@lydell/node-pty/package.json').version")
-          WATCHER=$(node -p "require('@parcel/watcher/package.json').version")
-          KOFFI=$(node -p "require('koffi/package.json').version")
+          # pnpm doesn't hoist — resolve each native from its owning package
+          PTY=$(cd packages/terminal && node -p "require('@lydell/node-pty/package.json').version")
+          WATCHER=$(cd apps/desktop-controller && node -p "require('@parcel/watcher/package.json').version")
+          KOFFI=$(cd apps/desktop-controller && node -p "require('koffi/package.json').version")
           cd standalone
           npm install --omit=dev --no-audit --no-fund --force \
             "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
