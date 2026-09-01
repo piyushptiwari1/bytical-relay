@@ -1,4 +1,3 @@
-import { Canvas, useFrame } from "@react-three/fiber";
 import {
   ArrowDown,
   ArrowUpRight,
@@ -15,9 +14,8 @@ import {
   Sparkles,
   TerminalSquare,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import * as THREE from "three";
 import "./relay.css";
 
 const GITHUB_URL = "https://github.com/piyushptiwari1/bytical-relay";
@@ -148,203 +146,43 @@ function FeedbackWidget() {
   );
 }
 
-type ScreenKind = "desktop" | "phone";
-
-function drawScreen(kind: ScreenKind): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas rendering is unavailable");
-
-  const width = kind === "desktop" ? 1200 : 620;
-  const height = kind === "desktop" ? 760 : 1180;
-  canvas.width = width;
-  canvas.height = height;
-
-  const ink = "#1a2928";
-  const panel = "#f5f6f2";
-  const line = "#d4dcda";
-  const accent = "#42657c";
-  const coral = "#c96d58";
-  const mist = "#687b79";
-
-  context.fillStyle = ink;
-  context.fillRect(0, 0, width, height);
-  context.fillStyle = "#e7ecea";
-  context.fillRect(0, 0, width, kind === "desktop" ? 70 : 120);
-  context.fillStyle = accent;
-  context.fillRect(0, 0, kind === "desktop" ? 12 : 8, height);
-  context.font = kind === "desktop" ? "600 28px monospace" : "600 28px monospace";
-  context.fillStyle = ink;
-  context.fillText(kind === "desktop" ? "RELAY / BYTICAL" : "RELAY", 46, 45);
-
-  if (kind === "desktop") {
-    context.fillStyle = "#eaf0ed";
-    context.fillRect(34, 104, 250, 620);
-    context.fillStyle = mist;
-    context.font = "500 22px monospace";
-    ["EXPLORER", "  src", "  app", "  tests", "  package.json", "  README.md"].forEach(
-      (label, index) => {
-        context.fillText(label, 56, 154 + index * 52);
-      },
-    );
-    context.fillStyle = panel;
-    context.fillRect(314, 104, 852, 620);
-    context.fillStyle = "#e1e8e5";
-    context.fillRect(314, 104, 852, 50);
-    context.fillStyle = mist;
-    context.fillText("src/session.ts", 348, 137);
-    const code = [
-      "export async function resumeAgent() {",
-      "  const session = await controller.connect();",
-      "  await session.replay({ since: cursor });",
-      "  return session;",
-      "}",
-    ];
-    context.font = "500 25px monospace";
-    code.forEach((lineText, index) => {
-      context.fillStyle = index === 2 ? accent : ink;
-      context.fillText(lineText, 365, 230 + index * 58);
-    });
-    context.fillStyle = "#e7eeeb";
-    context.fillRect(670, 470, 430, 190);
-    context.fillStyle = coral;
-    context.font = "600 22px monospace";
-    context.fillText("AGENT / AWAITING", 704, 520);
-    context.fillStyle = ink;
-    context.font = "500 20px monospace";
-    context.fillText("Permission needed:", 704, 565);
-    context.fillText("git commit", 704, 602);
-    context.fillStyle = accent;
-    context.fillRect(704, 618, 150, 22);
-    context.fillStyle = "#f5f6f2";
-    context.fillText("APPROVE", 715, 636);
-  } else {
-    context.fillStyle = panel;
-    context.fillRect(28, 158, width - 56, 166);
-    context.fillStyle = mist;
-    context.font = "500 24px monospace";
-    context.fillText("MACHINE", 56, 202);
-    context.fillStyle = ink;
-    context.font = "600 29px monospace";
-    context.fillText("workstation-01", 56, 249);
-    context.fillStyle = accent;
-    context.fillRect(450, 189, 92, 34);
-    context.fillStyle = ink;
-    context.font = "600 18px monospace";
-    context.fillText("LIVE", 472, 213);
-    context.fillStyle = "#e7eeeb";
-    context.fillRect(28, 354, width - 56, 304);
-    context.fillStyle = mist;
-    context.font = "500 23px monospace";
-    context.fillText("RUNNING NOW", 56, 402);
-    context.fillStyle = ink;
-    context.font = "600 29px monospace";
-    context.fillText("Review login failures", 56, 454);
-    context.fillStyle = accent;
-    context.font = "500 22px monospace";
-    context.fillText("Copilot / 02:14 elapsed", 56, 498);
-    context.fillStyle = line;
-    context.fillRect(56, 534, 508, 18);
-    context.fillStyle = coral;
-    context.fillRect(56, 534, 336, 18);
-    context.fillStyle = panel;
-    context.fillRect(28, 690, width - 56, 272);
-    context.fillStyle = ink;
-    context.font = "600 25px monospace";
-    context.fillText("Approval requested", 56, 746);
-    context.fillStyle = mist;
-    context.font = "500 21px monospace";
-    context.fillText("Run test migration", 56, 790);
-    context.fillStyle = coral;
-    context.fillRect(56, 830, 508, 72);
-    context.fillStyle = panel;
-    context.font = "600 24px monospace";
-    context.fillText("ALLOW ONCE", 192, 876);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  return texture;
-}
-
-function useScreenTexture(kind: ScreenKind): THREE.CanvasTexture {
-  const texture = useMemo(() => drawScreen(kind), [kind]);
-  useEffect(() => () => texture.dispose(), [texture]);
-  return texture;
-}
-
-function DeviceScene() {
-  const rig = useRef<THREE.Group | null>(null);
-  const desktopTexture = useScreenTexture("desktop");
-  const phoneTexture = useScreenTexture("phone");
-
-  useFrame((state) => {
-    if (!rig.current) return;
-    const elapsed = state.clock.getElapsedTime();
-    rig.current.rotation.y = -0.28 + Math.sin(elapsed * 0.32) * 0.14 + state.pointer.x * 0.12;
-    rig.current.rotation.x = 0.12 + state.pointer.y * 0.06;
-    rig.current.position.y = Math.sin(elapsed * 0.9) * 0.12;
-  });
-
+/** Crisp, legible product mock — real text, no WebGL, sharp on every screen. */
+function HeroVisual() {
   return (
-    <group ref={rig} position={[1.3, -0.1, 0]} rotation={[0.12, -0.28, 0]}>
-      <ambientLight intensity={2.4} />
-      <directionalLight position={[4, 5, 6]} intensity={3.2} color="#ffffff" />
-      <pointLight position={[-4, 2, 4]} intensity={22} distance={14} color="#b9d3df" />
-      <pointLight position={[4, -1, 4]} intensity={12} distance={10} color="#e5b4aa" />
-
-      <group position={[0.6, 0.1, 0]} rotation={[0.05, -0.12, 0]}>
-        <mesh position={[0, 0.2, 0]}>
-          <boxGeometry args={[4.85, 3.15, 0.18]} />
-          <meshStandardMaterial color="#263431" metalness={0.52} roughness={0.32} />
-        </mesh>
-        <mesh position={[0, 0.2, 0.101]}>
-          <planeGeometry args={[4.56, 2.86]} />
-          <meshBasicMaterial map={desktopTexture} toneMapped={false} />
-        </mesh>
-        <mesh position={[0, -1.45, -0.45]} rotation={[-0.55, 0, 0]}>
-          <boxGeometry args={[5.2, 0.28, 2.3]} />
-          <meshStandardMaterial color="#778380" metalness={0.72} roughness={0.35} />
-        </mesh>
-        <mesh position={[0, -1.31, 0.44]} rotation={[-0.55, 0, 0]}>
-          <boxGeometry args={[2.3, 0.04, 0.85]} />
-          <meshStandardMaterial color="#1a2928" metalness={0.35} roughness={0.48} />
-        </mesh>
-      </group>
-
-      <group position={[-3.05, 0.15, 1.45]} rotation={[0.08, 0.33, -0.09]}>
-        <mesh>
-          <boxGeometry args={[1.68, 3.48, 0.21]} />
-          <meshStandardMaterial color="#1b2233" metalness={0.4} roughness={0.3} />
-        </mesh>
-        <mesh position={[0, 0, 0.121]}>
-          <planeGeometry args={[1.48, 3.24]} />
-          <meshBasicMaterial map={phoneTexture} toneMapped={false} />
-        </mesh>
-        <mesh position={[0, 1.5, 0.15]}>
-          <boxGeometry args={[0.42, 0.06, 0.04]} />
-          <meshStandardMaterial color="#1a2928" />
-        </mesh>
-      </group>
-
-      <mesh position={[0.2, -2.75, -1.6]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[11, 8]} />
-        <meshStandardMaterial color="#10151f" roughness={0.9} metalness={0.05} />
-      </mesh>
-    </group>
-  );
-}
-
-function HeroScene() {
-  return (
-    <div className="hero-scene" aria-hidden="true">
-      <Canvas camera={{ fov: 43, position: [0, 0, 12] }} dpr={[1, 1.5]} gl={{ antialias: true }}>
-        <color attach="background" args={["#0a0d14"]} />
-        <fog attach="fog" args={["#0a0d14", 9, 21]} />
-        <DeviceScene />
-      </Canvas>
+    <div className="hero-visual" aria-hidden="true">
+      <div className="mock mock-laptop">
+        <div className="mock-chrome">
+          <span />
+          <span />
+          <span />
+          <em>VS Code — Relay session</em>
+        </div>
+        <div className="mock-body">
+          <div className="mock-line dim">payments/retry-queue.ts · agent editing</div>
+          <div className="mock-line">
+            <b>relay ›</b> refactor the retry queue, add tests
+          </div>
+          <div className="mock-line ok">✓ 12 files changed · tests passing</div>
+          <div className="mock-line dim">Build mode · continues while you're away</div>
+        </div>
+      </div>
+      <div className="mock mock-phone">
+        <div className="phone-head">
+          <span className="pulse-dot" /> laptop connected
+        </div>
+        <div className="bubble agent">
+          Migration plan is ready — 3 steps, no data loss. Want me to start?
+        </div>
+        <div className="approval-card">
+          <div className="approval-kicker">Approval requested</div>
+          <div className="approval-cmd">pnpm test · workspace</div>
+          <div className="approval-actions">
+            <b>Allow once</b>
+            <span>Deny</span>
+          </div>
+        </div>
+        <div className="bubble user">Approved — continue with step 2</div>
+      </div>
     </div>
   );
 }
@@ -353,7 +191,7 @@ function App() {
   return (
     <main>
       <section className="hero" id="top">
-        <HeroScene />
+        <HeroVisual />
         <header className="site-header">
           <a className="brand" href="#top" aria-label="Relay by Bytical home">
             <span className="company-name">Bytical</span>

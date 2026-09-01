@@ -1192,3 +1192,189 @@ section {
     transition: none;
   }
 }
+
+/* == Hero visual: crisp HTML device mocks (replaces the 3D scene) == */
+.hero-visual {
+  position: absolute;
+  right: 4vw;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: -20px;
+  z-index: -1;
+  pointer-events: none;
+}
+.mock {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+.mock-laptop {
+  width: min(430px, 36vw);
+  transform: rotate(-2deg) translateX(36px);
+}
+.mock-chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.mock-chrome span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.mock-chrome em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--dim);
+  margin-left: 8px;
+}
+.mock-body {
+  padding: 18px 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  color: var(--ink);
+}
+.mock-line.dim {
+  color: var(--dim);
+}
+.mock-line.ok {
+  color: var(--accent);
+}
+.mock-line b {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mock-phone {
+  width: min(250px, 24vw);
+  padding: 18px 16px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 26px;
+  transform: rotate(2.5deg);
+  position: relative;
+  z-index: 1;
+  background: var(--surface-raised);
+}
+.phone-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+.bubble {
+  border-radius: 14px;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.bubble.agent {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+.bubble.user {
+  background: var(--grad);
+  color: #0a0d14;
+  font-weight: 600;
+  border-bottom-right-radius: 4px;
+  align-self: flex-end;
+  max-width: 88%;
+}
+.approval-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--bg-soft);
+}
+.approval-kicker {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.approval-cmd {
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.approval-actions {
+  display: flex;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.approval-actions b {
+  background: var(--grad);
+  color: #0a0d14;
+  border-radius: 8px;
+  padding: 6px 14px;
+}
+.approval-actions span {
+  color: var(--dim);
+  padding: 6px 4px;
+}
+
+@media (max-width: 980px) {
+  .hero {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    padding: 86px 0 40px;
+  }
+  .hero-copy {
+    position: static;
+    transform: none;
+    padding: 0 24px;
+    max-width: 560px;
+  }
+  .site-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+  .hero-visual {
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    justify-content: center;
+    margin: 28px auto 8px;
+    z-index: 0;
+    order: 9;
+  }
+  .mock-laptop {
+    display: none;
+  }
+  .mock-phone {
+    width: min(300px, 82vw);
+    transform: none;
+  }
+}

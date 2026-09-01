@@ -9,17 +9,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-three/fiber": "^9.1.0",
     "lucide-react": "^0.468.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "three": "^0.181.0"
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/react": "~19.2.0",
     "@types/react-dom": "~19.2.0",
-    "@types/three": "^0.181.0",
     "@vitejs/plugin-react": "^5.0.4",
     "typescript": "catalog:",
     "vite": "^7.0.0"
