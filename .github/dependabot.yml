@@ -8,6 +8,16 @@ updates:
     groups:
       development-dependencies:
         dependency-type: development
+    ignore:
+      # Expo SDK governs these versions (native-compat pins in pnpm-workspace.yaml);
+      # bumping them independently breaks the Android build — updated with SDK upgrades.
+      - dependency-name: react-native
+      - dependency-name: react-native-reanimated
+      - dependency-name: react-native-worklets
+      - dependency-name: react-native-safe-area-context
+      - dependency-name: react-native-screens
+      - dependency-name: react
+      - dependency-name: expo*
 
   - package-ecosystem: github-actions
     directory: /
