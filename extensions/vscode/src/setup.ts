@@ -16,6 +16,7 @@ export class ControllerLauncher {
   #child: ChildProcess | null = null;
   #stopping = false;
   #restarts = 0;
+  #recentErrors: string[] = [];
   mode: ControllerMode = "off";
 
   constructor(
@@ -97,7 +98,14 @@ export class ControllerLauncher {
     this.#child = child;
     this.#setMode("managed");
     child.stdout?.on("data", (d: Buffer) => this.output.append(d.toString()));
-    child.stderr?.on("data", (d: Buffer) => this.output.append(d.toString()));
+    child.stderr?.on("data", (d: Buffer) => {
+      const text = d.toString();
+      this.output.append(text);
+      // keep the tail for actionable crash notifications
+      this.#recentErrors = [...this.#recentErrors, ...text.split("\n")]
+        .filter((l) => l.trim())
+        .slice(-12);
+    });
     child.on("exit", (code) => {
       this.output.appendLine(`[launcher] controller exited (${code})`);
       this.#child = null;
@@ -110,11 +118,26 @@ export class ControllerLauncher {
         setTimeout(() => this.start(), 3000);
       } else {
         this.#setMode("off");
-        void vscode.window.showErrorMessage(
-          "Relay controller keeps crashing — check the Relay output for details.",
-        );
+        const hint = this.#diagnoseCrash();
+        void vscode.window
+          .showErrorMessage(`Relay controller keeps crashing — ${hint}`, "Show logs")
+          .then((pick) => {
+            if (pick) this.output.show(true);
+          });
       }
     });
+  }
+
+  /** Turn the stderr tail into a next step a human can act on. */
+  #diagnoseCrash(): string {
+    const tail = this.#recentErrors.join("\n");
+    if (/node:sqlite|ERR_UNKNOWN_BUILTIN_MODULE|experimental-sqlite/i.test(tail))
+      return "your Node.js is too old for Relay's built-in database. Install Node.js 24 LTS from nodejs.org, then run Set up again.";
+    if (/EADDRINUSE/.test(tail))
+      return "port 8347 is taken by another process (another Relay controller?). Stop it or reboot, then try again.";
+    if (/tsx|not recognized|command not found/i.test(tail))
+      return "dependencies look incomplete — run “Relay: Set up this computer” to reinstall.";
+    return `last error: ${this.#recentErrors.at(-1) ?? "see the Relay output"}`;
   }
 
   async stop(): Promise<void> {
@@ -147,11 +170,13 @@ export class ControllerLauncher {
     return existsSync(this.appPath());
   }
 
-  /** Poll healthz until the controller answers (first boot indexes projects). */
+  /** Poll healthz until the controller answers (first boot indexes projects).
+   * Aborts early when the supervisor gave up — no zombie spinners. */
   async waitUntilHealthy(timeoutMs = 120_000): Promise<boolean> {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
       if (await this.healthy()) return true;
+      if (this.mode === "off") return false;
       await new Promise((r) => setTimeout(r, 3000));
     }
     return false;
@@ -170,6 +195,7 @@ export class ControllerLauncher {
         this.#restarts = 0;
         return true;
       }
+      if (this.mode === "off") return false; // supervisor gave up — stop the spinner
       progress.report({
         message: `starting the controller… ${Math.round((Date.now() - t0) / 1000)}s (first boot indexes your projects)`,
       });
@@ -185,8 +211,9 @@ export class ControllerLauncher {
   async #checkPrereqs(): Promise<void> {
     const missing: string[] = [];
     if (!(await this.#versionOk("git", ["--version"], null))) missing.push("Git");
-    if (!(await this.#versionOk("node", ["--version"], 22)))
-      missing.push("Node.js 22.5+ (24 LTS recommended)");
+    // node:sqlite needs ≥23.4; require the 24 LTS so nobody lands on a crash loop
+    if (!(await this.#versionOk("node", ["--version"], 24)))
+      missing.push("Node.js 24 LTS or newer");
     if (missing.length > 0) {
       const pick = await vscode.window.showErrorMessage(
         `Relay needs ${missing.join(" and ")} installed first.`,

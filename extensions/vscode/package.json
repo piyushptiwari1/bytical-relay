@@ -2,7 +2,7 @@
   "name": "relay-by-bytical",
   "displayName": "Relay by Bytical",
   "description": "Control your dev machine and AI coding agents from your phone. One-click setup: this extension installs and runs the Relay controller, then pairs your phone with a QR code — end-to-end encrypted.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "publisher": "bytical",
   "license": "Apache-2.0",
@@ -78,7 +78,67 @@
           "description": "Start the Relay controller automatically when VS Code opens."
         }
       }
-    }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "relay-sidebar",
+          "title": "Relay",
+          "icon": "media/relay-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "relay-sidebar": [
+        {
+          "id": "relayHome",
+          "name": "Phone control",
+          "icon": "media/relay-icon.svg"
+        }
+      ]
+    },
+    "walkthroughs": [
+      {
+        "id": "relay.gettingStarted",
+        "title": "Control this computer from your phone",
+        "description": "Three steps: set up, pair, and hand work to your pocket.",
+        "steps": [
+          {
+            "id": "relay.step.setup",
+            "title": "Set up this computer",
+            "description": "Relay installs and runs its controller for you.\n[Set up](command:relay.setup)",
+            "media": {
+              "markdown": "media/walkthrough/setup.md"
+            },
+            "completionEvents": [
+              "onCommand:relay.setup"
+            ]
+          },
+          {
+            "id": "relay.step.pair",
+            "title": "Pair your phone",
+            "description": "Scan one QR — same Wi-Fi once, then anywhere.\n[Pair phone](command:relay.pair)",
+            "media": {
+              "markdown": "media/walkthrough/pair.md"
+            },
+            "completionEvents": [
+              "onCommand:relay.pair"
+            ]
+          },
+          {
+            "id": "relay.step.agents",
+            "title": "Start work, follow from your phone",
+            "description": "Hand the active workspace to an agent.\n[Open in Agents](command:rdc.openAgents)",
+            "media": {
+              "markdown": "media/walkthrough/agents.md"
+            },
+            "completionEvents": [
+              "onCommand:rdc.openAgents"
+            ]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

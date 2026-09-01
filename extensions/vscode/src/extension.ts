@@ -6,6 +6,7 @@ import { readControllerTarget } from "./config.ts";
 import { sendFeedback } from "./feedback.ts";
 import { openPairPanel } from "./pair.ts";
 import { ControllerLauncher } from "./setup.ts";
+import { RelaySidebar } from "./sidebar.ts";
 import {
   collectState,
   fromProjectRelative,
@@ -21,9 +22,11 @@ let client: ControllerClient | null = null;
 let status: vscode.StatusBarItem;
 let openInAgents: (() => Promise<void>) | null = null;
 let launcher: ControllerLauncher;
+let sidebar: RelaySidebar;
 let connectionState = "connecting";
 
 function renderStatus(): void {
+  sidebar?.update(launcher.mode, connectionState);
   if (connectionState === "ready") {
     status.text = "$(broadcast) Relay";
     status.tooltip = "Relay: connected — click for actions";
@@ -73,7 +76,9 @@ async function showMenu(context: vscode.ExtensionContext): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Relay");
+  sidebar = new RelaySidebar();
   launcher = new ControllerLauncher(context, output, () => renderStatus());
+  context.subscriptions.push(vscode.window.registerTreeDataProvider("relayHome", sidebar));
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
   status.command = "relay.menu";
   renderStatus();
