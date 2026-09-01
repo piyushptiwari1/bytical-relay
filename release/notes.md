@@ -1,5 +1,10 @@
 First public alpha of **Relay by Bytical** — control your dev machine and AI coding agents from your phone.
 
+## New in this release
+
+- **One-tap install & update**: [relay.bytical.ai/download](https://relay.bytical.ai/download) always serves the newest APK, and the in-app update banner downloads directly.
+- **Feedback everywhere**: review (1–5 ★), feature ideas, update requests, and bug reports — from the app, the website, and the VS Code extension. No account needed; goes straight to the maintainers.
+
 ## What's inside
 
 - **Android app (APK)** — install it, then pair with your desktop controller by scanning the QR code on the dashboard. Pairing needs the same Wi-Fi once; after that the app works from anywhere via the encrypted relay.
