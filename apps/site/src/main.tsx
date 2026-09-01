@@ -317,7 +317,7 @@ function DeviceScene() {
       <group position={[-3.05, 0.15, 1.45]} rotation={[0.08, 0.33, -0.09]}>
         <mesh>
           <boxGeometry args={[1.68, 3.48, 0.21]} />
-          <meshStandardMaterial color="#edf0eb" metalness={0.22} roughness={0.28} />
+          <meshStandardMaterial color="#1b2233" metalness={0.4} roughness={0.3} />
         </mesh>
         <mesh position={[0, 0, 0.121]}>
           <planeGeometry args={[1.48, 3.24]} />
@@ -331,7 +331,7 @@ function DeviceScene() {
 
       <mesh position={[0.2, -2.75, -1.6]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[11, 8]} />
-        <meshStandardMaterial color="#d9e0dd" roughness={0.9} metalness={0.05} />
+        <meshStandardMaterial color="#10151f" roughness={0.9} metalness={0.05} />
       </mesh>
     </group>
   );
@@ -341,8 +341,8 @@ function HeroScene() {
   return (
     <div className="hero-scene" aria-hidden="true">
       <Canvas camera={{ fov: 43, position: [0, 0, 12] }} dpr={[1, 1.5]} gl={{ antialias: true }}>
-        <color attach="background" args={["#edf0ee"]} />
-        <fog attach="fog" args={["#edf0ee", 9, 21]} />
+        <color attach="background" args={["#0a0d14"]} />
+        <fog attach="fog" args={["#0a0d14", 9, 21]} />
         <DeviceScene />
       </Canvas>
     </div>
