@@ -235,11 +235,21 @@ async function start(): Promise<void> {
 
 const program = new Command();
 program.name("rdc").description("remote-dev-control local controller").version("0.0.1");
-program.command("start", { isDefault: true }).description("run the controller").action(start);
+program
+  .command("start", { isDefault: true })
+  .description("run the controller")
+  // Electron-as-Node (snap/flatpak VS Code) injects extra argv entries — ignore them
+  .allowExcessArguments(true)
+  .allowUnknownOption(true)
+  .action(start);
 program
   .command("doctor")
   .description("environment sanity checks")
+  .allowExcessArguments(true)
+  .allowUnknownOption(true)
   .action(async () => {
     process.exitCode = await runDoctor();
   });
-await program.parseAsync();
+// strip Electron/Chromium runtime flags that leak into argv under some launchers
+const argv = process.argv.filter((a) => !/^--(ms-enable|no-sandbox|unity|enable-crash)/.test(a));
+await program.parseAsync(argv);
