@@ -32,6 +32,23 @@ jobs:
           pnpm --filter relay-by-bytical package
           mv extensions/vscode/*.vsix .
 
+      - name: Build standalone controller (zero-dependency install)
+        run: |
+          pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
+          mkdir -p standalone
+          cp apps/desktop-controller/dist/controller.mjs standalone/
+          # natives with the exact versions the monorepo tested, resolved by npm
+          PTY=$(node -p "require('@lydell/node-pty/package.json').version")
+          WATCHER=$(node -p "require('@parcel/watcher/package.json').version")
+          KOFFI=$(node -p "require('koffi/package.json').version")
+          cd standalone
+          npm install --omit=dev --no-audit --no-fund --force \
+            "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
+          rm -f package.json package-lock.json
+          cd ..
+          tar -czf relay-controller-standalone.tgz -C standalone .
+          ls -la relay-controller-standalone.tgz
+
       - name: Download and verify APK
         run: |
           python3 - <<'EOF'
@@ -65,6 +82,7 @@ jobs:
             "relay-by-bytical.apk#Relay for Android — direct download (APK)" \
             "relay-by-bytical-${{ github.ref_name }}.apk#Relay for Android (versioned APK)" \
             "${VSIX}#Relay for VS Code (VSIX)" \
+            "relay-controller-standalone.tgz#Relay controller — standalone (used by the extension)" \
             --title "Relay by Bytical — ${{ github.ref_name }}" \
             --notes-file release/notes.md
 
@@ -103,3 +121,22 @@ jobs:
           pnpm --filter relay-by-bytical package
           cd extensions/vscode
           pnpm exec vsce publish --no-dependencies --packagePath ./relay-by-bytical-*.vsix -p "$VSCE_PAT"
+      - name: Refresh standalone controller on the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
+          mkdir -p standalone
+          cp apps/desktop-controller/dist/controller.mjs standalone/
+          PTY=$(node -p "require('@lydell/node-pty/package.json').version")
+          WATCHER=$(node -p "require('@parcel/watcher/package.json').version")
+          KOFFI=$(node -p "require('koffi/package.json').version")
+          cd standalone
+          npm install --omit=dev --no-audit --no-fund --force \
+            "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
+          rm -f package.json package-lock.json
+          cd ..
+          tar -czf relay-controller-standalone.tgz -C standalone .
+          TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+          gh release upload "$TAG" relay-controller-standalone.tgz --clobber
+          echo "uploaded standalone to $TAG"

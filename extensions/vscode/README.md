@@ -5,9 +5,9 @@ Control your dev machine and AI coding agents **from your phone** — end-to-end
 ## Two clicks to set up
 
 1. Install this extension.
-2. Run **“Relay: Set up this computer”** (Command Palette or the Relay status-bar item).
+2. Run **“Relay: Set up this computer”** (Command Palette or the Relay activity-bar icon).
 
-The extension downloads and runs the Relay controller for you, then opens the pairing panel: scan the QR with the [Relay Android app](https://github.com/piyushptiwari1/bytical-relay/releases/latest), check the emoji fingerprints match, confirm — done. Pairing needs the same Wi-Fi once; after that your phone works from anywhere via the encrypted relay.
+Relay downloads its prebuilt controller (~12 MB, one time) and runs it on VS Code's own runtime — **no Node, no Git, nothing else to install**. Then the pairing panel opens: scan the QR with the [Relay Android app](https://relay.bytical.ai/download), check the emoji fingerprints match, confirm — done. Pairing needs the same Wi-Fi once; after that your phone works from anywhere via the encrypted relay.
 
 ## What you get
 
@@ -26,6 +26,6 @@ The extension downloads and runs the Relay controller for you, then opens the pa
 | Relay: Open in Agents | Start an agent for this workspace, follow it on your phone |
 | Relay: Stop controller / Show logs | Housekeeping |
 
-Requires Git and Node.js 22.5+ on this machine. Contributors can point `relay.appPath` at an existing checkout.
+Zero prerequisites for the standard install. Contributors can point `relay.appPath` at a source checkout (needs Git + Node 24).
 
 Apache-2.0 · [Source](https://github.com/piyushptiwari1/bytical-relay) · [Website](https://relay.bytical.ai)

@@ -3,18 +3,20 @@ import type { spawn as PtySpawnType } from "@lydell/node-pty";
 import type { TerminalInfo, TerminalSnapshot } from "@rdc/protocol";
 import { newEventId, nowIso, TypedEmitter } from "@rdc/shared";
 import type { Terminal as XtermTerminal } from "@xterm/headless";
+// CJS without ESM named exports — default-import + destructure (bundler-safe)
+import xtermHeadless from "@xterm/headless";
 import { detectShells, ptyEnv, type ShellOption } from "./shells.ts";
 import { snapshotBuffer } from "./snapshot.ts";
 
-const requireLocal = createRequire(import.meta.url);
-// @xterm/headless ships CJS without ESM named exports — load via require.
-const { Terminal } = requireLocal("@xterm/headless") as typeof import("@xterm/headless");
+const { Terminal } = xtermHeadless as unknown as typeof import("@xterm/headless");
 
 // Optional native module: standalone builds without the pty prebuild still
 // boot — terminal creation then fails with a clear, actionable error.
 let ptySpawn: typeof PtySpawnType | null = null;
 try {
-  ptySpawn = (requireLocal("@lydell/node-pty") as typeof import("@lydell/node-pty")).spawn;
+  ptySpawn = (
+    createRequire(import.meta.url)("@lydell/node-pty") as typeof import("@lydell/node-pty")
+  ).spawn;
 } catch {
   ptySpawn = null;
 }

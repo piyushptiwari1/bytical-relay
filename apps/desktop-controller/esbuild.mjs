@@ -11,6 +11,10 @@ await build({
   format: "esm",
   target: "node22",
   external: ["@lydell/node-pty", "@parcel/watcher", "koffi"],
+  banner: {
+    // bundled CJS deps require() node builtins — give the ESM output a real require
+    js: "import { createRequire as __rdcCreateRequire } from 'node:module'; const require = __rdcCreateRequire(import.meta.url);",
+  },
   sourcemap: false,
   logLevel: "info",
 });

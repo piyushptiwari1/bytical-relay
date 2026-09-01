@@ -1,9 +1,13 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as vscode from "vscode";
 
 const REPO_URL = "https://github.com/piyushptiwari1/bytical-relay.git";
+const STANDALONE_ASSET =
+  "https://github.com/piyushptiwari1/bytical-relay/releases/latest/download/relay-controller-standalone.tgz";
+const RELEASE_API = "https://api.github.com/repos/piyushptiwari1/bytical-relay/releases/latest";
 const HEALTH_TIMEOUT_MS = 180_000;
 const PORT = 8347;
 
@@ -31,6 +35,17 @@ export class ControllerLauncher {
     return path.join(this.context.globalStorageUri.fsPath, "app");
   }
 
+  /** Contributor mode: a configured checkout runs via pnpm; everyone else gets
+   * the downloaded standalone bundle on VS Code's own Node runtime. */
+  #contributorPath(): string | null {
+    const configured = vscode.workspace.getConfiguration("relay").get<string>("appPath");
+    return configured?.trim() ? configured.trim() : null;
+  }
+
+  #standaloneDir(): string {
+    return path.join(this.context.globalStorageUri.fsPath, "controller");
+  }
+
   async healthy(): Promise<boolean> {
     try {
       const controller = new AbortController();
@@ -45,7 +60,8 @@ export class ControllerLauncher {
     }
   }
 
-  /** One-click setup: prereqs → clone/update → install → start → wait healthy. */
+  /** One-click setup. Default: download the prebuilt controller and run it on
+   * VS Code's bundled Node — no Git, no Node, no pnpm on the machine. */
   async setup(): Promise<void> {
     if (await this.healthy()) {
       this.#setMode("external");
@@ -54,23 +70,15 @@ export class ControllerLauncher {
       );
       return;
     }
+    const contributor = this.#contributorPath();
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Relay", cancellable: false },
       async (progress) => {
-        progress.report({ message: "checking prerequisites…" });
-        await this.#checkPrereqs();
-        const dir = this.appPath();
-        if (existsSync(path.join(dir, ".git"))) {
-          progress.report({ message: "updating Relay…" });
-          await this.#run("git", ["pull", "--ff-only"], dir).catch(() => {
-            this.output.appendLine("git pull failed — continuing with the existing checkout");
-          });
+        if (contributor) {
+          await this.#setupFromCheckout(contributor, progress);
         } else {
-          progress.report({ message: "downloading Relay (one time)…" });
-          await this.#run("git", ["clone", "--depth", "1", REPO_URL, dir], undefined);
+          await this.#setupStandalone(progress);
         }
-        progress.report({ message: "installing dependencies (one time, a few minutes)…" });
-        await this.#run(...this.#pnpm(["install", "--frozen-lockfile"]), dir);
         progress.report({ message: "starting the controller…" });
         this.start();
         const ok = await this.#waitHealthy(progress);
@@ -79,12 +87,71 @@ export class ControllerLauncher {
     );
   }
 
+  async #setupStandalone(progress: vscode.Progress<{ message?: string }>): Promise<void> {
+    progress.report({ message: "downloading the controller (one time, ~15s)…" });
+    const dir = this.#standaloneDir();
+    const tgz = path.join(this.context.globalStorageUri.fsPath, "controller.tgz");
+    await mkdir(dir, { recursive: true });
+    const response = await fetch(STANDALONE_ASSET, { redirect: "follow" });
+    if (!response.ok) throw new Error(`download failed (HTTP ${response.status})`);
+    await writeFile(tgz, Buffer.from(await response.arrayBuffer()));
+    progress.report({ message: "unpacking…" });
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+    // bsdtar ships with Windows 10+, macOS, and Linux
+    await this.#run("tar", ["-xzf", tgz, "-C", dir], undefined);
+    await rm(tgz, { force: true });
+    try {
+      const meta = (await (await fetch(RELEASE_API)).json()) as { tag_name?: string };
+      if (meta.tag_name)
+        await this.context.globalState.update("relay.controllerTag", meta.tag_name);
+    } catch {
+      // tag bookkeeping only
+    }
+  }
+
+  async #setupFromCheckout(
+    dir: string,
+    progress: vscode.Progress<{ message?: string }>,
+  ): Promise<void> {
+    progress.report({ message: "checking prerequisites…" });
+    await this.#checkPrereqs();
+    if (existsSync(path.join(dir, ".git"))) {
+      progress.report({ message: "updating Relay…" });
+      await this.#run("git", ["pull", "--ff-only"], dir).catch(() => {
+        this.output.appendLine("git pull failed — continuing with the existing checkout");
+      });
+    } else {
+      progress.report({ message: "downloading Relay (one time)…" });
+      await this.#run("git", ["clone", "--depth", "1", REPO_URL, dir], undefined);
+    }
+    progress.report({ message: "installing dependencies (one time, a few minutes)…" });
+    await this.#run(...this.#pnpm(["install", "--frozen-lockfile"]), dir);
+  }
+
   /** Spawn + supervise. No-op when already managed or an external one answers. */
   start(): void {
     if (this.#child) return;
     this.#stopping = false;
-    const dir = this.appPath();
-    if (!existsSync(dir)) {
+    const contributor = this.#contributorPath();
+    const standalone = path.join(this.#standaloneDir(), "controller.mjs");
+    let cmd: string;
+    let args: string[];
+    let cwd: string;
+    let useShell: boolean;
+    let env = process.env as NodeJS.ProcessEnv;
+    if (contributor) {
+      [cmd, args] = this.#pnpm(["--filter", "@rdc/desktop-controller", "dev"]);
+      cwd = contributor;
+      useShell = true;
+    } else if (existsSync(standalone)) {
+      // VS Code's own runtime — zero system dependencies
+      cmd = process.execPath;
+      args = [standalone, "start"];
+      cwd = this.#standaloneDir();
+      useShell = false;
+      env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
+    } else {
       void vscode.window
         .showInformationMessage("Relay is not set up on this computer yet.", "Set up now")
         .then((pick) => {
@@ -92,9 +159,8 @@ export class ControllerLauncher {
         });
       return;
     }
-    const [cmd, args] = this.#pnpm(["--filter", "@rdc/desktop-controller", "dev"]);
-    this.output.appendLine(`[launcher] ${cmd} ${args.join(" ")} (cwd ${dir})`);
-    const child = spawn(cmd, args, { cwd: dir, shell: true, windowsHide: true });
+    this.output.appendLine(`[launcher] ${cmd} ${args.join(" ")} (cwd ${cwd})`);
+    const child = spawn(cmd, args, { cwd, shell: useShell, windowsHide: true, env });
     this.#child = child;
     this.#setMode("managed");
     child.stdout?.on("data", (d: Buffer) => this.output.append(d.toString()));
@@ -163,11 +229,14 @@ export class ControllerLauncher {
       return;
     }
     const autoStart = vscode.workspace.getConfiguration("relay").get<boolean>("autoStart", true);
-    if (autoStart && existsSync(this.appPath())) this.start();
+    if (autoStart && this.isSetUp()) this.start();
   }
 
   isSetUp(): boolean {
-    return existsSync(this.appPath());
+    return (
+      existsSync(path.join(this.#standaloneDir(), "controller.mjs")) ||
+      this.#contributorPath() !== null
+    );
   }
 
   /** Poll healthz until the controller answers (first boot indexes projects).

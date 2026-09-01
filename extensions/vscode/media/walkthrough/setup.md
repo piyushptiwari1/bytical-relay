@@ -1,9 +1,7 @@
 # Set up this computer
 
-One click. Relay downloads its controller, installs dependencies, starts it, and keeps it running.
-
-**Needs:** Git and Node.js 24 LTS ([nodejs.org](https://nodejs.org/en/download)).
+One click. Relay downloads its prebuilt controller (~12 MB) and runs it on VS Code's own runtime — **nothing else to install**. No Node, no Git, no package managers.
 
 [Set up this computer](command:relay.setup)
 
-You can point Relay at an existing checkout instead with the `relay.appPath` setting.
+Contributors can point Relay at a source checkout with the `relay.appPath` setting (that path needs Git + Node 24).
