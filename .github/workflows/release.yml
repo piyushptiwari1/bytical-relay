@@ -45,6 +45,7 @@ jobs:
           KOFFI=$(ver apps/desktop-controller koffi)
           echo "pty=$PTY watcher=$WATCHER koffi=$KOFFI"
           cd standalone
+          echo '{"name":"relay-standalone","private":true}' > package.json
           npm install --omit=dev --no-audit --no-fund --force \
             "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
           rm -f package.json package-lock.json
@@ -140,6 +141,7 @@ jobs:
           KOFFI=$(ver apps/desktop-controller koffi)
           echo "pty=$PTY watcher=$WATCHER koffi=$KOFFI"
           cd standalone
+          echo '{"name":"relay-standalone","private":true}' > package.json
           npm install --omit=dev --no-audit --no-fund --force \
             "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
           rm -f package.json package-lock.json
