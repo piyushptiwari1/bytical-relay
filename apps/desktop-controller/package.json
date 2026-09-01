@@ -12,10 +12,10 @@
   "dependencies": {
     "@fastify/websocket": "catalog:",
     "@parcel/watcher": "catalog:",
-    "@rdc/event-store": "workspace:*",
-    "@rdc/filesystem": "workspace:*",
     "@rdc/agent-acp": "workspace:*",
     "@rdc/agent-core": "workspace:*",
+    "@rdc/event-store": "workspace:*",
+    "@rdc/filesystem": "workspace:*",
     "@rdc/git": "workspace:*",
     "@rdc/protocol": "workspace:*",
     "@rdc/security": "workspace:*",
@@ -36,6 +36,7 @@
     "@types/node": "catalog:",
     "@types/qrcode": "catalog:",
     "@types/ws": "^8.18.0",
+    "esbuild": "^0.28.2",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

@@ -1,6 +1,19 @@
 import path from "node:path";
-import watcher from "@parcel/watcher";
+import type watcher from "@parcel/watcher";
 import { normalizeRelPath } from "./canonical.ts";
+
+// Native module — optional in the single-file standalone build. Without it,
+// live watching is off and the boot/periodic reconciler carries the load.
+let watcherModule: typeof watcher | null | undefined;
+async function loadWatcher(): Promise<typeof watcher | null> {
+  if (watcherModule !== undefined) return watcherModule;
+  try {
+    watcherModule = (await import("@parcel/watcher")).default;
+  } catch {
+    watcherModule = null;
+  }
+  return watcherModule;
+}
 
 export interface WatchedChange {
   type: "create" | "update" | "delete";
@@ -40,7 +53,9 @@ export class ProjectWatcher {
       opts.debounceMs ?? 75,
       opts.maxBatch ?? 500,
     );
-    instance.#subscription = await watcher.subscribe(
+    const mod = await loadWatcher();
+    if (!mod) return instance; // degraded: reconciler-only, no live events
+    instance.#subscription = await mod.subscribe(
       rootAbs,
       (error, events) => {
         if (error) return; // reconciler is the safety net for watcher hiccups

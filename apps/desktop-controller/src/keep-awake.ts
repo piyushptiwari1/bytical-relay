@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import type { KeepAwakeState } from "@rdc/protocol";
-import koffi from "koffi";
 
 // SetThreadExecutionState flags (winbase.h)
 const ES_CONTINUOUS = 0x80000000;
@@ -58,7 +58,9 @@ class SpawnStrategy implements AwakeStrategy {
 export function defaultStrategy(): AwakeStrategy {
   if (process.platform === "win32") {
     try {
-      const kernel32 = koffi.load("kernel32.dll");
+      // optional native module — standalone builds run without keep-awake
+      const koffiModule = createRequire(import.meta.url)("koffi") as typeof import("koffi");
+      const kernel32 = koffiModule.load("kernel32.dll");
       const call = kernel32.func("SetThreadExecutionState", "uint32", ["uint32"]) as (
         flags: number,
       ) => number;
@@ -99,6 +101,7 @@ export function defaultStrategy(): AwakeStrategy {
 export class KeepAwake {
   readonly #strategy: AwakeStrategy;
   #enabled = false;
+  #autoHold = false;
   #until: number | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #reassert: ReturnType<typeof setInterval> | null = null;
@@ -127,7 +130,6 @@ export class KeepAwake {
 
   enable(ttlMinutes?: number): KeepAwakeState {
     if (!this.supported) return this.state();
-    this.#strategy.activate();
     this.#enabled = true;
     this.#clearTimer();
     if (ttlMinutes !== undefined) {
@@ -137,12 +139,7 @@ export class KeepAwake {
     } else {
       this.#until = null;
     }
-    if (!this.#reassert) {
-      this.#reassert = setInterval(() => {
-        if (this.#enabled) this.#strategy.activate();
-      }, 60_000);
-      (this.#reassert as { unref?: () => void }).unref?.();
-    }
+    this.#settle();
     const state = this.state();
     this.#onChange?.(state);
     return state;
@@ -150,14 +147,38 @@ export class KeepAwake {
 
   disable(): KeepAwakeState {
     this.#clearTimer();
-    if (this.#reassert) clearInterval(this.#reassert);
-    this.#reassert = null;
-    if (this.supported && this.#enabled) this.#strategy.deactivate();
     this.#enabled = false;
     this.#until = null;
+    this.#settle();
     const state = this.state();
     this.#onChange?.(state);
     return state;
+  }
+
+  /** Fluidity policy: hold the machine awake while agents run or phones are
+   * connected — no toggle needed. Manual enable/disable stays authoritative;
+   * the hold only adds, never removes, wakefulness. */
+  setAutoHold(active: boolean): void {
+    if (this.#autoHold === active) return;
+    this.#autoHold = active;
+    this.#settle();
+  }
+
+  /** Reconcile the OS assertion with (manual || auto) without touching state(). */
+  #settle(): void {
+    if (!this.supported) return;
+    const want = this.#enabled || this.#autoHold;
+    if (want) {
+      this.#strategy.activate();
+      if (!this.#reassert) {
+        this.#reassert = setInterval(() => this.#strategy.activate(), 60_000);
+        (this.#reassert as { unref?: () => void }).unref?.();
+      }
+    } else {
+      if (this.#reassert) clearInterval(this.#reassert);
+      this.#reassert = null;
+      this.#strategy.deactivate();
+    }
   }
 
   #clearTimer(): void {

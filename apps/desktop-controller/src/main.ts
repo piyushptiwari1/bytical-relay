@@ -87,6 +87,24 @@ async function start(): Promise<void> {
   );
   const terminals = new TerminalManager();
 
+  // Fluidity policy: never sleep mid-chat. Hold the machine awake while agents
+  // run or a phone is connected; release 5 minutes after both go quiet.
+  const LIVE_AGENT = new Set(["starting", "running", "awaiting_approval"]);
+  let phoneConnections = 0;
+  let autoAwakeLinger: ReturnType<typeof setTimeout> | null = null;
+  const settleAutoAwake = () => {
+    const busy = phoneConnections > 0 || agents.list().some((s) => LIVE_AGENT.has(s.status));
+    if (busy) {
+      if (autoAwakeLinger) clearTimeout(autoAwakeLinger);
+      autoAwakeLinger = null;
+      keepAwake.setAutoHold(true);
+    } else if (!autoAwakeLinger) {
+      autoAwakeLinger = setTimeout(() => keepAwake.setAutoHold(false), 5 * 60_000);
+      (autoAwakeLinger as { unref?: () => void }).unref?.();
+    }
+  };
+  agents.emitter.on("journaled", () => settleAutoAwake());
+
   logger.info({ roots: config.project_roots }, "detecting projects");
   const git = new GitService();
   const detected = await detectProjects(config.project_roots);
@@ -124,6 +142,10 @@ async function start(): Promise<void> {
     keys,
     devices,
     pairing,
+    onDeviceConnections: (count) => {
+      phoneConnections = count;
+      settleAutoAwake();
+    },
     fsService,
     fsIndex,
     eventStore,

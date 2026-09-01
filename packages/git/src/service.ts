@@ -1,5 +1,5 @@
 import path from "node:path";
-import watcher from "@parcel/watcher";
+import type watcher from "@parcel/watcher";
 import type { GitState } from "@rdc/protocol";
 import { stableStringify, TypedEmitter } from "@rdc/shared";
 import { assertSafeRepoPaths, runGit } from "./runner.ts";
@@ -100,7 +100,13 @@ export class GitService {
   async watch(projectId: string): Promise<void> {
     const gitDir = path.join(this.rootOf(projectId), ".git");
     if (this.#watchers.has(projectId)) return;
-    const sub = await watcher.subscribe(gitDir, (error, events) => {
+    let mod: typeof watcher;
+    try {
+      mod = (await import("@parcel/watcher")).default;
+    } catch {
+      return; // optional native module absent — scheduleRefresh covers updates
+    }
+    const sub = await mod.subscribe(gitDir, (error, events) => {
       if (error) return;
       if (events.some((e) => GIT_DIR_RELEVANT.test(e.path))) this.scheduleRefresh(projectId);
     });

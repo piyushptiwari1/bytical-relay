@@ -89,4 +89,28 @@ describe("KeepAwake", () => {
     }
     expect(() => ka.disable()).not.toThrow();
   });
+
+  test("auto-hold keeps the machine awake without flipping manual state", () => {
+    const { strategy, calls } = tracked();
+    const ka = new KeepAwake(strategy);
+
+    ka.setAutoHold(true); // agents started working
+    expect(calls).toEqual(["activate"]);
+    expect(ka.state().enabled).toBe(false); // manual toggle untouched
+
+    ka.setAutoHold(true); // idempotent
+    expect(calls).toEqual(["activate"]);
+
+    ka.setAutoHold(false); // work finished
+    expect(calls).toEqual(["activate", "deactivate"]);
+
+    // manual enable wins over auto release
+    ka.enable();
+    ka.setAutoHold(true);
+    ka.setAutoHold(false);
+    expect(ka.state().enabled).toBe(true);
+    expect(calls.at(-1)).not.toBe("deactivate"); // still held by manual intent
+    ka.disable();
+    expect(calls.at(-1)).toBe("deactivate");
+  });
 });

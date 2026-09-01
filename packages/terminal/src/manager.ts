@@ -1,19 +1,27 @@
 import { createRequire } from "node:module";
-import { spawn as ptySpawn } from "@lydell/node-pty";
+import type { spawn as PtySpawnType } from "@lydell/node-pty";
 import type { TerminalInfo, TerminalSnapshot } from "@rdc/protocol";
 import { newEventId, nowIso, TypedEmitter } from "@rdc/shared";
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import { detectShells, ptyEnv, type ShellOption } from "./shells.ts";
 import { snapshotBuffer } from "./snapshot.ts";
 
+const requireLocal = createRequire(import.meta.url);
 // @xterm/headless ships CJS without ESM named exports — load via require.
-const { Terminal } = createRequire(import.meta.url)(
-  "@xterm/headless",
-) as typeof import("@xterm/headless");
+const { Terminal } = requireLocal("@xterm/headless") as typeof import("@xterm/headless");
+
+// Optional native module: standalone builds without the pty prebuild still
+// boot — terminal creation then fails with a clear, actionable error.
+let ptySpawn: typeof PtySpawnType | null = null;
+try {
+  ptySpawn = (requireLocal("@lydell/node-pty") as typeof import("@lydell/node-pty")).spawn;
+} catch {
+  ptySpawn = null;
+}
 
 interface ManagedTerminal {
   info: TerminalInfo;
-  pty: ReturnType<typeof ptySpawn>;
+  pty: ReturnType<typeof PtySpawnType>;
   term: XtermTerminal;
   seq: number;
   notify: ReturnType<typeof setTimeout> | null;
@@ -43,6 +51,10 @@ export class TerminalManager {
   }
 
   create(opts: { cwd: string; shell?: string; cols?: number; rows?: number }): TerminalInfo {
+    if (!ptySpawn)
+      throw new Error(
+        "terminals are unavailable in this install (missing pty support) — update Relay on this computer",
+      );
     const shells = detectShells();
     const shell = shells.find((s) => s.id === opts.shell) ?? shells[0];
     if (!shell) throw new Error("no shell available on this machine");

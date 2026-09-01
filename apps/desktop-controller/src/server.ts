@@ -60,6 +60,8 @@ export interface ServerDeps {
   terminals: TerminalManager;
   audit?: AuditLog;
   relay?: { url: string; token: string };
+  /** fired with the number of authenticated phone sockets whenever it changes */
+  onDeviceConnections?: (count: number) => void;
   /** owner analytics console (/data) — password + data dir; absent = disabled */
   dataConsole?: { password: string; dataDir: string; analytics?: { url: string; token: string } };
 }
@@ -201,6 +203,11 @@ export async function buildServer(deps: ServerDeps): Promise<{
   );
   const dispatcher = new ControllerDispatcher(deps);
   const clients = new Map<WsLike, ConnectedClient>();
+  const notifyDeviceConnections = () => {
+    let phones = 0;
+    for (const client of clients.values()) if (client.ctx.authenticatedDeviceId) phones++;
+    deps.onDeviceConnections?.(phones);
+  };
   const sendAgentPush = (message: PushMessage) => {
     const tokens = deps.devices.allPushTokens("agents.control");
     if (tokens.length === 0) return;
@@ -465,6 +472,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
     };
     clients.set(socket, { ctx, sendJson });
     deps.editors.attach(ctx, sendJson);
+    notifyDeviceConnections();
 
     const afterDispatch = () => {
       // server's secretstream header goes out right after the hello exchange
@@ -535,6 +543,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
     socket.on("close", () => {
       clients.delete(socket);
       deps.editors.detach(ctx);
+      notifyDeviceConnections();
     });
   };
 
