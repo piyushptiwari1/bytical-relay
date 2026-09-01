@@ -67,6 +67,7 @@ export default function AgentsHome() {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"build" | "plan" | "ask">("build");
   const [model, setModel] = useState("");
+  const [providerId, setProviderId] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +96,11 @@ export default function AgentsHome() {
   if (!machine) return null;
   const canControl = hasScope(scopes, "agents.control");
   const copilot = providers.find((p) => p.id === "copilot");
+  const availableProviders = providers.filter((p) => p.available);
+  const chosenProvider =
+    providers.find((p) => p.id === providerId && p.available) ??
+    (copilot?.available ? copilot : availableProviders[0]);
+  const providerLabel = (id: string) => (id === "copilot" ? "Copilot" : id === "claude" ? "Claude" : id);
   const chosenProject =
     projects.find((p) => p.project_id === (projectId ?? focusProject ?? "")) ?? projects[0];
   const inScope = (pid: string | null) => focusProject === null || pid === focusProject;
@@ -106,13 +112,13 @@ export default function AgentsHome() {
     projects.find((p) => p.project_id === id)?.name ?? id.slice(0, 12);
 
   const start = async () => {
-    if (!canControl || !chosenProject || prompt.trim().length === 0) return;
+    if (!canControl || !chosenProject || !chosenProvider || prompt.trim().length === 0) return;
     setBusy(true);
     try {
       const { session } = await agentStart(
         machine,
         chosenProject.project_id,
-        "copilot",
+        chosenProvider.id,
         prompt.trim(),
         { mode, ...(model.trim() ? { model: model.trim() } : {}) },
       );
@@ -218,7 +224,7 @@ export default function AgentsHome() {
           </Text>
         </View>
       ) : null}
-      {/* composer — "New session in <project> with Copilot" */}
+      {/* composer — "New session in <project> with <provider>" */}
       <Card style={{ gap: space.md }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Text style={type_.caption}>New session in</Text>
@@ -226,10 +232,41 @@ export default function AgentsHome() {
             📁 {chosenProject?.name ?? "—"}
           </Text>
           <Text style={type_.caption}>with</Text>
-          <Text style={{ ...type_.caption, color: colors.text, fontWeight: "600" }}>✦ Copilot</Text>
+          <Text style={{ ...type_.caption, color: colors.text, fontWeight: "600" }}>
+            ✦ {chosenProvider ? providerLabel(chosenProvider.id) : "—"}
+          </Text>
           <View style={{ flex: 1 }} />
-          <StatusDot color={copilot?.available ? colors.ok : colors.bad} />
+          <StatusDot color={chosenProvider?.available ? colors.ok : colors.bad} />
         </View>
+
+        {providers.length > 1 ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+            {providers.map((p) => {
+              const active = chosenProvider?.id === p.id;
+              return (
+                <Pressable
+                  key={p.id}
+                  disabled={!p.available}
+                  onPress={() => setProviderId(p.id)}
+                  style={{
+                    backgroundColor: active ? colors.accentSoft : "transparent",
+                    borderColor: active ? colors.accent : colors.border,
+                    borderWidth: 1,
+                    borderRadius: 999,
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    opacity: p.available ? 1 : 0.45,
+                  }}
+                >
+                  <Text style={{ color: active ? colors.accent : colors.dim, fontSize: 12.5 }}>
+                    {providerLabel(p.id)}
+                    {p.available ? "" : " · not installed"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         <TextInput
           value={prompt}
@@ -347,7 +384,7 @@ export default function AgentsHome() {
           disabled={
             busy ||
             !canControl ||
-            !copilot?.available ||
+            !chosenProvider?.available ||
             prompt.trim().length === 0 ||
             !chosenProject
           }
@@ -356,9 +393,9 @@ export default function AgentsHome() {
               ? "starting…"
               : !canControl
                 ? "Work controls unavailable"
-                : copilot?.available
-                  ? "Start session"
-                  : (copilot?.detail ?? "checking Copilot…")
+                : chosenProvider?.available
+                  ? `Start with ${providerLabel(chosenProvider.id)}`
+                  : (chosenProvider?.detail ?? "no agent provider available")
           }
           onPress={() => void start()}
         />

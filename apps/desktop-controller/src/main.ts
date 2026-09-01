@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { copilotAdapter } from "@rdc/agent-acp";
+import { claudeAdapter, copilotAdapter } from "@rdc/agent-acp";
 import { SqliteEventStore } from "@rdc/event-store";
 import { detectProjects, FilesystemService, FsIndex } from "@rdc/filesystem";
 import { GitService } from "@rdc/git";
@@ -93,7 +93,7 @@ async function start(): Promise<void> {
       sessions: new SessionStore(path.join(dir, "sessions.db")),
       vscodeChats: new VsCodeChatReader(),
     },
-    [copilotAdapter()],
+    [copilotAdapter(), claudeAdapter()],
   );
   const terminals = new TerminalManager();
 
