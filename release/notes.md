@@ -2,6 +2,9 @@ First public alpha of **Relay by Bytical** — control your dev machine and AI c
 
 ## New in this release
 
+- **App icon** — Relay finally looks like Relay on your home screen (launcher + adaptive icon + splash).
+- **Job profiles** — start sessions as **Build** (full edit), **Plan**, or **Ask**. Plan and Ask are truly read-only: the controller denies any file change or command the agent attempts, by policy.
+- **Model override** — pick a specific model under “advanced” in the composer.
 - **One-tap install & update**: [relay.bytical.ai/download](https://relay.bytical.ai/download) always serves the newest APK, and the in-app update banner downloads directly.
 - **Feedback everywhere**: review (1–5 ★), feature ideas, update requests, and bug reports — from the app, the website, and the VS Code extension. No account needed; goes straight to the maintainers.
 
