@@ -80,7 +80,8 @@ jobs:
             exit 0
           fi
           cd extensions/vscode
-          pnpm exec vsce publish --no-dependencies --packagePath ../../relay-by-bytical-*.vsix -p "$VSCE_PAT"
+          # idempotent: dispatch publishes may already have shipped this version
+          pnpm exec vsce publish --no-dependencies --packagePath ../../relay-by-bytical-*.vsix -p "$VSCE_PAT" 2>&1 | tee publish.log || grep -q "already exists" publish.log
 
   # Manually triggered: republish just the extension (e.g. icon/metadata fix)
   publish-extension:
