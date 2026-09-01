@@ -39,6 +39,16 @@ async function start(): Promise<void> {
   );
 
   const releaseLock = acquireSingleInstanceLock(dir);
+
+  // Last-resort containment: subsystem faults (inotify limits, watcher races,
+  // provider crashes) must degrade the controller, never kill the phone link.
+  process.on("uncaughtException", (cause) => {
+    logger.error({ cause: String(cause?.stack ?? cause) }, "uncaught exception — continuing");
+  });
+  process.on("unhandledRejection", (cause) => {
+    logger.error({ cause: String(cause) }, "unhandled rejection — continuing");
+  });
+
   const keys = loadOrCreateKeys(dir);
   const devices = new DeviceStore(path.join(dir, "devices.db"));
   const audit = new AuditLog(path.join(dir, "audit.db"));
@@ -110,7 +120,9 @@ async function start(): Promise<void> {
   const detected = await detectProjects(config.project_roots);
   for (const project of detected) {
     const files = await fsService.addProject(project);
-    await fsService.startWatching(project.project_id);
+    await fsService
+      .startWatching(project.project_id)
+      .catch((cause) => logger.warn({ cause: String(cause) }, "fs watch failed — reconciler-only"));
     if (project.vcs === "git") {
       git.register({ project_id: project.project_id, root_path: project.root_path });
       git

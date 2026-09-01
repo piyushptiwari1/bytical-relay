@@ -55,14 +55,33 @@ export class ProjectWatcher {
     );
     const mod = await loadWatcher();
     if (!mod) return instance; // degraded: reconciler-only, no live events
-    instance.#subscription = await mod.subscribe(
-      rootAbs,
-      (error, events) => {
-        if (error) return; // reconciler is the safety net for watcher hiccups
-        instance.#ingest(events);
-      },
-      { ignore: ["node_modules", ".git", ".turbo", "dist", "build", ".next", "coverage"] },
-    );
+    try {
+      instance.#subscription = await mod.subscribe(
+        rootAbs,
+        (error, events) => {
+          if (error) return; // reconciler is the safety net for watcher hiccups
+          instance.#ingest(events);
+        },
+        {
+          // plain names skip the top-level dir; globs stop descent into nested ones
+          ignore: [
+            "node_modules",
+            ".git",
+            "**/node_modules/**",
+            "**/.git/**",
+            ".turbo",
+            "dist",
+            "build",
+            ".next",
+            "coverage",
+          ],
+        },
+      );
+    } catch {
+      // e.g. Linux inotify watch limit (ENOSPC) — watching is an enhancement,
+      // never a reason to die; the periodic reconciler keeps the index honest
+      instance.#subscription = null;
+    }
     return instance;
   }
 
