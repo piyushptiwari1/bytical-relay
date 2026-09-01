@@ -120,7 +120,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter relay-by-bytical package
           cd extensions/vscode
-          pnpm exec vsce publish --no-dependencies --packagePath ./relay-by-bytical-*.vsix -p "$VSCE_PAT"
+          # idempotent: reruns after a later-step failure must not die here
+          pnpm exec vsce publish --no-dependencies --packagePath ./relay-by-bytical-*.vsix -p "$VSCE_PAT" 2>&1 | tee publish.log || grep -q "already exists" publish.log
       - name: Refresh standalone controller on the latest release
         env:
           GH_TOKEN: ${{ github.token }}
