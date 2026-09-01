@@ -37,10 +37,13 @@ jobs:
           pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
           mkdir -p standalone
           cp apps/desktop-controller/dist/controller.mjs standalone/
-          # pnpm doesn't hoist — resolve each native from its owning package
-          PTY=$(cd packages/terminal && node -p "require('@lydell/node-pty/package.json').version")
-          WATCHER=$(cd apps/desktop-controller && node -p "require('@parcel/watcher/package.json').version")
-          KOFFI=$(cd apps/desktop-controller && node -p "require('koffi/package.json').version")
+          # pnpm doesn't hoist and some natives gate package.json behind exports —
+          # resolve the module entry and walk up to its own package.json
+          ver() { (cd "$1" && node -e "const fs=require('fs'),path=require('path');let d=path.dirname(require.resolve('$2'));while(fs.existsSync(path.join(d,'package.json'))===false)d=path.dirname(d);console.log(JSON.parse(fs.readFileSync(path.join(d,'package.json'),'utf8')).version)"); }
+          PTY=$(ver packages/terminal @lydell/node-pty)
+          WATCHER=$(ver apps/desktop-controller @parcel/watcher)
+          KOFFI=$(ver apps/desktop-controller koffi)
+          echo "pty=$PTY watcher=$WATCHER koffi=$KOFFI"
           cd standalone
           npm install --omit=dev --no-audit --no-fund --force \
             "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
@@ -129,10 +132,13 @@ jobs:
           pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
           mkdir -p standalone
           cp apps/desktop-controller/dist/controller.mjs standalone/
-          # pnpm doesn't hoist — resolve each native from its owning package
-          PTY=$(cd packages/terminal && node -p "require('@lydell/node-pty/package.json').version")
-          WATCHER=$(cd apps/desktop-controller && node -p "require('@parcel/watcher/package.json').version")
-          KOFFI=$(cd apps/desktop-controller && node -p "require('koffi/package.json').version")
+          # pnpm doesn't hoist and some natives gate package.json behind exports —
+          # resolve the module entry and walk up to its own package.json
+          ver() { (cd "$1" && node -e "const fs=require('fs'),path=require('path');let d=path.dirname(require.resolve('$2'));while(fs.existsSync(path.join(d,'package.json'))===false)d=path.dirname(d);console.log(JSON.parse(fs.readFileSync(path.join(d,'package.json'),'utf8')).version)"); }
+          PTY=$(ver packages/terminal @lydell/node-pty)
+          WATCHER=$(ver apps/desktop-controller @parcel/watcher)
+          KOFFI=$(ver apps/desktop-controller koffi)
+          echo "pty=$PTY watcher=$WATCHER koffi=$KOFFI"
           cd standalone
           npm install --omit=dev --no-audit --no-fund --force \
             "@lydell/node-pty@${PTY}" "@parcel/watcher@${WATCHER}" "koffi@${KOFFI}"
