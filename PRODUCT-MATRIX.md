@@ -26,7 +26,7 @@ version, or credentials. Strategy lives in [PRODUCT-DIRECTION.md](PRODUCT-DIRECT
 | --- | --- | --- |
 | Copilot CLI | 🟢 Live | ACP adapter — sessions, events, permissions, resume |
 | VS Code Copilot Chat (handoff) | 🟢 Live | read `chatSessions` → seed Copilot CLI (`agent.resume`, probe: `pnpm probe resume`) |
-| Claude Code | 🔵 Next (P4) | same adapter contract + provider conformance suite |
+| Claude Code | � Adapter shipped | Zed ACP bridge (`@zed-industries/claude-code-acp`), npx zero-install; provider list + composer picker live — full-session E2E pending a machine with the `claude` CLI |
 | Codex / Gemini CLI | ⚪ Later | only after passing the same conformance suite |
 
 ## 3 · Version & release train
