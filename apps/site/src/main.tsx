@@ -14,7 +14,7 @@ import {
   Sparkles,
   TerminalSquare,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./relay.css";
 
