@@ -252,12 +252,21 @@ export default function AgentsHome() {
           <Text style={{ ...type_.title, flex: 1 }} numberOfLines={1}>
             ✦ {projectName(focusProject)}
           </Text>
-          <Text
-            style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}
+          <Pressable
             onPress={() => router.setParams({ project: undefined })}
+            style={({ pressed }) => ({
+              borderColor: colors.accent,
+              borderWidth: 1,
+              borderRadius: 999,
+              paddingHorizontal: 12,
+              paddingVertical: 5,
+              opacity: pressed ? 0.7 : 1,
+            })}
           >
-            All chats ›
-          </Text>
+            <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
+              All chats ›
+            </Text>
+          </Pressable>
         </View>
       ) : null}
       {/* composer — "New session in <project> with <provider>" */}
@@ -272,7 +281,9 @@ export default function AgentsHome() {
             ✦ {chosenProvider ? providerLabel(chosenProvider.id) : "—"}
           </Text>
           <View style={{ flex: 1 }} />
-          <StatusDot color={chosenProvider?.available ? colors.ok : colors.bad} />
+          <StatusDot
+            color={!loaded ? colors.warn : chosenProvider?.available ? colors.ok : colors.bad}
+          />
         </View>
 
         {providers.length > 1 ? (
@@ -427,14 +438,61 @@ export default function AgentsHome() {
           label={
             busy
               ? "starting…"
-              : !canControl
-                ? "Work controls unavailable"
-                : chosenProvider?.available
-                  ? `Start with ${providerLabel(chosenProvider.id)}`
-                  : (chosenProvider?.detail ?? "no agent provider available")
+              : !loaded && !chosenProvider
+                ? "checking agents on your computer…"
+                : !canControl
+                  ? "Work controls unavailable"
+                  : chosenProvider?.available
+                    ? `Start with ${providerLabel(chosenProvider.id)}`
+                    : "No AI agent on this computer yet"
           }
           onPress={() => void start()}
         />
+        {loaded && availableProviders.length === 0 ? (
+          <View
+            style={{
+              gap: 6,
+              backgroundColor: colors.warnSoft,
+              borderColor: colors.border,
+              borderWidth: 1,
+              borderRadius: 10,
+              padding: space.md,
+            }}
+          >
+            <Text style={{ ...type_.caption, color: colors.text, fontWeight: "600" }}>
+              Relay needs an AI agent on the computer
+            </Text>
+            {providers.map((p) => (
+              <Text key={p.id} style={type_.caption}>
+                · {providerLabel(p.id)} — {p.detail}
+              </Text>
+            ))}
+            <Text style={type_.caption}>
+              Install GitHub Copilot CLI (npm install -g @github/copilot) or Claude Code on that
+              computer, then recheck.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setLoaded(false);
+                void load();
+              }}
+              style={({ pressed }) => ({
+                alignSelf: "flex-start",
+                borderColor: colors.accent,
+                borderWidth: 1,
+                borderRadius: 999,
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                marginTop: 4,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
+                ↻ Recheck now
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
         {error ? <Text style={{ ...type_.caption, color: colors.bad }}>{error}</Text> : null}
       </Card>
 
@@ -475,7 +533,19 @@ export default function AgentsHome() {
             return (
               <Card
                 key={item.native_id}
-                onPress={resumable ? () => void resume(item) : undefined}
+                onPress={
+                  resumable
+                    ? () => void resume(item)
+                    : () =>
+                        Alert.alert(
+                          "Can't continue this chat yet",
+                          item.project_id === null
+                            ? "This chat's folder isn't indexed by Relay on your computer — open it there once, or add it to the project roots."
+                            : !copilot?.available
+                              ? `GitHub Copilot CLI isn't available on the computer — ${copilot?.detail ?? "install it there, then recheck"}.`
+                              : "Work controls are unavailable for this phone — re-pair with supervised access.",
+                        )
+                }
                 style={{ marginBottom: space.sm, gap: 6, opacity: resumable ? 1 : 0.55 }}
               >
                 <Text style={{ ...type_.body, fontWeight: "600" }} numberOfLines={1}>
