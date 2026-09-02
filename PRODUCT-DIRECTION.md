@@ -116,6 +116,48 @@ The "new session" flow becomes a first-class composer, mirroring VS Code's chat 
 Sequencing note: M1 protocol/controller work lands first (it unblocks Claude Code = same
 contract), then M2, M3, M4. Each milestone ships behind the normal tag train.
 
+### Design system · VS Code-native language (the "part of VS Code" bar)
+
+Goal: someone who lives in VS Code should feel the phone app is the same product family —
+same information architecture, same semantics, same calm density — while keeping the Relay
+brand (violet→cyan) where VS Code uses its blue. Inspiration, not imitation: we adopt the
+*patterns* of VS Code Dark Modern, never its trademarked assets.
+
+**Token mapping (theme.tsx is the single source):**
+
+| Role | VS Code Dark Modern | Relay phone token |
+| --- | --- | --- |
+| Editor/base bg | `#1f1f1f` | `bg #0A0C10` (brand-dark, keep) |
+| Sidebar/panel bg | `#181818` | `card #12151C` |
+| List hover/active row | `#2a2d2e` / `#04395e` | `cardRaised` + accentSoft ring |
+| Focus/accent | `#0078d4` | `accent` (cyan `#22d3ee` family) |
+| Section headers | 11px uppercase, dim | `type_.micro` uppercase, `dim` |
+| Borders | `#2b2b2b` hairlines | `borderSoft` 1px hairlines |
+| Status bar | bottom strip, live glyphs | machine footer strip (M3) |
+
+**Component ↔ VS Code mapping (audit checklist, one screen per slice):**
+
+| VS Code surface | Phone counterpart | Alignment work |
+| --- | --- | --- |
+| Copilot Chat panel | session screen | full-width message ROWS (avatar ✦/you + name + markdown body), not floaty bubbles; tool rows "Used <tool>" collapsed like VS Code; turn separators |
+| Chat input box | composer | mode picker inline-left (Build/Plan/Ask ≈ Agent/Edit/Ask), send ▸ right, model under a gear reveal |
+| Quick Pick | search + pickers | modal list with hairline rows, dim descriptions, ↵-style primary action |
+| Explorer sections | machine screen | collapsible sections w/ uppercase headers, chevrons, counts |
+| SCM view | git screen | staged/changes groups, +/− row actions, message box pinned bottom |
+| Status bar | machine footer | connection (LAN/relay), branch, keep-awake, diagnostics glyphs |
+| Notifications/toasts | in-app notices | bottom-right slide-in, severity icons, action links |
+| Walkthrough | first-run | 3-step checklist card on home until paired+first session |
+
+**Typography & iconography:** UI 13px base / 15px prompts (VS Code uses 13px UI), mono only
+for code/commands/paths; one glyph set (codicon-style outline, not emoji) for status — replace
+emoji glyphs (📁 ⎇ 🛡 ✦) with drawn icons in M4; hit targets ≥44px stay.
+
+**Delivery:** D1 tokens+primitives refactor (ListRow, SectionHeader, ModalPicker, Toast,
+StatusStrip) → D2 session screen to chat-row layout → D3 machine/git/terminal screens to
+section language → D4 icon set + motion (150ms ease, reduced-motion aware). D1+D2 ride the
+next APK after 0.3.0; D3+D4 follow. Every step keeps the zero-dead-end rule: any disabled
+element explains itself on tap.
+
 ## Delivery sequence
 
 ### P0: Trust before reachability
