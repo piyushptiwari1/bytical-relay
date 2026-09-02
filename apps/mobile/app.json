@@ -14,9 +14,7 @@
     },
     "android": {
       "package": "com.rdc.mobile",
-      "permissions": [
-        "android.permission.CAMERA"
-      ],
+      "permissions": ["android.permission.CAMERA"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#101016"

@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { AcpAdapter } from "./acp-adapter.ts";
 
 /**
@@ -16,7 +16,10 @@ function resolveBridgeCommand(): { command: string; args: string[] } {
   }
   const globalBin =
     process.platform === "win32"
-      ? path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData/Roaming"), "npm/claude-code-acp.cmd")
+      ? path.join(
+          process.env.APPDATA ?? path.join(os.homedir(), "AppData/Roaming"),
+          "npm/claude-code-acp.cmd",
+        )
       : "/usr/local/bin/claude-code-acp";
   if (existsSync(globalBin)) return { command: globalBin, args: [] };
   // zero-install fallback — npx fetches the bridge on first session

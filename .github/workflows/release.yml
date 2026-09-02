@@ -37,6 +37,7 @@ jobs:
           pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
           mkdir -p standalone
           cp apps/desktop-controller/dist/controller.mjs standalone/
+          cp -r apps/desktop-controller/assets standalone/assets
           # pnpm doesn't hoist and some natives gate package.json behind exports —
           # resolve the module entry and walk up to its own package.json
           ver() { (cd "$1" && node -e "const fs=require('fs'),path=require('path');let d=path.dirname(require.resolve('$2'));while(fs.existsSync(path.join(d,'package.json'))===false)d=path.dirname(d);console.log(JSON.parse(fs.readFileSync(path.join(d,'package.json'),'utf8')).version)"); }
@@ -133,6 +134,7 @@ jobs:
           pnpm --filter @rdc/desktop-controller exec node esbuild.mjs
           mkdir -p standalone
           cp apps/desktop-controller/dist/controller.mjs standalone/
+          cp -r apps/desktop-controller/assets standalone/assets
           # pnpm doesn't hoist and some natives gate package.json behind exports —
           # resolve the module entry and walk up to its own package.json
           ver() { (cd "$1" && node -e "const fs=require('fs'),path=require('path');let d=path.dirname(require.resolve('$2'));while(fs.existsSync(path.join(d,'package.json'))===false)d=path.dirname(d);console.log(JSON.parse(fs.readFileSync(path.join(d,'package.json'),'utf8')).version)"); }

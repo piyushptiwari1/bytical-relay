@@ -100,7 +100,8 @@ export default function AgentsHome() {
   const chosenProvider =
     providers.find((p) => p.id === providerId && p.available) ??
     (copilot?.available ? copilot : availableProviders[0]);
-  const providerLabel = (id: string) => (id === "copilot" ? "Copilot" : id === "claude" ? "Claude" : id);
+  const providerLabel = (id: string) =>
+    id === "copilot" ? "Copilot" : id === "claude" ? "Claude" : id;
   const chosenProject =
     projects.find((p) => p.project_id === (projectId ?? focusProject ?? "")) ?? projects[0];
   const inScope = (pid: string | null) => focusProject === null || pid === focusProject;

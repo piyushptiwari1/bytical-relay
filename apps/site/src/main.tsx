@@ -212,15 +212,17 @@ function App() {
 
         <div className="hero-copy">
           <p className="eyebrow">
-            <Radio size={14} /> Relay by Bytical
+            <Radio size={14} /> Works with GitHub Copilot · Claude Code
           </p>
-          <h1>Keep work within reach.</h1>
+          <h1>Your coding agent, in your pocket.</h1>
           <p className="hero-statement">
-            A calmer way to stay with the work you started at your desk.
+            The agent keeps working on your laptop. You watch, approve, and steer it from your phone
+            — from anywhere.
           </p>
           <p className="hero-description">
-            Start in VS Code. Follow the local agents and developer machine you already trust from
-            your phone. Return with every decision and change in context.
+            Pair once with a QR code. Then start new sessions, continue VS Code chats, approve
+            commands, and get notified when work finishes — over an encrypted connection. No cloud
+            IDE, no code upload: your laptop stays the workstation.
           </p>
           <div className="hero-actions">
             <a className="button button-primary" href={DOWNLOAD_URL} data-track="hero-download">
@@ -230,6 +232,17 @@ function App() {
               How it works <ChevronRight size={17} />
             </a>
           </div>
+          <ol className="hero-steps" aria-label="Three steps to start">
+            <li>
+              <b>1</b> Install the app
+            </li>
+            <li>
+              <b>2</b> Add the VS Code extension
+            </li>
+            <li>
+              <b>3</b> Scan once — chat anywhere
+            </li>
+          </ol>
         </div>
 
         <div className="hero-caption">

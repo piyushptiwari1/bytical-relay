@@ -114,21 +114,33 @@ function originAllowed(origin: string | undefined, allowed: Set<string>): boolea
   }
 }
 
+/** dev layout: src/../assets · standalone layout: assets next to controller.mjs */
+function readAsset(name: string): string {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [
+    path.join(moduleDir, "..", "assets", name),
+    path.join(moduleDir, "assets", name),
+  ]) {
+    try {
+      return readFileSync(candidate, "utf8");
+    } catch {
+      // try next layout
+    }
+  }
+  throw new Error(
+    `asset ${name} missing — re-run “Relay: Set up this computer” to repair the install`,
+  );
+}
+
 let dashHtmlCache: string | null = null;
 function dashHtml(): string {
-  dashHtmlCache ??= readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "dash.html"),
-    "utf8",
-  );
+  dashHtmlCache ??= readAsset("dash.html");
   return dashHtmlCache;
 }
 
 let dataHtmlCache: string | null = null;
 function dataHtml(): string {
-  dataHtmlCache ??= readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "data.html"),
-    "utf8",
-  );
+  dataHtmlCache ??= readAsset("data.html");
   return dataHtmlCache;
 }
 
