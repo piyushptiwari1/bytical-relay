@@ -504,18 +504,37 @@ function App() {
         </div>
         <div className="faq-grid">
           <details>
+            <summary>Can I control VS Code and my coding agent from my phone?</summary>
+            <p>
+              Yes. Relay pairs your phone with the VS Code extension on your computer. You can
+              continue Copilot chats, start new agent sessions, approve commands, and watch progress
+              from anywhere — the agent keeps running on your machine.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Which AI coding agents does Relay work with — GitHub Copilot, Claude Code?
+            </summary>
+            <p>
+              GitHub Copilot and Claude Code are supported today. When both are installed, you pick
+              a provider per session. Codex and other providers follow the same adapter contract
+              next.
+            </p>
+          </details>
+          <details>
+            <summary>Does it work on Windows, macOS, and Linux?</summary>
+            <p>
+              Yes — the desktop side runs on Windows, macOS, and Linux, installed in two clicks from
+              the VS Code extension with zero system dependencies. The phone app is on Android
+              today; iOS is on the roadmap.
+            </p>
+          </details>
+          <details>
             <summary>Is my source code uploaded anywhere?</summary>
             <p>
               No. Code, files, Git data, terminal output, and agent conversations stay on your
               machine and your paired phone, end-to-end encrypted in transit. The optional relay
               server forwards ciphertext it cannot read.
-            </p>
-          </details>
-          <details>
-            <summary>Which AI coding agents does Relay work with?</summary>
-            <p>
-              GitHub Copilot is supported today through a durable session model on your machine.
-              Claude Code, Codex, and other providers follow the same adapter contract next.
             </p>
           </details>
           <details>

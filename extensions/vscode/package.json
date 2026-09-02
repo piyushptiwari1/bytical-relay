@@ -1,8 +1,8 @@
 {
   "name": "relay-by-bytical",
   "displayName": "Relay by Bytical",
-  "description": "Control your dev machine and AI coding agents from your phone. One-click setup: this extension installs and runs the Relay controller, then pairs your phone with a QR code — end-to-end encrypted.",
-  "version": "0.2.1",
+  "description": "Control your dev machine and AI coding agents from your phone. One-click setup: this extension installs and runs the Relay controller, then pairs your phone with a QR code \u2014 end-to-end encrypted.",
+  "version": "0.2.2",
   "private": true,
   "publisher": "bytical",
   "license": "Apache-2.0",
@@ -117,7 +117,7 @@
           {
             "id": "relay.step.pair",
             "title": "Pair your phone",
-            "description": "Scan one QR — same Wi-Fi once, then anywhere.\n[Pair phone](command:relay.pair)",
+            "description": "Scan one QR \u2014 same Wi-Fi once, then anywhere.\n[Pair phone](command:relay.pair)",
             "media": {
               "markdown": "media/walkthrough/pair.md"
             },
