@@ -288,6 +288,33 @@ export class ControllerLauncher {
     );
   }
 
+  /** Old controller downloads miss newer fixes — offer a one-click refresh. */
+  async offerUpdateIfStale(): Promise<void> {
+    if (this.#contributorPath()) return; // git checkouts update themselves via setup
+    if (!existsSync(path.join(this.#standaloneDir(), "controller.mjs"))) return;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const meta = (await (await fetch(RELEASE_API, { signal: controller.signal })).json()) as {
+        tag_name?: string;
+      };
+      clearTimeout(timer);
+      const current = this.context.globalState.get<string>("relay.controllerTag");
+      if (!meta.tag_name || meta.tag_name === current) return;
+      const pick = await vscode.window.showInformationMessage(
+        `Relay: a controller update is available (${current ?? "unknown"} → ${meta.tag_name}). Updating restarts the controller.`,
+        "Update now",
+        "Later",
+      );
+      if (pick === "Update now") {
+        await this.stop();
+        await this.setup();
+      }
+    } catch {
+      // offline or rate-limited — try again next activation
+    }
+  }
+
   /** Poll healthz until the controller answers (first boot indexes projects).
    * Aborts early when the supervisor gave up — no zombie spinners. */
   async waitUntilHealthy(timeoutMs = 120_000): Promise<boolean> {

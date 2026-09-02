@@ -45,6 +45,19 @@ function relativeTime(iso: string): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+function dayLabel(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const same = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (same(date, today)) return "Today";
+  if (same(date, yesterday)) return "Yesterday";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function AgentsHome() {
   const { machine, project: focusParam } = useLocalSearchParams<{
     machine: string;
@@ -57,7 +70,12 @@ export default function AgentsHome() {
   const pendingPromptCounts = useApp((s) =>
     machine ? (s.runtime[machine]?.pending_prompt_counts ?? {}) : {},
   );
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  // cached-first: last known sessions render instantly, the fetch refreshes them
+  const [sessions, setSessions] = useState<AgentSession[]>(() =>
+    machine ? (useApp.getState().runtime[machine]?.sessions ?? []) : [],
+  );
+  const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState("");
   const [external, setExternal] = useState<ExternalSession[]>([]);
   const [resuming, setResuming] = useState<string | null>(null);
   const [providers, setProviders] = useState<
@@ -82,6 +100,8 @@ export default function AgentsHome() {
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoaded(true);
     }
   }, [machine]);
 
@@ -104,13 +124,28 @@ export default function AgentsHome() {
     id === "copilot" ? "Copilot" : id === "claude" ? "Claude" : id;
   const chosenProject =
     projects.find((p) => p.project_id === (projectId ?? focusProject ?? "")) ?? projects[0];
-  const inScope = (pid: string | null) => focusProject === null || pid === focusProject;
-  const scopedSessions = sessions.filter((s) => inScope(s.project_id));
-  const scopedExternal = external.filter((e) => inScope(e.project_id));
-  const ongoing = scopedSessions.filter((s) => LIVE.has(s.status));
-  const history = scopedSessions.filter((s) => !LIVE.has(s.status));
   const projectName = (id: string) =>
     projects.find((p) => p.project_id === id)?.name ?? id.slice(0, 12);
+  const inScope = (pid: string | null) => focusProject === null || pid === focusProject;
+  const matchesQuery = (title: string, pid: string | null) =>
+    query.trim().length === 0 ||
+    title.toLowerCase().includes(query.trim().toLowerCase()) ||
+    (pid ? projectName(pid).toLowerCase().includes(query.trim().toLowerCase()) : false);
+  const scopedSessions = sessions.filter(
+    (s) => inScope(s.project_id) && matchesQuery(s.title, s.project_id),
+  );
+  const scopedExternal = external.filter(
+    (e) => inScope(e.project_id) && matchesQuery(e.title, e.project_id),
+  );
+  const ongoing = scopedSessions.filter((s) => LIVE.has(s.status));
+  const history = scopedSessions.filter((s) => !LIVE.has(s.status));
+  const historyGroups: Array<{ label: string; items: AgentSession[] }> = [];
+  for (const item of history) {
+    const label = dayLabel(item.updated_at);
+    const group = historyGroups.at(-1);
+    if (group?.label === label) group.items.push(item);
+    else historyGroups.push({ label, items: [item] });
+  }
 
   const start = async () => {
     if (!canControl || !chosenProject || !chosenProvider || prompt.trim().length === 0) return;
@@ -403,6 +438,27 @@ export default function AgentsHome() {
         {error ? <Text style={{ ...type_.caption, color: colors.bad }}>{error}</Text> : null}
       </Card>
 
+      {sessions.length + external.length > 4 ? (
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search chats…"
+          placeholderTextColor={colors.faint}
+          autoCapitalize="none"
+          style={{
+            backgroundColor: colors.card,
+            borderColor: query.trim() ? colors.accent : colors.borderSoft,
+            borderWidth: 1,
+            borderRadius: 12,
+            color: colors.text,
+            paddingHorizontal: space.md,
+            paddingVertical: 9,
+            fontSize: 14,
+            marginTop: space.lg,
+          }}
+        />
+      ) : null}
+
       {ongoing.length > 0 ? (
         <>
           <SectionLabel>Ongoing · {ongoing.length}</SectionLabel>
@@ -447,15 +503,51 @@ export default function AgentsHome() {
         </>
       ) : null}
 
-      <SectionLabel>History</SectionLabel>
-      {history.map((s) => sessionCard(s, false))}
-      {history.length === 0 && ongoing.length === 0 ? (
-        <EmptyState
-          icon="✦"
-          title="No sessions yet"
-          caption="Sessions run on your computer and keep going even when this phone disconnects. Transcripts are kept here."
-        />
-      ) : null}
+      {!loaded && sessions.length === 0 ? (
+        <>
+          <SectionLabel>History</SectionLabel>
+          {[0, 1, 2].map((i) => (
+            <Card key={`skeleton-${i}`} style={{ marginBottom: space.sm, gap: 8, opacity: 0.55 }}>
+              <View
+                style={{
+                  height: 13,
+                  width: `${72 - i * 14}%`,
+                  borderRadius: 6,
+                  backgroundColor: colors.border,
+                }}
+              />
+              <View
+                style={{
+                  height: 10,
+                  width: "38%",
+                  borderRadius: 5,
+                  backgroundColor: colors.borderSoft,
+                }}
+              />
+            </Card>
+          ))}
+        </>
+      ) : (
+        <>
+          {historyGroups.map((group) => (
+            <View key={group.label}>
+              <SectionLabel>{group.label}</SectionLabel>
+              {group.items.map((s) => sessionCard(s, false))}
+            </View>
+          ))}
+          {history.length === 0 && ongoing.length === 0 ? (
+            query.trim() ? (
+              <EmptyState icon="○" title="No matches" caption="Try a different search." />
+            ) : (
+              <EmptyState
+                icon="✦"
+                title="No sessions yet"
+                caption="Sessions run on your computer and keep going even when this phone disconnects. Transcripts are kept here."
+              />
+            )
+          ) : null}
+        </>
+      )}
     </ScrollView>
   );
 }

@@ -73,6 +73,13 @@ export default function AgentSessionScreen() {
   const [prompt, setPrompt] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dots, setDots] = useState("·");
+  const isWorking = status === "running" || status === "starting";
+  useEffect(() => {
+    if (!isWorking) return;
+    const timer = setInterval(() => setDots((d) => (d.length >= 3 ? "·" : `${d}·`)), 450);
+    return () => clearInterval(timer);
+  }, [isWorking]);
   const nextId = useRef(0);
   const listRef = useRef<FlatList<Block> | null>(null);
 
@@ -100,8 +107,18 @@ export default function AgentSessionScreen() {
       };
       if (message.type === "agent.updated" && message.payload.update) {
         const update = message.payload.update;
-        if (update.kind === "user_message")
+        if (update.kind === "user_message") {
+          // reconcile: replace the optimistic bubble the journal now confirms
+          const optimistic = blocksNow.findIndex(
+            (b) => b.kind === "user" && b.id.startsWith("opt") && b.text === (update.text ?? ""),
+          );
+          if (optimistic >= 0) {
+            const next = [...blocksNow];
+            next[optimistic] = { id: id(), kind: "user", text: update.text ?? "" };
+            return next;
+          }
           return [...blocksNow, { id: id(), kind: "user", text: update.text ?? "" }];
+        }
         if (update.kind === "message_chunk") {
           const last = blocksNow.at(-1);
           if (last?.kind === "assistant")
@@ -223,6 +240,7 @@ export default function AgentSessionScreen() {
   if (!machine || !session) return null;
   const canControl = hasScope(scopes, "agents.control");
   const busy = status === "running" || status === "awaiting_approval" || status === "starting";
+  const working = status === "running" || status === "starting";
   const canPrompt = canControl && status !== "starting";
   const willQueue = busy || queuedPromptCount > 0 || pendingPromptCount > 0;
   const ended = ENDED.has(status);
@@ -234,6 +252,10 @@ export default function AgentSessionScreen() {
   };
 
   const sendText = async (text: string) => {
+    // optimistic: the bubble lands instantly, the journal event reconciles it
+    setPrompt("");
+    setError(null);
+    setBlocks((prev) => [...prev, { id: `opt${nextId.current++}`, kind: "user", text }]);
     try {
       const result = await agentPrompt(machine, session, text);
       if (!result.accepted) {
@@ -243,8 +265,6 @@ export default function AgentSessionScreen() {
         return;
       }
       setQueuedPromptCount(result.queued_prompt_count);
-      setPrompt("");
-      setError(null);
       setNotice(
         result.waiting_to_send
           ? "Instruction saved. Relay will send it when your computer reconnects."
@@ -319,6 +339,25 @@ export default function AgentSessionScreen() {
         data={blocks}
         keyExtractor={(b) => b.id}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        ListFooterComponent={
+          working ? (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: space.sm,
+                paddingVertical: space.sm,
+                paddingHorizontal: space.xs,
+              }}
+            >
+              <Text style={{ color: colors.accent, fontSize: 13 }}>✦</Text>
+              <Text style={{ ...type_.caption, color: colors.dim }}>
+                {status === "starting" ? "starting" : "working"}
+                {dots}
+              </Text>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => {
           if (item.kind === "user")
             return (

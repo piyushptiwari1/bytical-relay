@@ -25,8 +25,15 @@ let launcher: ControllerLauncher;
 let sidebar: RelaySidebar;
 let connectionState = "connecting";
 
+const STATE_LABEL: Record<string, string> = {
+  connecting: "connecting…",
+  ready: "connected",
+  reconnecting: "reconnecting…",
+  closed: "waiting for controller…",
+};
+
 function renderStatus(): void {
-  sidebar?.update(launcher.mode, connectionState);
+  sidebar?.update(launcher.mode, STATE_LABEL[connectionState] ?? connectionState);
   if (connectionState === "ready") {
     status.text = "$(broadcast) Relay";
     status.tooltip = "Relay: connected — click for actions";
@@ -35,20 +42,26 @@ function renderStatus(): void {
     status.tooltip = "Relay: controller not running — click to set up or start";
   } else {
     status.text = "$(sync~spin) Relay";
-    status.tooltip = `Relay: ${connectionState}…`;
+    status.tooltip = `Relay: ${STATE_LABEL[connectionState] ?? connectionState}`;
   }
 }
 
 async function showMenu(context: vscode.ExtensionContext): Promise<void> {
   const running = launcher.mode !== "off";
   const items: Array<vscode.QuickPickItem & { action: () => unknown }> = [
-    { label: "$(device-mobile) Pair phone", action: () => openPairPanel(context) },
+    {
+      label: "$(device-mobile) Pair phone",
+      description: "scan a QR here in the editor",
+      action: () => openPairPanel(context),
+    },
     {
       label: "$(rocket) Open in Agents",
+      description: "start an agent on this workspace that your phone can follow",
       action: () => vscode.commands.executeCommand("rdc.openAgents"),
     },
     {
       label: "$(dashboard) Open dashboard",
+      description: "owner console in the browser — devices, projects, pairing",
       action: () => {
         const target = readControllerTarget();
         if (target)
@@ -58,11 +71,24 @@ async function showMenu(context: vscode.ExtensionContext): Promise<void> {
       },
     },
     running
-      ? { label: "$(debug-stop) Stop controller", action: () => launcher.stop() }
-      : { label: "$(play) Start controller", action: () => void launcher.start() },
-    { label: "$(cloud-download) Set up / update this computer", action: () => launcher.setup() },
+      ? {
+          label: "$(debug-stop) Stop controller",
+          description: "phones disconnect until it starts again",
+          action: () => launcher.stop(),
+        }
+      : {
+          label: "$(play) Start controller",
+          description: "background service your phone connects to",
+          action: () => void launcher.start(),
+        },
+    {
+      label: "$(cloud-download) Set up / update this computer",
+      description: "download or refresh the Relay controller",
+      action: () => launcher.setup(),
+    },
     {
       label: "$(comment-discussion) Send feedback",
+      description: "straight to the maintainers — no account",
       action: () => vscode.commands.executeCommand("relay.feedback"),
     },
     {
@@ -140,6 +166,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   void launcher.autoAttach().then(async () => {
     start(context);
+    void launcher.offerUpdateIfStale();
     // first-run nudge: fresh machine, nothing running — offer the one-click path
     if (
       launcher.mode === "off" &&
@@ -327,9 +354,15 @@ function start(context: vscode.ExtensionContext): void {
     { dispose: () => rdc.close() },
   );
 
-  rdc.connect().catch(() => {
-    status.text = "rdc: controller offline";
-  });
+  // initial connect must survive controller restarts — retry with backoff,
+  // renderStatus() owns the status text (never hard-set it here)
+  const tryConnect = (attempt: number) => {
+    rdc.connect().catch(() => {
+      if (client !== rdc) return;
+      setTimeout(() => tryConnect(attempt + 1), Math.min(30_000, 2000 * 2 ** Math.min(attempt, 4)));
+    });
+  };
+  tryConnect(0);
 }
 
 async function pickProject(matches: ProjectMatch[]): Promise<ProjectMatch | undefined> {

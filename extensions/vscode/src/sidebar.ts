@@ -62,8 +62,18 @@ export class RelaySidebar implements vscode.TreeDataProvider<RowSpec> {
             command: "relay.setup",
             description: "one time",
           },
-      { label: "Open in Agents", icon: "rocket", command: "rdc.openAgents" },
-      { label: "Open dashboard", icon: "dashboard", command: "relay.menu" },
+      {
+        label: "Open in Agents",
+        icon: "rocket",
+        command: "rdc.openAgents",
+        description: "agent your phone can follow",
+      },
+      {
+        label: "Open dashboard",
+        icon: "dashboard",
+        command: "relay.menu",
+        description: "owner console",
+      },
       { label: "Send feedback", icon: "comment-discussion", command: "relay.feedback" },
       { label: "Logs", icon: "output", command: "relay.logs" },
     ];
