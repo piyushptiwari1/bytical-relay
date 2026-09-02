@@ -13,6 +13,20 @@ interface PairingStatus {
 export async function openPairPanel(context: vscode.ExtensionContext): Promise<void> {
   const target = readControllerTarget();
   if (!target) {
+    // A healthy controller with unreadable config = a bug, not a fresh machine.
+    // Never chain into setup here — that loops the modal forever.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    const running = await fetch("http://127.0.0.1:8347/healthz", { signal: controller.signal })
+      .then((r) => r.ok)
+      .catch(() => false);
+    clearTimeout(timer);
+    if (running) {
+      void vscode.window.showErrorMessage(
+        "Relay found a running controller but couldn't read its config file. Update the Relay extension, then reload the window — if it persists, check the Relay logs.",
+      );
+      return;
+    }
     const pick = await vscode.window.showInformationMessage(
       "Relay needs to set up this computer first (one time). Pairing opens automatically after.",
       { modal: true },

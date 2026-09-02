@@ -15,7 +15,8 @@ function configDir(): string {
   if (process.platform === "darwin") {
     return path.join(os.homedir(), "Library/Application Support/rdc");
   }
-  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "rdc");
+  // MUST mirror the controller: XDG data dir, not config dir
+  return path.join(process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local/share"), "rdc");
 }
 
 /** Same-user trust: the extension reads the controller's local token directly. */
