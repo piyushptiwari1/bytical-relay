@@ -63,17 +63,52 @@ export async function openPairPanel(context: vscode.ExtensionContext): Promise<v
   panel.webview.html = pairHtml(started.qr_data_url ?? "", started.code ?? "");
 
   let done = false;
+  let disposed = false;
+  let autoRefreshes = 0;
+  let regenerating = false;
+
+  // Expired before the scan? Restart the ceremony in place — the phone user
+  // shouldn't have to hunt for the command again.
+  const regenerate = async (reason: "auto" | "manual"): Promise<void> => {
+    if (regenerating || done || disposed) return;
+    regenerating = true;
+    try {
+      const fresh = (await api("/api/pairing/start")) as typeof started;
+      void panel.webview.postMessage({
+        kind: "fresh",
+        qr: fresh.qr_data_url ?? "",
+        code: fresh.code ?? "",
+        note:
+          reason === "auto"
+            ? `Code expired — generated a fresh one (${autoRefreshes}/5).`
+            : "Fresh code generated.",
+      });
+    } catch (cause) {
+      void panel.webview.postMessage({
+        kind: "fresh_failed",
+        note: `Could not generate a new code: ${cause instanceof Error ? cause.message : String(cause)}`,
+      });
+    } finally {
+      regenerating = false;
+    }
+  };
+
   const timer = setInterval(() => {
     void (async () => {
       try {
         const status = (await api("/api/pairing/status", "GET")) as unknown as PairingStatus;
+        if (status.state === "expired" && autoRefreshes < 5) {
+          autoRefreshes += 1;
+          await regenerate("auto");
+          return; // don't render the expired state — a fresh code is coming
+        }
         void panel.webview.postMessage({ kind: "status", status });
         if (status.state === "granted") {
           done = true;
           clearInterval(timer);
           setTimeout(() => panel.dispose(), 4000);
         }
-        if (["expired", "cancelled", "locked"].includes(status.state)) {
+        if (["cancelled", "locked"].includes(status.state)) {
           clearInterval(timer);
         }
       } catch {
@@ -85,6 +120,10 @@ export async function openPairPanel(context: vscode.ExtensionContext): Promise<v
   panel.webview.onDidReceiveMessage(
     (msg: { kind?: string }) => {
       if (msg.kind === "confirm") void api("/api/pairing/confirm").catch(() => {});
+      if (msg.kind === "regenerate") {
+        autoRefreshes = 0; // a human asked — reset the auto budget
+        void regenerate("manual");
+      }
       if (msg.kind === "cancel") {
         void api("/api/pairing/cancel").catch(() => {});
         panel.dispose();
@@ -94,6 +133,7 @@ export async function openPairPanel(context: vscode.ExtensionContext): Promise<v
     context.subscriptions,
   );
   panel.onDidDispose(() => {
+    disposed = true;
     clearInterval(timer);
     if (!done) void api("/api/pairing/cancel").catch(() => {});
   });
@@ -159,6 +199,14 @@ function pairHtml(qrDataUrl: string, code: string): string {
     background: var(--accent); margin-right: 7px; animation: pulse 1.6s ease-in-out infinite;
   }
   @keyframes pulse { 50% { opacity: .35; } }
+  .note { color: var(--accent-2); font-size: 11.5px; text-align: center; min-height: 16px; }
+  .qr-swap { animation: swap .45s ease; }
+  @keyframes swap { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+  .regen {
+    background: transparent; color: var(--accent); border: 1px solid var(--line);
+    padding: 7px 16px; font-size: 12px;
+  }
+  .regen:hover { border-color: var(--accent); }
   .confirm {
     margin-top: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
     padding: 20px 22px; display: flex; flex-direction: column; align-items: center; gap: 10px;
@@ -202,10 +250,12 @@ function pairHtml(qrDataUrl: string, code: string): string {
           <div class="step"><i>3</i><div><b>Scan this code</b><p>Point the camera at the QR — or type the letter code shown below it.</p></div></div>
         </div>
         <div class="qr-card">
-          <img class="qr" alt="pairing QR" src="${qrDataUrl}">
-          <div class="code">${code}</div>
+          <img class="qr" id="qr" alt="pairing QR" src="${qrDataUrl}">
+          <div class="code" id="code">${code}</div>
           <div class="code-hint">manual entry code</div>
           <div class="state live" id="state">Waiting for your phone…</div>
+          <div class="note" id="note"></div>
+          <button class="regen hidden" id="regen">↻ Generate new code</button>
         </div>
       </div>
       <div id="confirmRow" class="confirm hidden">
@@ -228,10 +278,33 @@ function pairHtml(qrDataUrl: string, code: string): string {
     const vscodeApi = acquireVsCodeApi();
     const state = document.getElementById("state");
     const row = document.getElementById("confirmRow");
+    const note = document.getElementById("note");
+    const regen = document.getElementById("regen");
     document.getElementById("yes").addEventListener("click", () => vscodeApi.postMessage({ kind: "confirm" }));
     document.getElementById("no").addEventListener("click", () => vscodeApi.postMessage({ kind: "cancel" }));
+    regen.addEventListener("click", () => {
+      regen.disabled = true;
+      note.textContent = "Generating a fresh code…";
+      vscodeApi.postMessage({ kind: "regenerate" });
+    });
     window.addEventListener("message", (event) => {
-      const { status } = event.data;
+      const msg = event.data;
+      if (msg.kind === "fresh") {
+        const qr = document.getElementById("qr");
+        const codeEl = document.getElementById("code");
+        qr.src = msg.qr; codeEl.textContent = msg.code;
+        qr.classList.remove("qr-swap"); void qr.offsetWidth; qr.classList.add("qr-swap");
+        note.textContent = msg.note || "";
+        regen.classList.add("hidden"); regen.disabled = false;
+        state.classList.add("live"); state.textContent = "Waiting for your phone…";
+        return;
+      }
+      if (msg.kind === "fresh_failed") {
+        note.textContent = msg.note || "Could not generate a new code.";
+        regen.classList.remove("hidden"); regen.disabled = false;
+        return;
+      }
+      const { status } = msg;
       if (!status) return;
       if (status.state === "waiting") state.textContent = "Waiting for your phone… (" + (status.expires_in_s ?? 0) + "s left)";
       if (status.state === "pending_confirm") {
@@ -244,7 +317,12 @@ function pairHtml(qrDataUrl: string, code: string): string {
         document.getElementById("main").classList.add("hidden");
         document.getElementById("done").classList.remove("hidden");
       }
-      if (status.state === "expired") { state.classList.remove("live"); state.textContent = "Code expired — run “Relay: Pair phone” again."; }
+      if (status.state === "expired") {
+        state.classList.remove("live");
+        state.textContent = "Code expired.";
+        note.textContent = "";
+        regen.classList.remove("hidden");
+      }
       if (status.state === "locked") { state.classList.remove("live"); state.textContent = "Too many wrong codes — run “Relay: Pair phone” again."; }
       if (status.state === "cancelled") { state.classList.remove("live"); state.textContent = "Pairing cancelled."; }
     });
