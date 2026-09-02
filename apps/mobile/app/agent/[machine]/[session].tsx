@@ -12,6 +12,7 @@ import {
   watchAgentSession,
   watchAgentStatus,
 } from "../../../src/machines.ts";
+import { RichText } from "../../../src/markdown.tsx";
 import { dismissSessionNotifications, setFocusedSession } from "../../../src/notifications.ts";
 import { colors, mono, Pill, type PillTone, space, type_ } from "../../../src/theme.tsx";
 
@@ -229,8 +230,12 @@ export default function AgentSessionScreen() {
 
   const send = async () => {
     if (prompt.trim().length === 0) return;
+    await sendText(prompt.trim());
+  };
+
+  const sendText = async (text: string) => {
     try {
-      const result = await agentPrompt(machine, session, prompt.trim());
+      const result = await agentPrompt(machine, session, text);
       if (!result.accepted) {
         setError(
           "Relay could not deliver that instruction. Try again when the session reconnects.",
@@ -251,6 +256,16 @@ export default function AgentSessionScreen() {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+
+  // one-tap follow-ups — the prompts people type constantly
+  const quickReplies =
+    !canControl || blocks.length === 0
+      ? []
+      : status === "idle"
+        ? ["Continue", "Run the tests", "Show me the diff", "Explain the changes"]
+        : status === "failed"
+          ? ["Fix it", "What went wrong?"]
+          : [];
 
   return (
     <View style={{ flex: 1 }}>
@@ -340,9 +355,7 @@ export default function AgentSessionScreen() {
                   maxWidth: "92%",
                 }}
               >
-                <Text style={{ color: colors.text, fontSize: 14, lineHeight: 21 }}>
-                  {item.text}
-                </Text>
+                <RichText text={item.text} />
               </View>
             );
           if (item.kind === "thought")
@@ -533,6 +546,35 @@ export default function AgentSessionScreen() {
         <Text style={{ ...type_.caption, paddingHorizontal: space.lg, paddingBottom: space.sm }}>
           This phone can view this session. Changes and approvals stay on the computer.
         </Text>
+      ) : null}
+
+      {quickReplies.length > 0 ? (
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: space.sm,
+            paddingHorizontal: space.lg,
+            paddingBottom: space.sm,
+          }}
+        >
+          {quickReplies.map((reply) => (
+            <Pressable
+              key={reply}
+              onPress={() => void sendText(reply)}
+              style={({ pressed }) => ({
+                backgroundColor: pressed ? colors.accentSoft : colors.card,
+                borderColor: colors.borderSoft,
+                borderWidth: 1,
+                borderRadius: 16,
+                paddingHorizontal: 12,
+                paddingVertical: 7,
+              })}
+            >
+              <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>{reply}</Text>
+            </Pressable>
+          ))}
+        </View>
       ) : null}
 
       <View

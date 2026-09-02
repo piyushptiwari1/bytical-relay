@@ -635,6 +635,17 @@ export async function buildServer(deps: ServerDeps): Promise<{
         )
           client.sendJson(json);
       }
+      if (record.type !== "approval.requested" && record.type !== "approval.resolved") continue;
+      // Approvals also go to every supervising client — phones need the payload
+      // for actionable lock-screen notifications even with the session closed.
+      for (const [, client] of clients) {
+        if (
+          client.ctx.helloDone &&
+          !client.ctx.subscriptions.has(record.stream) &&
+          hasClientScope(client.ctx, "agents.read")
+        )
+          client.sendJson(json);
+      }
       if (record.type !== "approval.requested") continue;
       const approval = record.payload as Partial<ApprovalRequest>;
       if (

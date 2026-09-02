@@ -48,6 +48,8 @@ import { create } from "zustand";
 import {
   expoPushTokenOrNull,
   onAgentStatus,
+  onApprovalRequested,
+  onApprovalResolved,
   onPendingApprovalAction,
   pendingApprovalActions,
   removePendingApprovalAction,
@@ -404,6 +406,9 @@ export const useApp = create<AppState>((set, get) => {
                 last_refreshed_at: new Date().toISOString(),
               });
             }
+            if (msg.type === "approval.requested") onApprovalRequested(machineId, msg.payload);
+            if (msg.type === "approval.resolved")
+              void onApprovalResolved(msg.payload.approval_id).catch(() => {});
             if (msg.type === "editor.state_changed")
               patchRuntime(machineId, { editors: msg.payload.editors });
           });

@@ -1,4 +1,4 @@
-import type { AgentSession } from "@rdc/protocol";
+import type { AgentSession, ApprovalRequest } from "@rdc/protocol";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -14,6 +14,7 @@ let ready = false;
 let focusedSession: string | null = null;
 const lastStatus = new Map<string, string>();
 const APPROVAL_CATEGORY = "relay_approval";
+const ALLOW_ACTION = "allow";
 const REVIEW_ACTION = "review";
 const SKIP_ACTION = "skip";
 const PENDING_APPROVAL_ACTIONS_KEY = "relay.pending.approval.actions";
@@ -52,12 +53,21 @@ export async function setupNotifications(): Promise<void> {
   await Notifications.setNotificationCategoryAsync(
     APPROVAL_CATEGORY,
     [
-      { identifier: REVIEW_ACTION, buttonTitle: "Review" },
+      {
+        identifier: ALLOW_ACTION,
+        buttonTitle: "Allow",
+        options: { opensAppToForeground: false },
+      },
       {
         identifier: SKIP_ACTION,
         buttonTitle: "Skip",
-        options: { isDestructive: true, isAuthenticationRequired: true },
+        options: {
+          isDestructive: true,
+          isAuthenticationRequired: true,
+          opensAppToForeground: false,
+        },
       },
+      { identifier: REVIEW_ACTION, buttonTitle: "Review" },
     ],
     { previewPlaceholder: "Relay agent needs a decision" },
   );
@@ -85,12 +95,25 @@ export function onAgentStatus(machineId: string, session: AgentSession): void {
   if (focusedSession === session.session_id) return; // user is already looking at it
 
   if (session.status === "awaiting_approval") {
-    void notify(
-      session.session_id,
-      "Approval needed",
-      "A Relay agent needs a decision.",
-      machineId,
-    );
+    // grace period: the richer actionable notification (approval payload) usually
+    // lands first — only fall back to a plain one if it didn't
+    setTimeout(() => {
+      void (async () => {
+        const shown = await Notifications.getPresentedNotificationsAsync();
+        const covered = shown.some((n) => {
+          const data = n.request.content.data as { session?: string; approval_id?: string };
+          return data.session === session.session_id && data.approval_id;
+        });
+        if (!covered && lastStatus.get(session.session_id) === "awaiting_approval") {
+          await notify(
+            session.session_id,
+            "Approval needed",
+            "A Relay agent needs a decision.",
+            machineId,
+          );
+        }
+      })().catch(() => {});
+    }, 1200);
   } else if (session.status === "idle" && previous === "running") {
     void notify(
       session.session_id,
@@ -108,16 +131,51 @@ export function onAgentStatus(machineId: string, session: AgentSession): void {
   }
 }
 
+/** Actionable approval notification — Allow / Skip straight from the shade. */
+export function onApprovalRequested(machineId: string, approval: ApprovalRequest): void {
+  if (!ready) return;
+  if (focusedSession === approval.session_id) return;
+  const allowOption = approval.options.find((o) => o.option_kind === "allow_once")?.option_id;
+  const skipOption = approval.options.find((o) => o.option_kind === "reject_once")?.option_id;
+  void Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Approval needed",
+      body: approval.title || "A Relay agent needs a decision.",
+      categoryIdentifier: APPROVAL_CATEGORY,
+      data: {
+        machine: machineId,
+        session: approval.session_id,
+        approval_id: approval.approval_id,
+        ...(allowOption ? { allow_option_id: allowOption } : {}),
+        ...(skipOption ? { skip_option_id: skipOption } : {}),
+      },
+    },
+    trigger: Platform.OS === "android" ? { channelId: "agent" } : null,
+  }).catch(() => {});
+}
+
+/** Approval answered somewhere (laptop, other device) — clear its notification. */
+export async function onApprovalResolved(approvalId: string): Promise<void> {
+  const shown = await Notifications.getPresentedNotificationsAsync();
+  for (const n of shown) {
+    if ((n.request.content.data as { approval_id?: string }).approval_id === approvalId) {
+      await Notifications.dismissNotificationAsync(n.request.identifier);
+    }
+  }
+}
+
 function responseData(response: Notifications.NotificationResponse): {
   machine?: string;
   session?: string;
   approval_id?: string;
+  allow_option_id?: string;
   skip_option_id?: string;
 } {
   return response.notification.request.content.data as {
     machine?: string;
     session?: string;
     approval_id?: string;
+    allow_option_id?: string;
     skip_option_id?: string;
   };
 }
@@ -126,20 +184,24 @@ async function handleNotificationResponse(
   response: Notifications.NotificationResponse,
 ): Promise<void> {
   const data = responseData(response);
-  if (
-    response.actionIdentifier === SKIP_ACTION &&
-    data.machine &&
-    data.session &&
-    data.approval_id &&
-    data.skip_option_id
-  ) {
+  const decisionOption =
+    response.actionIdentifier === ALLOW_ACTION
+      ? data.allow_option_id
+      : response.actionIdentifier === SKIP_ACTION
+        ? data.skip_option_id
+        : undefined;
+  if (decisionOption && data.machine && data.session && data.approval_id) {
     await queueApprovalAction({
-      action_id: `${response.notification.request.identifier}:${SKIP_ACTION}`,
+      action_id: `${response.notification.request.identifier}:${response.actionIdentifier}`,
       machine_id: data.machine,
       session_id: data.session,
       approval_id: data.approval_id,
-      option_id: data.skip_option_id,
+      option_id: decisionOption,
     });
+    await Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(
+      () => {},
+    );
+    return; // decided from the shade — no need to open the app
   }
   if (data.machine && data.session) router.push(`/agent/${data.machine}/${data.session}`);
 }
