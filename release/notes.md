@@ -1,33 +1,24 @@
-First public alpha of **Relay by Bytical** — control your dev machine and AI coding agents from your phone.
+**Relay by Bytical 0.2.0** — control your dev machine and AI coding agents from your phone.
 
 ## New in this release
 
-- **App icon** — Relay finally looks like Relay on your home screen (launcher + adaptive icon + splash).
-- **Job profiles** — start sessions as **Build** (full edit), **Plan**, or **Ask**. Plan and Ask are truly read-only: the controller denies any file change or command the agent attempts, by policy.
-- **Model override** — pick a specific model under “advanced” in the composer.
-- **One-tap install & update**: [relay.bytical.ai/download](https://relay.bytical.ai/download) always serves the newest APK, and the in-app update banner downloads directly.
-- **Feedback everywhere**: review (1–5 ★), feature ideas, update requests, and bug reports — from the app, the website, and the VS Code extension. No account needed; goes straight to the maintainers.
+- **Choose your agent** — Relay now speaks to **GitHub Copilot** and **Claude Code**. When both are installed on your laptop, the composer shows a provider picker; sessions start with whichever you tap.
+- **Zero-dependency laptop setup** — the VS Code extension downloads a self-contained controller and runs it on VS Code's own runtime. No Node, no Git, no package manager needed on the machine.
+- **Survives VS Code restarts** — reloading or restarting VS Code now reattaches to the running controller; your agent sessions keep going uninterrupted (extension 0.2.1).
+- **Field hardening (Linux)** — snap-packaged VS Code quirks fixed, giant-repo file-watch limits degrade gracefully instead of crashing, and the owner dashboard now works in the standalone controller.
+- **Auto keep-awake** — the laptop stays awake while agents are working or your phone is connected, and releases the hold a few minutes after things go quiet.
+- **Job profiles** — start sessions as **Build**, **Plan**, or **Ask**; Plan and Ask are enforced read-only by the controller.
+- **Feedback everywhere** — 1–5 ★ reviews, feature ideas, and bug reports from the app, website, and extension.
 
 ## What's inside
 
-- **Android app (APK)** — install it, then pair with your desktop controller by scanning the QR code on the dashboard. Pairing needs the same Wi-Fi once; after that the app works from anywhere via the encrypted relay.
-- End-to-end encrypted channel between phone and laptop — the relay only ever forwards ciphertext.
-- Agent chat, session control, scoped terminals, git status, push notifications, offline outbox.
-- One device row per physical phone: re-pairing updates your existing device (keys and token rotate, old credential dies instantly).
-- **Self-announcing updates**: from this version on, the app checks the public releases feed (at most every 6 hours) and shows a banner when a newer build is available. No account, no tracking — just this repo's releases API.
+- **Android app (APK)** — `relay-by-bytical.apk` below, or grab it any time from [relay.bytical.ai/download](https://relay.bytical.ai/download) (always the newest build). In-app update banner announces future releases.
+- **VS Code extension** — [marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical](https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical) — 2 clicks: *Set up this computer*, then *Pair phone*.
+- **Standalone controller** (`relay-controller-standalone.tgz`) — for CLI users: extract and `node controller.mjs start`.
+- End-to-end encrypted phone↔laptop channel — the relay only ever forwards ciphertext.
+- Agent chat, approvals from your lock screen, scoped terminals, git status, push notifications, offline outbox.
+- Re-pairing keeps one device row per phone: keys and token rotate, the old credential dies instantly.
 
-## Desktop controller (required)
+## Upgrading
 
-```bash
-git clone https://github.com/piyushptiwari1/bytical-relay.git
-cd bytical-relay && pnpm install
-pnpm --filter @rdc/desktop-controller dev
-```
-
-Open the dashboard link it prints, then scan the pairing QR from the app.
-
-## Notes
-
-- Alpha quality — expect rough edges, and please file issues.
-- Privacy: no third-party trackers. See https://relay.bytical.ai/privacy
-- Live transparency stats: https://relay.bytical.ai/stats
+Install the new APK over the old one (no uninstall needed). If your laptop extension is older than 0.2.1, let it auto-update, then run **Relay: Set up / update this computer** once to refresh the controller.
