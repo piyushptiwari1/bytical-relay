@@ -59,7 +59,7 @@ async function showMenu(context: vscode.ExtensionContext): Promise<void> {
     },
     running
       ? { label: "$(debug-stop) Stop controller", action: () => launcher.stop() }
-      : { label: "$(play) Start controller", action: () => launcher.start() },
+      : { label: "$(play) Start controller", action: () => void launcher.start() },
     { label: "$(cloud-download) Set up / update this computer", action: () => launcher.setup() },
     {
       label: "$(comment-discussion) Send feedback",
@@ -109,7 +109,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (pick) await vscode.commands.executeCommand("relay.setup");
         return;
       }
-      launcher.start();
+      await launcher.start();
       const healthy = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,

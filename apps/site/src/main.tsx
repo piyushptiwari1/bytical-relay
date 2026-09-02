@@ -150,7 +150,7 @@ function FeedbackWidget() {
 function HeroVisual() {
   return (
     <div className="hero-visual" aria-hidden="true">
-      <div className="mock mock-laptop">
+      <div className="mock mock-laptop float-a">
         <div className="mock-chrome">
           <span />
           <span />
@@ -162,26 +162,30 @@ function HeroVisual() {
           <div className="mock-line">
             <b>relay ›</b> refactor the retry queue, add tests
           </div>
-          <div className="mock-line ok">✓ 12 files changed · tests passing</div>
+          <div className="mock-line stream">
+            rewriting enqueue() with backoff
+            <span className="caret" />
+          </div>
+          <div className="mock-line ok reveal r4">✓ 12 files changed · tests passing</div>
           <div className="mock-line dim">Build mode · continues while you're away</div>
         </div>
       </div>
-      <div className="mock mock-phone">
+      <div className="mock mock-phone float-b">
         <div className="phone-head">
           <span className="pulse-dot" /> laptop connected
         </div>
-        <div className="bubble agent">
+        <div className="bubble agent reveal r1">
           Migration plan is ready — 3 steps, no data loss. Want me to start?
         </div>
-        <div className="approval-card">
+        <div className="approval-card reveal r2">
           <div className="approval-kicker">Approval requested</div>
           <div className="approval-cmd">pnpm test · workspace</div>
           <div className="approval-actions">
-            <b>Allow once</b>
+            <b className="tap">Allow once</b>
             <span>Deny</span>
           </div>
         </div>
-        <div className="bubble user">Approved — continue with step 2</div>
+        <div className="bubble user reveal r3">Approved — continue with step 2</div>
       </div>
     </div>
   );

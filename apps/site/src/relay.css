@@ -1451,3 +1451,123 @@ section {
     right: 0;
   }
 }
+
+/* == hero motion: staged conversation, streaming caret, gentle float == */
+.float-a {
+  animation: heroFloatA 9s ease-in-out infinite;
+}
+.float-b {
+  animation: heroFloatB 7s ease-in-out infinite;
+}
+@keyframes heroFloatA {
+  0%,
+  100% {
+    transform: rotate(-2deg) translate(36px, 0);
+  }
+  50% {
+    transform: rotate(-2.6deg) translate(36px, -9px);
+  }
+}
+@keyframes heroFloatB {
+  0%,
+  100% {
+    transform: rotate(2.5deg) translateY(0);
+  }
+  50% {
+    transform: rotate(3.1deg) translateY(-12px);
+  }
+}
+
+.mock-phone {
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.5),
+    0 0 44px rgba(34, 211, 238, 0.12);
+}
+
+.reveal {
+  animation: revealUp 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.reveal.r1 {
+  animation-delay: 0.5s;
+}
+.reveal.r2 {
+  animation-delay: 1.4s;
+}
+.reveal.r3 {
+  animation-delay: 2.6s;
+}
+.reveal.r4 {
+  animation-delay: 3.4s;
+}
+@keyframes revealUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mock-line.stream {
+  color: var(--accent-2);
+}
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-left: 3px;
+  background: var(--accent);
+  vertical-align: -2px;
+  animation: caretBlink 0.9s steps(1) infinite;
+}
+@keyframes caretBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.tap {
+  position: relative;
+}
+.tap::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 12px;
+  border: 2px solid rgba(34, 211, 238, 0.65);
+  opacity: 0;
+  animation: tapRing 5s ease-out infinite;
+  animation-delay: 2.1s;
+}
+@keyframes tapRing {
+  0%,
+  40% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  46% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  58%,
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .float-a,
+  .float-b,
+  .reveal,
+  .caret,
+  .tap::after {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

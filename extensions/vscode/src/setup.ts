@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 
@@ -80,7 +81,7 @@ export class ControllerLauncher {
           await this.#setupStandalone(progress);
         }
         progress.report({ message: "starting the controller…" });
-        this.start();
+        await this.start();
         const ok = await this.#waitHealthy(progress);
         if (!ok) throw new Error("controller did not become healthy — see Relay logs");
       },
@@ -129,9 +130,15 @@ export class ControllerLauncher {
     await this.#run(...this.#pnpm(["install", "--frozen-lockfile"]), dir);
   }
 
-  /** Spawn + supervise. No-op when already managed or an external one answers. */
-  start(): void {
+  /** Spawn + supervise. Attaches to an already-running controller first —
+   * a VS Code reload must reconnect, never double-spawn. */
+  async start(): Promise<void> {
     if (this.#child) return;
+    if (await this.healthy()) {
+      this.output.appendLine("[launcher] controller already running — attached");
+      this.#setMode("external");
+      return;
+    }
     this.#stopping = false;
     const contributor = this.#contributorPath();
     const standalone = path.join(this.#standaloneDir(), "controller.mjs");
@@ -160,7 +167,10 @@ export class ControllerLauncher {
       return;
     }
     this.output.appendLine(`[launcher] ${cmd} ${args.join(" ")} (cwd ${cwd})`);
-    const child = spawn(cmd, args, { cwd, shell: useShell, windowsHide: true, env });
+    // POSIX: detached — sessions must survive VS Code reloads (Stop is explicit)
+    const detached = process.platform !== "win32";
+    const child = spawn(cmd, args, { cwd, shell: useShell, windowsHide: true, env, detached });
+    if (detached) child.unref();
     this.#child = child;
     this.#setMode("managed");
     child.stdout?.on("data", (d: Buffer) => this.output.append(d.toString()));
@@ -179,9 +189,24 @@ export class ControllerLauncher {
         this.#setMode("off");
         return;
       }
+      // single-instance lock = a controller is ALREADY serving — attach, don't loop
+      if (/another controller instance is already running/i.test(this.#recentErrors.join("\n"))) {
+        this.#recentErrors = [];
+        void this.healthy().then((ok) => {
+          if (ok) {
+            this.output.appendLine("[launcher] attached to the already-running controller");
+            this.#setMode("external");
+          } else if (this.#restarts++ < 5) {
+            setTimeout(() => void this.start(), 3000);
+          } else {
+            this.#setMode("off");
+          }
+        });
+        return;
+      }
       if (this.#restarts++ < 5) {
         this.output.appendLine("[launcher] restarting in 3s…");
-        setTimeout(() => this.start(), 3000);
+        setTimeout(() => void this.start(), 3000);
       } else {
         this.#setMode("off");
         const hint = this.#diagnoseCrash();
@@ -208,18 +233,42 @@ export class ControllerLauncher {
 
   async stop(): Promise<void> {
     this.#stopping = true;
-    const child = this.#child;
-    if (!child?.pid) {
+    const pid = this.#child?.pid ?? this.#lockPid();
+    if (!pid) {
       this.#setMode((await this.healthy()) ? "external" : "off");
       return;
     }
     if (process.platform === "win32") {
-      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+      spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true });
     } else {
-      child.kill("SIGTERM");
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already gone */
+      }
     }
     this.#child = null;
     this.#setMode("off");
+  }
+
+  /** Controller's single-instance pidfile — lets us stop instances we didn't spawn. */
+  #lockPid(): number | null {
+    const dir =
+      process.env.RDC_CONFIG_DIR ??
+      (process.platform === "win32"
+        ? path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"), "rdc")
+        : process.platform === "darwin"
+          ? path.join(os.homedir(), "Library", "Application Support", "rdc")
+          : path.join(
+              process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"),
+              "rdc",
+            ));
+    try {
+      const pid = Number(readFileSync(path.join(dir, "controller.lock"), "utf8").trim());
+      return Number.isInteger(pid) && pid > 0 ? pid : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Attach silently on activation: external > managed-autostart > off. */
@@ -229,7 +278,7 @@ export class ControllerLauncher {
       return;
     }
     const autoStart = vscode.workspace.getConfiguration("relay").get<boolean>("autoStart", true);
-    if (autoStart && this.isSetUp()) this.start();
+    if (autoStart && this.isSetUp()) void this.start();
   }
 
   isSetUp(): boolean {
