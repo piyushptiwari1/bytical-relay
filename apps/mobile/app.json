@@ -2,7 +2,7 @@
   "expo": {
     "name": "Relay",
     "slug": "rdc-mobile",
-    "version": "0.1.3",
+    "version": "0.2.0",
     "scheme": "rdc",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -14,7 +14,9 @@
     },
     "android": {
       "package": "com.rdc.mobile",
-      "permissions": ["android.permission.CAMERA"],
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#101016"
