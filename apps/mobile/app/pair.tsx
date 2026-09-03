@@ -6,6 +6,7 @@ import * as Device from "expo-device";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import { Platform, Text, View } from "react-native";
+import { humanError } from "../src/errors.ts";
 import { getInstallId } from "../src/install-id.ts";
 import { useApp } from "../src/machines.ts";
 import { Button, Card, colors, space, type_ } from "../src/theme.tsx";
@@ -65,7 +66,7 @@ export default function Pair() {
           router.replace("/");
           return;
         } catch (cause) {
-          lastError = cause instanceof Error ? cause.message : String(cause);
+          lastError = humanError(cause);
         }
       }
       setPhase({ step: "error", message: lastError });

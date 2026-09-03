@@ -2,6 +2,7 @@ import type { TerminalSnapshot } from "@rdc/protocol";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { humanError } from "../../../src/errors.ts";
 import {
   hasScope,
   terminalKill,
@@ -43,7 +44,7 @@ export default function TerminalScreen() {
       setSnapshot(await terminalSnapshot(machine, terminal));
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     } finally {
       fetching.current = false;
       if (pendingRefetch.current) {
@@ -71,7 +72,7 @@ export default function TerminalScreen() {
     try {
       await terminalWrite(machine, terminal, data);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     }
   };
 

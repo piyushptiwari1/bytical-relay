@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
+import { humanError } from "../src/errors.ts";
 import { openInEditor, readFile } from "../src/machines.ts";
 import { Button, colors, mono, space, type_ } from "../src/theme.tsx";
 
@@ -33,7 +34,7 @@ export default function Viewer() {
       .catch((cause) =>
         setState({
           status: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: humanError(cause),
         }),
       );
   }, [machine, project, path]);
@@ -62,9 +63,7 @@ export default function Viewer() {
                 .then((r) =>
                   setOpenNote(r.delivered > 0 ? "Opened in VS Code ✓" : "VS Code isn’t open"),
                 )
-                .catch((cause) =>
-                  setOpenNote(cause instanceof Error ? cause.message : String(cause)),
-                );
+                .catch((cause) => setOpenNote(humanError(cause)));
             }}
           />
         ) : null}

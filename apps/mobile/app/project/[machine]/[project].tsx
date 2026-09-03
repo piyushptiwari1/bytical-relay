@@ -2,6 +2,7 @@ import type { FileEntry, KnownMessage } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
+import { humanError } from "../../../src/errors.ts";
 import { listEntries, watchProject } from "../../../src/machines.ts";
 import { colors, EmptyState, mono, space, type_ } from "../../../src/theme.tsx";
 
@@ -26,7 +27,7 @@ export default function ProjectBrowser() {
         setEntries(await listEntries(machine, projectId, parentId));
         setError(null);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(humanError(cause));
       }
     },
     [machine, projectId],

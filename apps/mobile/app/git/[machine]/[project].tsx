@@ -2,6 +2,7 @@ import type { GitFileStatus, GitState } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { humanError } from "../../../src/errors.ts";
 import {
   gitCommit,
   gitStage,
@@ -45,7 +46,7 @@ export default function GitScreen() {
       setState(await gitStatus(machine, project));
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     }
   }, [machine, project]);
 
@@ -84,7 +85,7 @@ export default function GitScreen() {
       if (next) setState(next);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     } finally {
       setBusy(false);
     }

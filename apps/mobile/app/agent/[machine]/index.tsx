@@ -2,6 +2,7 @@ import type { AgentSession } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { humanError } from "../../../src/errors.ts";
 import {
   agentArchive,
   agentList,
@@ -99,7 +100,7 @@ export default function AgentsHome() {
       setExternal(result.external);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     } finally {
       setLoaded(true);
     }
@@ -161,7 +162,7 @@ export default function AgentsHome() {
       setPrompt("");
       router.push(`/agent/${machine}/${session.session_id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     } finally {
       setBusy(false);
     }
@@ -173,7 +174,7 @@ export default function AgentsHome() {
       const { session } = await agentResume(machine, item.provider, item.native_id);
       router.push(`/agent/${machine}/${session.session_id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     } finally {
       setResuming(null);
     }
@@ -198,7 +199,7 @@ export default function AgentsHome() {
                           prev.filter((s) => s.session_id !== session.session_id),
                         ),
                       )
-                      .catch((cause) => setError(String(cause)));
+                      .catch((cause) => setError(humanError(cause)));
                   },
                 },
               ]);

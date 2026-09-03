@@ -20,6 +20,39 @@ read-only; phone chats continue via Copilot CLI").
 - Risks + fallbacks (format drift → tolerant parse; slow path → cache).
 - What the live probe for each expectation will be.
 
+### 2b. End-to-end contract sweep (MANDATORY — every slice, before implementing)
+
+Field-recurrence analysis (2026-09-02/03) showed every field bug lived at a **surface
+boundary**, never inside the slice. Before implementing, write the full journey and check
+each crossing:
+
+1. **Journey map** — name every process the feature crosses (phone app ↔ relay ↔ controller ↔
+   extension ↔ CI artifact ↔ field machine) and which OS each runs on. The bug lives where
+   two of these meet.
+2. **Contract table** — for every value crossing a boundary (path, string, schema field, env
+   var, port, version): list PRODUCER and ALL CONSUMERS, then grep both sides. (The Linux
+   `.config` vs `.local/share` outage was one unchecked row of this table.)
+3. **User-string audit** — any string that can reach a human (UI label, `detail`, error,
+   notification) must be enumerated at every producer and read as a sentence a non-engineer
+   understands. Raw `errno`/`spawn X ENOENT`/`exit 1` never ships. Grep for `String(cause)`,
+   `message`, `detail:` in the touched paths.
+4. **Version-skew matrix** — the fleet is never uniform: new phone + old controller, old
+   phone + new controller, stale standalone. State what each pairing shows the user; every
+   cell must degrade to guidance, not a dead end or a crash loop.
+5. **State audit per screen** — loading / empty / error / disabled. A disabled or inert
+   element must explain itself on tap. No silent `onPress: undefined` on visible cards.
+6. **Legacy-line check** — when replacing a mechanism (status text, notification, config
+   path), grep for the OLD mechanism's strings/paths and delete or route them; two writers
+   to one surface caused the stuck "controller offline".
+7. **Gotcha preflight** (recurred twice each — now mandatory): python writes with
+   `encoding="utf-8", newline="\n"`; `biome check --write` any file created/edited outside
+   the editor BEFORE commit; after any chained release command, verify `git show --stat HEAD`
+   actually contains what the message claims; pushes and downloads in retry loops on this
+   network.
+
+The sweep output is 5-15 lines in the plan, not a document. If a row can't be verified
+locally (other-OS field machine), say so and state the fallback the user will see.
+
 ## 3. Implement
 
 - Small slices, tolerant parsing of external formats, never block the ws event loop with

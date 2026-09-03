@@ -2,6 +2,7 @@ import type { TerminalInfo } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { humanError } from "../../../src/errors.ts";
 import {
   hasScope,
   terminalCreate,
@@ -37,7 +38,7 @@ export default function TerminalsHome() {
       setShells(result.shells);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     }
   }, [machine]);
 
@@ -55,7 +56,7 @@ export default function TerminalsHome() {
       router.push(`/terminal/${machine}/${terminal.terminal_id}`);
       void load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     } finally {
       setBusy(false);
     }

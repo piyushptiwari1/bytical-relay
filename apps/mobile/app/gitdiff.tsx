@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
+import { humanError } from "../src/errors.ts";
 import { gitDiffFile } from "../src/machines.ts";
 import { colors, mono, space, type_ } from "../src/theme.tsx";
 
@@ -37,7 +38,7 @@ export default function GitDiff() {
         if (diff.truncated) setNote("Diff truncated at 512 KB.");
         setLines(diff.patch.length === 0 ? [] : diff.patch.split("\n"));
       })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause) => setError(humanError(cause)));
   }, [params.machine, params.project, params.path, params.staged]);
 
   if (error) {

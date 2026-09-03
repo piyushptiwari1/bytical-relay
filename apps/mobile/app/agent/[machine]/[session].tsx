@@ -2,6 +2,7 @@ import type { ApprovalRequest } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { humanError } from "../../../src/errors.ts";
 import {
   agentCancel,
   agentPrompt,
@@ -231,7 +232,7 @@ export default function AgentSessionScreen() {
           return next;
         });
       })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause) => setError(humanError(cause)))
       .finally(() => {
         historyDone = true;
       });
@@ -291,7 +292,7 @@ export default function AgentSessionScreen() {
             : null,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(humanError(cause));
     }
   };
 
@@ -537,7 +538,7 @@ export default function AgentSessionScreen() {
                     disabled={!canControl}
                     onPress={() =>
                       void approvalRespond(machine, approval.approval_id, option.option_id).catch(
-                        (cause) => setError(String(cause)),
+                        (cause) => setError(humanError(cause)),
                       )
                     }
                     style={({ pressed }) => ({
