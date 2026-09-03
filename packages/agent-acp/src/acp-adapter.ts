@@ -88,12 +88,16 @@ export class AcpAdapter implements AgentAdapter {
       }, 20_000);
       child.on("error", (cause) => {
         clearTimeout(timer);
-        resolve({ available: false, detail: String(cause.message) });
+        // surfaced verbatim on the phone — keep it human, not errno-speak
+        const detail = /ENOENT/i.test(cause.message)
+          ? "not installed on this computer"
+          : `not runnable (${cause.message})`;
+        resolve({ available: false, detail });
       });
       child.on("exit", (code) => {
         clearTimeout(timer);
         if (code === 0) resolve({ available: true, detail: output.trim().split("\n")[0] ?? "" });
-        else resolve({ available: false, detail: `exit ${code}` });
+        else resolve({ available: false, detail: `installed but not responding (exit ${code})` });
       });
     });
   }

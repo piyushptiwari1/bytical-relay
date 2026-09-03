@@ -11,8 +11,11 @@ export const colors = {
   text: "#F2F5F9",
   dim: "#7D8590",
   faint: "#4B5563",
-  accent: "#6E9BFF",
-  accentSoft: "#1A2440",
+  // brand: cyan primary, violet secondary (matches icon/site/extension)
+  accent: "#22D3EE",
+  accentSoft: "#0C2830",
+  accent2: "#A78BFA",
+  accent2Soft: "#211B36",
   ok: "#4ADE80",
   okSoft: "#12291C",
   warn: "#FBBF24",
@@ -177,4 +180,73 @@ export function EmptyState(props: { icon: string; title: string; caption?: strin
       ) : null}
     </View>
   );
+}
+
+/** VS Code-style list row: icon slot · label + description · trailing, hairline below. */
+export function ListRow(props: {
+  icon?: ReactNode;
+  label: string;
+  description?: string;
+  trailing?: ReactNode;
+  onPress?: () => void;
+  onLongPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      onLongPress={props.onLongPress}
+      disabled={!props.onPress && !props.onLongPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.md,
+        minHeight: 44,
+        paddingHorizontal: space.md,
+        paddingVertical: space.sm,
+        backgroundColor: pressed ? colors.cardRaised : "transparent",
+        borderBottomWidth: 1,
+        borderBottomColor: colors.borderSoft,
+      })}
+    >
+      {props.icon ? <View style={{ width: 22, alignItems: "center" }}>{props.icon}</View> : null}
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text style={{ ...type_.body, fontWeight: "500" }} numberOfLines={1}>
+          {props.label}
+        </Text>
+        {props.description ? (
+          <Text style={type_.caption} numberOfLines={1}>
+            {props.description}
+          </Text>
+        ) : null}
+      </View>
+      {props.trailing}
+    </Pressable>
+  );
+}
+
+/** Chat identity mark — agent = violet ✦, you = dim monogram. */
+export function Avatar(props: { kind: "agent" | "user"; glyph?: string }) {
+  const agent = props.kind === "agent";
+  return (
+    <View
+      style={{
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: agent ? colors.accent2Soft : colors.cardRaised,
+        borderWidth: 1,
+        borderColor: agent ? colors.accent2 : colors.border,
+      }}
+    >
+      <Text style={{ color: agent ? colors.accent2 : colors.dim, fontSize: 12, fontWeight: "700" }}>
+        {props.glyph ?? (agent ? "✦" : "●")}
+      </Text>
+    </View>
+  );
+}
+
+export function Hairline() {
+  return <View style={{ height: 1, backgroundColor: colors.borderSoft, flex: 1 }} />;
 }

@@ -14,7 +14,16 @@ import {
 } from "../../../src/machines.ts";
 import { RichText } from "../../../src/markdown.tsx";
 import { dismissSessionNotifications, setFocusedSession } from "../../../src/notifications.ts";
-import { colors, mono, Pill, type PillTone, space, type_ } from "../../../src/theme.tsx";
+import {
+  Avatar,
+  colors,
+  Hairline,
+  mono,
+  Pill,
+  type PillTone,
+  space,
+  type_,
+} from "../../../src/theme.tsx";
 
 type Block =
   | { id: string; kind: "user"; text: string }
@@ -68,6 +77,12 @@ export default function AgentSessionScreen() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [status, setStatus] = useState<string>("running");
+  const [provider, setProvider] = useState<string | null>(() =>
+    machine && session
+      ? (useApp.getState().runtime[machine]?.sessions?.find((x) => x.session_id === session)
+          ?.provider ?? null)
+      : null,
+  );
   const [projectId, setProjectId] = useState<string | null>(null);
   const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   const [prompt, setPrompt] = useState("");
@@ -225,6 +240,7 @@ export default function AgentSessionScreen() {
       if (s.session_id === session) {
         setStatus(s.status);
         setProjectId(s.project_id);
+        setProvider(s.provider);
         setQueuedPromptCount(s.queued_prompt_count ?? 0);
       }
     });
@@ -245,6 +261,8 @@ export default function AgentSessionScreen() {
   const willQueue = busy || queuedPromptCount > 0 || pendingPromptCount > 0;
   const ended = ENDED.has(status);
   const project = projects.find((p) => p.project_id === projectId);
+  const providerName =
+    provider === "copilot" ? "Copilot" : provider === "claude" ? "Claude" : "Agent";
 
   const send = async () => {
     if (prompt.trim().length === 0) return;
@@ -350,7 +368,7 @@ export default function AgentSessionScreen() {
                 paddingHorizontal: space.xs,
               }}
             >
-              <Text style={{ color: colors.accent, fontSize: 13 }}>✦</Text>
+              <Text style={{ color: colors.accent2, fontSize: 13 }}>✦</Text>
               <Text style={{ ...type_.caption, color: colors.dim }}>
                 {status === "starting" ? "starting" : "working"}
                 {dots}
@@ -361,45 +379,40 @@ export default function AgentSessionScreen() {
         renderItem={({ item }) => {
           if (item.kind === "user")
             return (
-              <View
-                style={{
-                  alignSelf: "flex-end",
-                  backgroundColor: colors.accentSoft,
-                  borderColor: colors.accent,
-                  borderWidth: 1,
-                  borderRadius: 16,
-                  borderBottomRightRadius: 4,
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  maxWidth: "85%",
-                }}
-              >
-                <Text style={{ color: colors.text, fontSize: 14, lineHeight: 20 }}>
-                  {item.text}
-                </Text>
+              <View style={{ flexDirection: "row", gap: space.md, paddingTop: space.sm }}>
+                <Avatar kind="user" />
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={{ ...type_.caption, fontWeight: "700", color: colors.dim }}>
+                    You
+                  </Text>
+                  <Text style={{ color: colors.text, fontSize: 14, lineHeight: 21 }}>
+                    {item.text}
+                  </Text>
+                </View>
               </View>
             );
           if (item.kind === "assistant")
             return (
-              <View
-                style={{
-                  alignSelf: "flex-start",
-                  backgroundColor: colors.card,
-                  borderColor: colors.borderSoft,
-                  borderWidth: 1,
-                  borderRadius: 16,
-                  borderBottomLeftRadius: 4,
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  maxWidth: "92%",
-                }}
-              >
-                <RichText text={item.text} />
+              <View style={{ flexDirection: "row", gap: space.md, paddingTop: space.sm }}>
+                <Avatar kind="agent" />
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={{ ...type_.caption, fontWeight: "700", color: colors.accent2 }}>
+                    {providerName}
+                  </Text>
+                  <RichText text={item.text} />
+                </View>
               </View>
             );
           if (item.kind === "thought")
             return (
-              <Text style={{ ...type_.caption, fontStyle: "italic", paddingHorizontal: space.xs }}>
+              <Text
+                style={{
+                  ...type_.caption,
+                  fontStyle: "italic",
+                  paddingLeft: 24 + space.md,
+                  paddingRight: space.xs,
+                }}
+              >
                 {item.text}
               </Text>
             );
@@ -410,15 +423,18 @@ export default function AgentSessionScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   gap: space.sm,
+                  marginLeft: 24 + space.md,
+                  borderLeftWidth: 2,
+                  borderLeftColor: toolColor[item.status] ?? colors.borderSoft,
                   backgroundColor: colors.card,
-                  borderRadius: 10,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
+                  borderRadius: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 7,
                   alignSelf: "flex-start",
-                  maxWidth: "92%",
+                  maxWidth: "88%",
                 }}
               >
-                <Text style={{ color: toolColor[item.status] ?? colors.dim, fontSize: 13 }}>
+                <Text style={{ color: toolColor[item.status] ?? colors.dim, fontSize: 12 }}>
                   {toolGlyph[item.status] ?? "○"}
                 </Text>
                 <Text
@@ -437,8 +453,11 @@ export default function AgentSessionScreen() {
               <View
                 style={{
                   gap: 4,
+                  marginLeft: 24 + space.md,
                   backgroundColor: colors.card,
-                  borderRadius: 10,
+                  borderColor: colors.borderSoft,
+                  borderWidth: 1,
+                  borderRadius: 8,
                   padding: space.md,
                 }}
               >
@@ -463,9 +482,18 @@ export default function AgentSessionScreen() {
               </Text>
             );
           return (
-            <Text style={{ ...type_.micro, textAlign: "center", marginVertical: 2 }}>
-              ── {item.text} ──
-            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: space.md,
+                marginVertical: 4,
+              }}
+            >
+              <Hairline />
+              <Text style={type_.micro}>{item.text}</Text>
+              <Hairline />
+            </View>
           );
         }}
       />
@@ -488,9 +516,10 @@ export default function AgentSessionScreen() {
           }}
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Text style={{ fontSize: 16 }}>🛡️</Text>
-            <Text style={{ ...type_.caption, flex: 1 }}>
-              Copilot wants to run · {approval.tool_kind}
+            <Text style={{ ...type_.micro, color: colors.accent2 }}>Approval requested</Text>
+            <View style={{ flex: 1 }} />
+            <Text style={type_.caption}>
+              {providerName} · {approval.tool_kind}
             </Text>
           </View>
           <Text style={{ ...type_.body, fontWeight: "600", ...mono, fontSize: 13 }}>
@@ -625,56 +654,70 @@ export default function AgentSessionScreen() {
           borderTopColor: colors.borderSoft,
         }}
       >
-        <TextInput
-          value={prompt}
-          onChangeText={setPrompt}
-          editable={canPrompt}
-          placeholder={
-            !canPrompt
-              ? "starting agent…"
-              : willQueue
-                ? "Add an instruction for after this step…"
-                : ended
-                  ? "Continue this conversation…"
-                  : "Follow-up prompt…"
-          }
-          placeholderTextColor={colors.faint}
+        <View
           style={{
             flex: 1,
+            flexDirection: "row",
+            alignItems: "flex-end",
             backgroundColor: colors.card,
-            borderColor: colors.borderSoft,
+            borderColor: prompt.trim() ? colors.accent : colors.borderSoft,
             borderWidth: 1,
-            borderRadius: 22,
-            color: colors.text,
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            fontSize: 14,
+            borderRadius: 14,
+            paddingLeft: 14,
+            paddingRight: 6,
+            paddingVertical: 5,
+            gap: space.sm,
           }}
-        />
-        <Pressable
-          disabled={!canPrompt || prompt.trim().length === 0}
-          onPress={() => void send()}
-          accessibilityLabel={willQueue ? "Queue instruction" : "Send instruction"}
-          style={({ pressed }) => ({
-            backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.card,
-            borderRadius: 22,
-            width: 44,
-            height: 44,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? 0.85 : 1,
-          })}
         >
-          <Text
+          <TextInput
+            value={prompt}
+            onChangeText={setPrompt}
+            editable={canPrompt}
+            multiline
+            placeholder={
+              !canPrompt
+                ? "starting agent…"
+                : willQueue
+                  ? "Add an instruction for after this step…"
+                  : ended
+                    ? "Continue this conversation…"
+                    : `Message ${providerName}…`
+            }
+            placeholderTextColor={colors.faint}
             style={{
-              color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
-              fontSize: 17,
-              fontWeight: "700",
+              flex: 1,
+              color: colors.text,
+              paddingVertical: 6,
+              fontSize: 14,
+              maxHeight: 110,
             }}
+          />
+          <Pressable
+            disabled={!canPrompt || prompt.trim().length === 0}
+            onPress={() => void send()}
+            accessibilityLabel={willQueue ? "Queue instruction" : "Send instruction"}
+            style={({ pressed }) => ({
+              backgroundColor: canPrompt && prompt.trim() ? colors.accent : colors.cardRaised,
+              borderRadius: 10,
+              width: 34,
+              height: 34,
+              marginBottom: 2,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.85 : 1,
+            })}
           >
-            ↑
-          </Text>
-        </Pressable>
+            <Text
+              style={{
+                color: canPrompt && prompt.trim() ? "#0A0C10" : colors.faint,
+                fontSize: 15,
+                fontWeight: "700",
+              }}
+            >
+              ↑
+            </Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
