@@ -1,6 +1,10 @@
-**Relay by Bytical 0.3.0** — the phone chat grows up.
+**Relay by Bytical 0.3.1** — the phone app becomes a true VS Code sibling.
 
 ## New in this release
+
+- **VS Code-style chat** — messages render as full-width rows with provider identity (✦ Copilot / Claude), just like the Copilot Chat panel; tools as status rows, hairline turn dividers, a proper chat input with the send button inside.
+- **Brand-true colors** — the app now wears the product's cyan/violet, matching the icon, site, and extension.
+- **Errors that speak human** — every error on every screen translates to a plain sentence with a next step. No more `spawn copilot ENOENT`: it now says "not installed on this computer" and how to fix it.
 
 - **Markdown chat** — agent replies render properly: code blocks in mono cards with **tap-to-copy**, lists, headings, inline code.
 - **Approve from the notification shade** — approval notifications now carry real **Allow / Skip** buttons; decisions are queued offline-safe and delivered the moment your laptop is reachable. Tap **Review** to jump into the session.
