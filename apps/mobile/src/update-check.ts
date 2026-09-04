@@ -45,3 +45,26 @@ export async function fetchLatestRelease(): Promise<{ tag: string; url: string }
     url: typeof body.html_url === "string" ? body.html_url : RELEASE_PAGE_URL,
   };
 }
+
+export type UpdateCheckResult =
+  | { status: "latest"; current: string }
+  | { status: "update"; update: AvailableUpdate }
+  | { status: "offline" };
+
+/** User-initiated check — no throttle, explicit result for every outcome. */
+export async function checkForUpdateNow(): Promise<UpdateCheckResult> {
+  const current = Constants.expoConfig?.version ?? "0.0.0";
+  try {
+    const release = await fetchLatestRelease();
+    if (!release) return { status: "offline" };
+    if (isNewerVersion(current, release.tag)) {
+      return {
+        status: "update",
+        update: { version: release.tag.replace(/^v/, ""), url: RELEASE_PAGE_URL },
+      };
+    }
+    return { status: "latest", current };
+  } catch {
+    return { status: "offline" };
+  }
+}

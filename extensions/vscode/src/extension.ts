@@ -87,6 +87,11 @@ async function showMenu(context: vscode.ExtensionContext): Promise<void> {
       action: () => launcher.setup(),
     },
     {
+      label: "$(sync) Check for updates",
+      description: "controller + extension versions",
+      action: () => launcher.offerUpdateIfStale(true),
+    },
+    {
       label: "$(comment-discussion) Send feedback",
       description: "straight to the maintainers — no account",
       action: () => vscode.commands.executeCommand("relay.feedback"),
@@ -154,6 +159,7 @@ export function activate(context: vscode.ExtensionContext): void {
       sendFeedback(String(context.extension.packageJSON.version ?? "dev")),
     ),
     vscode.commands.registerCommand("relay.stop", () => launcher.stop()),
+    vscode.commands.registerCommand("relay.checkUpdates", () => launcher.offerUpdateIfStale(true)),
     vscode.commands.registerCommand("relay.logs", () => output.show(true)),
     vscode.commands.registerCommand("rdc.reconnect", () => start(context)),
     vscode.commands.registerCommand("rdc.openAgents", async () => {

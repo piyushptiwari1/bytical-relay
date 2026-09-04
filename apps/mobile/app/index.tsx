@@ -1,8 +1,9 @@
 import type { AgentSession } from "@rdc/protocol";
+import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useApp } from "../src/machines.ts";
 import {
   Button,
@@ -16,7 +17,7 @@ import {
   space,
   type_,
 } from "../src/theme.tsx";
-import { type AvailableUpdate, checkForUpdate } from "../src/update-check.ts";
+import { type AvailableUpdate, checkForUpdate, checkForUpdateNow } from "../src/update-check.ts";
 
 type SessionItem = {
   machineId: string;
@@ -69,6 +70,7 @@ export default function RelayHome() {
   const connect = useApp((s) => s.connect);
   const refreshMachine = useApp((s) => s.refreshMachine);
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     void checkForUpdate().then(setUpdate);
@@ -271,6 +273,42 @@ export default function RelayHome() {
       >
         <Text style={{ ...type_.caption, textDecorationLine: "underline" }}>
           Review · request · report — send feedback
+        </Text>
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={checkingUpdate}
+        onPress={() => {
+          setCheckingUpdate(true);
+          void checkForUpdateNow()
+            .then((result) => {
+              if (result.status === "update") {
+                Alert.alert(
+                  `Relay ${result.update.version} is available`,
+                  "Download installs over this version — your pairings are kept.",
+                  [
+                    { text: "Later", style: "cancel" },
+                    { text: "Download", onPress: () => void Linking.openURL(result.update.url) },
+                  ],
+                );
+              } else if (result.status === "latest") {
+                Alert.alert("You're up to date", `Relay ${result.current} is the newest version.`);
+              } else {
+                Alert.alert(
+                  "Couldn't check",
+                  "No connection to the releases feed right now — try again later.",
+                );
+              }
+            })
+            .finally(() => setCheckingUpdate(false));
+        }}
+        style={{ alignItems: "center", paddingVertical: space.sm }}
+      >
+        <Text style={{ ...type_.caption, textDecorationLine: "underline" }}>
+          {checkingUpdate
+            ? "checking…"
+            : `Relay ${Constants.expoConfig?.version ?? ""} — check for updates`}
         </Text>
       </Pressable>
     </ScrollView>

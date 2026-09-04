@@ -2,7 +2,7 @@
   "expo": {
     "name": "Relay",
     "slug": "rdc-mobile",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "scheme": "rdc",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",

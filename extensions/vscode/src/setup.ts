@@ -288,9 +288,16 @@ export class ControllerLauncher {
     );
   }
 
-  /** Old controller downloads miss newer fixes — offer a one-click refresh. */
-  async offerUpdateIfStale(): Promise<void> {
-    if (this.#contributorPath()) return; // git checkouts update themselves via setup
+  /** Old controller downloads miss newer fixes — offer a one-click refresh.
+   * interactive=true (menu “Check for updates”) also reports “up to date”. */
+  async offerUpdateIfStale(interactive = false): Promise<void> {
+    if (this.#contributorPath()) {
+      if (interactive)
+        void vscode.window.showInformationMessage(
+          "Relay: contributor checkout — update with git pull / Set up.",
+        );
+      return;
+    }
     if (!existsSync(path.join(this.#standaloneDir(), "controller.mjs"))) return;
     try {
       const controller = new AbortController();
@@ -300,7 +307,15 @@ export class ControllerLauncher {
       };
       clearTimeout(timer);
       const current = this.context.globalState.get<string>("relay.controllerTag");
-      if (!meta.tag_name || meta.tag_name === current) return;
+      if (!meta.tag_name || meta.tag_name === current) {
+        if (interactive) {
+          const version = String(this.context.extension.packageJSON.version ?? "");
+          void vscode.window.showInformationMessage(
+            `Relay is up to date — controller ${current ?? "unknown"}, extension ${version}. The extension itself updates through VS Code.`,
+          );
+        }
+        return;
+      }
       const pick = await vscode.window.showInformationMessage(
         `Relay: a controller update is available (${current ?? "unknown"} → ${meta.tag_name}). Updating restarts the controller.`,
         "Update now",
@@ -311,7 +326,10 @@ export class ControllerLauncher {
         await this.setup();
       }
     } catch {
-      // offline or rate-limited — try again next activation
+      if (interactive)
+        void vscode.window.showWarningMessage(
+          "Relay: couldn't reach the releases feed — try again later.",
+        );
     }
   }
 

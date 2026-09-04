@@ -22,7 +22,7 @@ type Phase =
   | { step: "scan" }
   | { step: "connecting"; name: string }
   | { step: "confirm"; name: string; fingerprint: string }
-  | { step: "error"; message: string };
+  | { step: "error"; message: string; attempts?: Array<{ addr: string; reason: string }> };
 
 export default function Pair() {
   const router = useRouter();
@@ -30,16 +30,18 @@ export default function Pair() {
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>({ step: "scan" });
   const scanning = useRef(false);
+  const lastQr = useRef<string | null>(null);
 
   async function handleScan(data: string) {
     if (scanning.current) return;
     scanning.current = true;
+    lastQr.current = data;
     try {
       const qr = PairQrSchema.parse(JSON.parse(data));
       setPhase({ step: "connecting", name: qr.name });
       const keypair = generateKxKeypair();
       const installId = await getInstallId();
-      let lastError = "no reachable address";
+      const attempts: Array<{ addr: string; reason: string }> = [];
       for (const addr of qr.addrs) {
         try {
           const grant = await pairWithController({
@@ -66,10 +68,18 @@ export default function Pair() {
           router.replace("/");
           return;
         } catch (cause) {
-          lastError = humanError(cause);
+          const raw = cause instanceof Error ? cause.message : String(cause);
+          attempts.push({
+            addr: addr.replace(/^wss?:\/\//, ""),
+            reason: /timeout|timed out/i.test(raw)
+              ? "timed out — different network or the Wi-Fi isolates devices"
+              : /refused|ECONNREFUSED/i.test(raw)
+                ? "refused — a firewall on the computer may block the port"
+                : humanError(cause),
+          });
         }
       }
-      setPhase({ step: "error", message: lastError });
+      setPhase({ step: "error", message: `Couldn't reach ${qr.name}`, attempts });
       scanning.current = false;
     } catch {
       setPhase({ step: "error", message: "That QR code is not a Relay pairing code." });
@@ -123,9 +133,44 @@ export default function Pair() {
           ) : null}
           {phase.step === "error" ? (
             <>
-              <Text style={{ ...type_.body, color: colors.bad, textAlign: "center" }}>
+              <Text style={{ ...type_.heading, color: colors.bad, textAlign: "center" }}>
                 {phase.message}
               </Text>
+              {phase.attempts?.length ? (
+                <Card style={{ gap: 6 }}>
+                  {phase.attempts.map((a) => (
+                    <Text key={a.addr} style={type_.caption}>
+                      · {a.addr} — {a.reason}
+                    </Text>
+                  ))}
+                </Card>
+              ) : null}
+              {phase.attempts?.length ? (
+                <Card style={{ gap: 6 }}>
+                  <Text style={{ ...type_.caption, color: colors.text, fontWeight: "600" }}>
+                    Pairing needs the phone and computer on the same network once:
+                  </Text>
+                  <Text style={type_.caption}>· Same Wi-Fi on both (phone not on mobile data)</Text>
+                  <Text style={type_.caption}>· VPN off on both during pairing</Text>
+                  <Text style={type_.caption}>
+                    · Office/guest Wi-Fi often isolates devices — try your phone's hotspot: connect
+                    the computer to it, then scan again
+                  </Text>
+                  <Text style={type_.caption}>
+                    · If an address said “refused”: allow Relay/Node through the computer's firewall
+                    for private networks
+                  </Text>
+                </Card>
+              ) : null}
+              {lastQr.current ? (
+                <Button
+                  label="Try again"
+                  onPress={() => {
+                    const qr = lastQr.current;
+                    if (qr) void handleScan(qr);
+                  }}
+                />
+              ) : null}
               <Button label="Scan again" kind="ghost" onPress={() => setPhase({ step: "scan" })} />
             </>
           ) : null}
