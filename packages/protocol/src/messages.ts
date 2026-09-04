@@ -98,6 +98,8 @@ export const PairQrSchema = z.object({
   name: z.string().min(1),
   kx_pub: z.string().min(1),
   code: z.string().min(4).max(16),
+  /** wss pairing-bridge URL — lets phones pair when the Wi-Fi isolates devices */
+  relay_pair_url: z.string().min(1).optional(),
 });
 export type PairQr = z.infer<typeof PairQrSchema>;
 

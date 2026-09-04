@@ -56,7 +56,7 @@ export class PairingCoordinator {
     return { code: this.#session.code, expiresAt: this.#session.expiresAt };
   }
 
-  qrPayload(addrs: string[]): PairQr {
+  qrPayload(addrs: string[], relayPairUrl?: string): PairQr {
     if (!this.#session) throw new Error("no pairing session");
     return {
       v: 1,
@@ -65,6 +65,7 @@ export class PairingCoordinator {
       name: this.deps.machineName,
       kx_pub: toB64(this.deps.keys.publicKey),
       code: this.#session.code,
+      ...(relayPairUrl ? { relay_pair_url: relayPairUrl } : {}),
     };
   }
 

@@ -42,16 +42,17 @@ export default function Pair() {
       const keypair = generateKxKeypair();
       const installId = await getInstallId();
       const attempts: Array<{ addr: string; reason: string }> = [];
-      for (const addr of qr.addrs) {
+      const attempt = async (url: string, connectTimeoutMs: number): Promise<boolean> => {
         try {
           const grant = await pairWithController({
-            url: `${addr}/pair`,
+            url,
             code: qr.code,
             deviceName: deviceLabel(),
             installId,
             keypair,
             controllerKxPub: fromB64(qr.kx_pub),
             timeoutMs: 90_000,
+            connectTimeoutMs,
             onPending: (fingerprint) => setPhase({ step: "confirm", name: qr.name, fingerprint }),
           });
           await addMachine({
@@ -66,19 +67,25 @@ export default function Pair() {
             addrs: qr.addrs,
           });
           router.replace("/");
-          return;
+          return true;
         } catch (cause) {
           const raw = cause instanceof Error ? cause.message : String(cause);
           attempts.push({
-            addr: addr.replace(/^wss?:\/\//, ""),
-            reason: /timeout|timed out/i.test(raw)
+            addr: url.replace(/^wss?:\/\//, "").replace(/\/pair.*$/, ""),
+            reason: /timeout|timed out|unreachable/i.test(raw)
               ? "timed out — different network or the Wi-Fi isolates devices"
               : /refused|ECONNREFUSED/i.test(raw)
                 ? "refused — a firewall on the computer may block the port"
                 : humanError(cause),
           });
+          return false;
         }
+      };
+      for (const addr of qr.addrs) {
+        if (await attempt(`${addr}/pair`, 8_000)) return;
       }
+      // isolated Wi-Fi: same ceremony, bridged through the encrypted relay
+      if (qr.relay_pair_url && (await attempt(qr.relay_pair_url, 12_000))) return;
       setPhase({ step: "error", message: `Couldn't reach ${qr.name}`, attempts });
       scanning.current = false;
     } catch {

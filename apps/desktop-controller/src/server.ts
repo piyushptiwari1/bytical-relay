@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -39,6 +39,7 @@ import {
 import type { EditorRegistry } from "./editors.ts";
 import type { KeepAwake } from "./keep-awake.ts";
 import type { HealthMonitor } from "./machine-health.ts";
+import { openPairingBridge } from "./pairing-bridge.ts";
 import type { PairingCoordinator } from "./pairing-coordinator.ts";
 import { type PushMessage, sendExpoPush } from "./push.ts";
 
@@ -341,8 +342,11 @@ export async function buildServer(deps: ServerDeps): Promise<{
   });
 
   // ── Pairing (dashboard-driven, PLAN §20) ────────────────────────────────
+  let pairingBridgeClose: (() => void) | null = null;
   app.post("/api/pairing/start", async () => {
     const started = deps.pairing.start();
+    pairingBridgeClose?.();
+    pairingBridgeClose = null;
     const address = app.server.address();
     const port = typeof address === "object" && address !== null ? address.port : 0;
     // Only LAN-reachable addresses belong in the QR — loopback is the phone's own.
@@ -350,7 +354,20 @@ export async function buildServer(deps: ServerDeps): Promise<{
       (h) => h !== "::1" && h !== "[::1]" && h !== "localhost" && h !== "127.0.0.1",
     );
     const addrs = (lanHosts.length > 0 ? lanHosts : ["127.0.0.1"]).map((h) => `ws://${h}:${port}`);
-    const payload = deps.pairing.qrPayload(addrs);
+    // Isolated Wi-Fi fallback: bridge the ceremony through the relay (still
+    // code + fingerprint + sealed grant — the relay forwards opaque frames).
+    let relayPairUrl: string | undefined;
+    if (deps.relay) {
+      const pairingId = randomUUID();
+      pairingBridgeClose = openPairingBridge({
+        relayUrl: deps.relay.url,
+        relayToken: deps.relay.token,
+        pairingId,
+        pairing: deps.pairing,
+      });
+      relayPairUrl = `${deps.relay.url.replace(/\/+$/, "")}/pair-bridge?role=phone&pairing=${pairingId}`;
+    }
+    const payload = deps.pairing.qrPayload(addrs, relayPairUrl);
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { margin: 1, width: 260 });
     return {
       code: started.code,
@@ -375,6 +392,8 @@ export async function buildServer(deps: ServerDeps): Promise<{
   });
 
   app.post("/api/pairing/cancel", async () => {
+    pairingBridgeClose?.();
+    pairingBridgeClose = null;
     deps.pairing.cancel();
     return { ok: true };
   });

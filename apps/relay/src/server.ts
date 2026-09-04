@@ -57,11 +57,88 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
   const maxChannels = options.maxChannelsPerMachine ?? 16;
   const machines = new Map<string, MachineEntry>();
 
+  // ── Pairing bridge — lets phones pair when the local Wi-Fi isolates devices.
+  // Ceremony security (one-time code, lockout, emoji fingerprint, sealed grant)
+  // is end-to-end; the relay forwards opaque text frames for ≤3 minutes.
+  interface BridgeEntry {
+    controller: WsLike;
+    phone: WsLike | null;
+    timer: ReturnType<typeof setTimeout>;
+  }
+  const bridges = new Map<string, BridgeEntry>();
+  const bridgeAttempts = new Map<string, { count: number; resetAt: number }>();
+  const BRIDGE_TTL_MS = 180_000;
+  const BRIDGE_MAX_FRAME = 64 * 1024;
+
   app.get("/healthz", async () => ({
     ok: true,
     machines: machines.size,
     channels: [...machines.values()].reduce((n, m) => n + m.phones.size, 0),
+    pair_bridges: bridges.size,
   }));
+
+  app.get("/pair-bridge", { websocket: true }, (socket: WsLike, req: FastifyRequest) => {
+    const q = req.query as Record<string, unknown>;
+    const pairingId = typeof q.pairing === "string" ? q.pairing : "";
+    if (pairingId.length < 8 || pairingId.length > 128) {
+      socket.close(4401, "unauthorized");
+      return;
+    }
+
+    if (q.role === "controller") {
+      if (!tokenOk(options.token, q.rt)) {
+        socket.close(4401, "unauthorized");
+        return;
+      }
+      bridges.get(pairingId)?.controller.close(4000, "replaced");
+      const entry: BridgeEntry = {
+        controller: socket,
+        phone: null,
+        timer: setTimeout(() => {
+          socket.close(1000, "pairing window closed");
+          entry.phone?.close(1000, "pairing window closed");
+          bridges.delete(pairingId);
+        }, BRIDGE_TTL_MS),
+      };
+      bridges.set(pairingId, entry);
+      socket.on("message", (data, isBinary) => {
+        if (isBinary || data.length > BRIDGE_MAX_FRAME) return;
+        entry.phone?.send(data.toString());
+      });
+      socket.on("close", () => {
+        clearTimeout(entry.timer);
+        entry.phone?.close(1000, "pairing ended");
+        if (bridges.get(pairingId) === entry) bridges.delete(pairingId);
+      });
+      return;
+    }
+
+    // phone role — no credential yet by definition; the unguessable pairing id
+    // is the capability, plus a per-IP attempt budget
+    const ip = req.ip ?? "unknown";
+    const now = Date.now();
+    const bucket = bridgeAttempts.get(ip);
+    if (!bucket || now > bucket.resetAt) {
+      bridgeAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+    } else if (++bucket.count > 10) {
+      socket.close(4429, "too many pairing attempts");
+      return;
+    }
+    const entry = bridges.get(pairingId);
+    if (!entry) {
+      socket.close(4404, "no pairing in progress");
+      return;
+    }
+    entry.phone?.close(4000, "replaced");
+    entry.phone = socket;
+    socket.on("message", (data, isBinary) => {
+      if (isBinary || data.length > BRIDGE_MAX_FRAME) return;
+      entry.controller.send(data.toString());
+    });
+    socket.on("close", () => {
+      if (entry.phone === socket) entry.phone = null;
+    });
+  });
 
   app.get("/tunnel", { websocket: true }, (socket: WsLike, req: FastifyRequest) => {
     const q = req.query as Record<string, unknown>;
