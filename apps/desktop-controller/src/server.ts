@@ -60,7 +60,7 @@ export interface ServerDeps {
   agents: AgentManager;
   terminals: TerminalManager;
   audit?: AuditLog;
-  relay?: { url: string; token: string };
+  relay?: { url: string; token?: string; secret?: string };
   /** fired with the number of authenticated phone sockets whenever it changes */
   onDeviceConnections?: (count: number) => void;
   /** owner analytics console (/data) — password + data dir; absent = disabled */
@@ -350,9 +350,13 @@ export async function buildServer(deps: ServerDeps): Promise<{
     const address = app.server.address();
     const port = typeof address === "object" && address !== null ? address.port : 0;
     // Only LAN-reachable addresses belong in the QR — loopback is the phone's own.
-    const lanHosts = [...freshAllowedHosts()].filter(
-      (h) => h !== "::1" && h !== "[::1]" && h !== "localhost" && h !== "127.0.0.1",
-    );
+    // 172.16-31.* is usually a WSL/Docker virtual adapter — try real LANs first.
+    const lanHosts = [...freshAllowedHosts()]
+      .filter((h) => h !== "::1" && h !== "[::1]" && h !== "localhost" && h !== "127.0.0.1")
+      .sort((a, b) => {
+        const virtual = (h: string) => (/^172\.(1[6-9]|2\d|3[01])\./.test(h) ? 1 : 0);
+        return virtual(a) - virtual(b);
+      });
     const addrs = (lanHosts.length > 0 ? lanHosts : ["127.0.0.1"]).map((h) => `ws://${h}:${port}`);
     // Isolated Wi-Fi fallback: bridge the ceremony through the relay (still
     // code + fingerprint + sealed grant — the relay forwards opaque frames).
@@ -361,7 +365,8 @@ export async function buildServer(deps: ServerDeps): Promise<{
       const pairingId = randomUUID();
       pairingBridgeClose = openPairingBridge({
         relayUrl: deps.relay.url,
-        relayToken: deps.relay.token,
+        ...(deps.relay.token ? { relayToken: deps.relay.token } : {}),
+        ...(deps.relay.secret ? { machineSecret: deps.relay.secret } : {}),
         pairingId,
         pairing: deps.pairing,
       });

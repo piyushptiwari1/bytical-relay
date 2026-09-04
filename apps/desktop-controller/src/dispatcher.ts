@@ -181,7 +181,7 @@ export interface DispatcherDeps {
   /** S7b: push-token registry (paired-device notifications) */
   devices?: DeviceStore;
   /** S7: advertised to paired phones via machine.status (over E2EE) */
-  relay?: { url: string; token: string };
+  relay?: { url: string; token?: string; secret?: string };
   /** Persistent, redacted record of privileged requests. */
   audit?: AuditLog;
 }
@@ -507,11 +507,12 @@ export class ControllerDispatcher {
         const device = ctx.authenticatedDeviceId
           ? this.deps.devices?.get(ctx.authenticatedDeviceId)
           : undefined;
+        const relayTicketKey = this.deps.relay?.token ?? this.deps.relay?.secret;
         const relay =
-          this.deps.relay && ctx.authenticatedDeviceId
+          this.deps.relay && relayTicketKey && ctx.authenticatedDeviceId
             ? {
                 url: this.deps.relay.url,
-                tickets: issueRelayTicketBundle(this.deps.relay.token, {
+                tickets: issueRelayTicketBundle(relayTicketKey, {
                   machineId: this.deps.machineId,
                   deviceId: ctx.authenticatedDeviceId,
                 }),

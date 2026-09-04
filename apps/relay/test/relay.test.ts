@@ -46,14 +46,22 @@ describe("relay tunnel", () => {
     const bad = new WebSocket(url("role=controller&machine=m1&rt=nope"));
     expect((await once<{ code?: number } | number>(bad, "close")) as number).toBe(4401);
 
+    // offline machine short-circuits before credential checks (per-machine ticket keys)
     const legacyPhone = new WebSocket(url(`role=phone&machine=ghost&rt=${TOKEN}&token=device-tok`));
-    expect((await once<number>(legacyPhone, "close")) as number).toBe(4401);
+    expect((await once<number>(legacyPhone, "close")) as number).toBe(4404);
 
     const invalidTicket = new WebSocket(url("role=phone&machine=ghost&ticket=not-a-ticket"));
-    expect((await once<number>(invalidTicket, "close")) as number).toBe(4401);
+    expect((await once<number>(invalidTicket, "close")) as number).toBe(4404);
 
     const phone = new WebSocket(phoneUrl("ghost"));
     expect((await once<number>(phone, "close")) as number).toBe(4404);
+
+    // online machine still rejects bad credentials with 4401
+    const laptop = new WebSocket(url(`role=controller&machine=m1&rt=${TOKEN}`));
+    await opened(laptop);
+    const invalidOnline = new WebSocket(url("role=phone&machine=m1&ticket=not-a-ticket"));
+    expect((await once<number>(invalidOnline, "close")) as number).toBe(4401);
+    laptop.close();
   });
 
   test("full round-trip: open envelope, text + binary both ways, close fan-out", async () => {

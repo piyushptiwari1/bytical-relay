@@ -7,14 +7,18 @@ import type { PairingCoordinator } from "./pairing-coordinator.ts";
  * sealed grant; the relay only forwards opaque text frames. */
 export function openPairingBridge(opts: {
   relayUrl: string;
-  relayToken: string;
+  relayToken?: string;
+  machineSecret?: string;
   pairingId: string;
   pairing: PairingCoordinator;
   ttlMs?: number;
 }): () => void {
   const base = opts.relayUrl.replace(/\/+$/, "");
+  const credential = opts.relayToken
+    ? `rt=${encodeURIComponent(opts.relayToken)}`
+    : `ms=${encodeURIComponent(opts.machineSecret ?? "")}`;
   const socket = new WebSocket(
-    `${base}/pair-bridge?role=controller&pairing=${opts.pairingId}&rt=${encodeURIComponent(opts.relayToken)}`,
+    `${base}/pair-bridge?role=controller&pairing=${opts.pairingId}&${credential}`,
   );
   const adapter = {
     send: (json: string) => {

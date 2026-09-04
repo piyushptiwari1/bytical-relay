@@ -29,6 +29,8 @@ interface MachineEntry {
   controller: WsLike;
   phones: Map<string, WsLike>;
   alive: boolean;
+  /** HMAC key for this machine's tickets — the shared token (verified tier) or its self-registered secret */
+  ticketKey: string;
 }
 
 export interface RelayOptions {
@@ -36,6 +38,8 @@ export interface RelayOptions {
   token: string;
   maxFrameBytes?: number;
   maxChannelsPerMachine?: number;
+  /** open-tier registration cap (self-registered machines) */
+  maxMachines?: number;
   /** test hook: observe forwarded frames (sizes/content) without logging them */
   onForward?: (direction: "to_laptop" | "to_phone", data: Buffer | string) => void;
 }
@@ -55,7 +59,21 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
     options: { maxPayload: options.maxFrameBytes ?? 8 * 1024 * 1024 },
   });
   const maxChannels = options.maxChannelsPerMachine ?? 16;
+  const maxMachines = options.maxMachines ?? 500;
   const machines = new Map<string, MachineEntry>();
+  // TOFU: first open registration binds machine_id → secret hash; replacements must match.
+  const machineSecretHashes = new Map<string, Buffer>();
+  const registerAttempts = new Map<string, { count: number; resetAt: number }>();
+  const secretHash = (secret: string) => createHash("sha256").update(secret).digest();
+  const ipBudget = (ip: string, limit: number): boolean => {
+    const now = Date.now();
+    const bucket = registerAttempts.get(ip);
+    if (!bucket || now > bucket.resetAt) {
+      registerAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+      return true;
+    }
+    return ++bucket.count <= limit;
+  };
 
   // ── Pairing bridge — lets phones pair when the local Wi-Fi isolates devices.
   // Ceremony security (one-time code, lockout, emoji fingerprint, sealed grant)
@@ -86,7 +104,8 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
     }
 
     if (q.role === "controller") {
-      if (!tokenOk(options.token, q.rt)) {
+      const ms = typeof q.ms === "string" ? q.ms : "";
+      if (!tokenOk(options.token, q.rt) && ms.length < 32) {
         socket.close(4401, "unauthorized");
         return;
       }
@@ -149,13 +168,36 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
     }
 
     if (q.role === "controller") {
-      if (!tokenOk(options.token, q.rt)) {
+      // verified tier: shared token. open tier: self-registered per-machine secret
+      // (≥32 chars over TLS; machine_id is unguessable; TOFU prevents later hijack).
+      const ms = typeof q.ms === "string" ? q.ms : "";
+      let ticketKey: string;
+      if (tokenOk(options.token, q.rt)) {
+        ticketKey = options.token;
+      } else if (ms.length >= 32) {
+        if (!ipBudget(req.ip ?? "unknown", 10)) {
+          socket.close(4429, "too many registrations");
+          return;
+        }
+        const bound = machineSecretHashes.get(machineId);
+        const presented = secretHash(ms);
+        if (bound && !timingSafeEqual(bound, presented)) {
+          socket.close(4401, "unauthorized");
+          return;
+        }
+        if (!bound && machines.size >= maxMachines) {
+          socket.close(4429, "relay full");
+          return;
+        }
+        machineSecretHashes.set(machineId, presented);
+        ticketKey = ms;
+      } else {
         socket.close(4401, "unauthorized");
         return;
       }
       const previous = machines.get(machineId);
       previous?.controller.close(4000, "replaced by new controller connection");
-      const entry: MachineEntry = { controller: socket, phones: new Map(), alive: true };
+      const entry: MachineEntry = { controller: socket, phones: new Map(), alive: true, ticketKey };
       machines.set(machineId, entry);
 
       socket.on("pong", () => {
@@ -191,8 +233,13 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
 
     // Phone leg: a ticket is short-lived, device-bound, and signed by the controller's
     // private relay secret. A paired-device controller token must never reach this relay.
+    const entry = machines.get(machineId);
+    if (!entry) {
+      socket.close(4404, "machine offline");
+      return;
+    }
     const ticket = typeof q.ticket === "string" ? q.ticket : "";
-    const claims = verifyRelayTicket(options.token, ticket);
+    const claims = verifyRelayTicket(entry.ticketKey, ticket);
     if (
       q.role !== "phone" ||
       typeof q.token === "string" ||
@@ -200,11 +247,6 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
       claims.machine_id !== machineId
     ) {
       socket.close(4401, "unauthorized");
-      return;
-    }
-    const entry = machines.get(machineId);
-    if (!entry) {
-      socket.close(4404, "machine offline");
       return;
     }
     if (entry.phones.size >= maxChannels) {

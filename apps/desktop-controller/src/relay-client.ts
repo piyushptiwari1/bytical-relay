@@ -5,7 +5,10 @@ import type { WsLike } from "./server.ts";
 
 export interface RelayClientDeps {
   url: string; // ws(s)://host:port — /tunnel appended here
-  relayToken: string;
+  /** verified tier (shared secret) — optional; open tier uses machineSecret */
+  relayToken?: string;
+  /** self-minted per-machine ticket key, registered with the relay on connect */
+  machineSecret?: string;
   machineId: string;
   devices: DeviceStore;
   attach: (socket: WsLike, device: ReturnType<DeviceStore["findByTokenHash"]>) => void;
@@ -60,9 +63,12 @@ export class RelayClient {
   }
 
   #connect(): void {
+    const credential = this.#deps.relayToken
+      ? `rt=${encodeURIComponent(this.#deps.relayToken)}`
+      : `ms=${encodeURIComponent(this.#deps.machineSecret ?? "")}`;
     const url = `${this.#deps.url.replace(/\/$/, "")}/tunnel?role=controller&machine=${encodeURIComponent(
       this.#deps.machineId,
-    )}&rt=${encodeURIComponent(this.#deps.relayToken)}`;
+    )}&${credential}`;
     const ws = new WebSocket(url);
     this.#ws = ws;
 
@@ -103,7 +109,8 @@ export class RelayClient {
 
   #openChannel(ch: string, deviceId: string, ticket: string): void {
     // Verify again locally: the relay may forward channels, but cannot choose a device identity.
-    const claims = verifyRelayTicket(this.#deps.relayToken, ticket);
+    const ticketKey = this.#deps.relayToken ?? this.#deps.machineSecret ?? "";
+    const claims = verifyRelayTicket(ticketKey, ticket);
     const device = this.#deps.devices.get(deviceId);
     if (
       !claims ||

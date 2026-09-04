@@ -70,6 +70,44 @@ describe("pairing through the relay bridge (isolated Wi-Fi path)", () => {
     expect(devices.list()).toHaveLength(1);
   });
 
+  test("open tier: controller with only a self-registered machine secret can bridge pairing", async () => {
+    const keys = generateKxKeypair();
+    const devices = new DeviceStore(":memory:");
+    const pairing = new PairingCoordinator({
+      keys,
+      devices,
+      machineId: "mch_open_tier",
+      machineName: "open-tier-host",
+    });
+    const started = pairing.start();
+    const pairingId = "open-tier-pairing-0001";
+    const closeBridge = openPairingBridge({
+      relayUrl,
+      machineSecret: "self-minted-secret-at-least-32-chars-long!",
+      pairingId,
+      pairing,
+    });
+    closers.push(closeBridge);
+    const confirmLoop = setInterval(() => {
+      if (pairing.status().state === "pending_confirm") {
+        clearInterval(confirmLoop);
+        pairing.confirm();
+      }
+    }, 50);
+    const phoneKeypair = generateKxKeypair();
+    const grant = await pairWithController({
+      url: `${relayUrl}/pair-bridge?role=phone&pairing=${pairingId}`,
+      code: started.code,
+      deviceName: "open tier phone",
+      keypair: phoneKeypair,
+      controllerKxPub: keys.publicKey,
+      timeoutMs: 15_000,
+      connectTimeoutMs: 5_000,
+    });
+    clearInterval(confirmLoop);
+    expect(grant.machine_id).toBe("mch_open_tier");
+  });
+
   test("wrong relay token cannot register a bridge; unknown pairing id is rejected", async () => {
     const phoneKeypair = generateKxKeypair();
     await expect(

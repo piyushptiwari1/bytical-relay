@@ -145,7 +145,14 @@ async function start(): Promise<void> {
   // env overrides let local probes point at a scratch relay without touching config
   const relayUrl = process.env.RDC_RELAY_URL ?? config.relay?.url;
   const relayToken = process.env.RDC_RELAY_TOKEN ?? config.relay?.token;
-  const relay = relayUrl && relayToken ? { url: relayUrl, token: relayToken } : undefined;
+  const relaySecret = config.relay_machine_secret;
+  const relay = relayUrl
+    ? {
+        url: relayUrl,
+        ...(relayToken ? { token: relayToken } : {}),
+        ...(relaySecret ? { secret: relaySecret } : {}),
+      }
+    : undefined;
 
   const { app, attachProtocolSocket } = await buildServer({
     machineId: config.machine_id,
@@ -198,7 +205,8 @@ async function start(): Promise<void> {
   if (relay) {
     relayClient = new RelayClient({
       url: relay.url,
-      relayToken: relay.token,
+      ...(relay.token ? { relayToken: relay.token } : {}),
+      ...(relay.secret ? { machineSecret: relay.secret } : {}),
       machineId: config.machine_id,
       devices,
       attach: (socket, device) => attachProtocolSocket(socket, device ?? undefined, "relay"),
