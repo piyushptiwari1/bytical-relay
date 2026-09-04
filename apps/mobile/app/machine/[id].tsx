@@ -1,15 +1,15 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { hasScope, useApp } from "../../src/machines.ts";
 import {
   Button,
-  Card,
   colors,
+  EmptyState,
   formatGb,
+  ListRow,
   Pill,
   SectionLabel,
-  StatusDot,
   space,
   type_,
 } from "../../src/theme.tsx";
@@ -36,181 +36,188 @@ export default function MachineDetail() {
   const canReadGit = hasScope(health?.scopes, "git.read");
 
   return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
-    >
-      <Card>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Text style={{ ...type_.title, flex: 1 }}>{machine.name}</Text>
-          {rt?.transport === "relay" ? <Pill tone="accent">☁ relay</Pill> : null}
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: space.lg, paddingBottom: space.xxl }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.sm,
+            marginBottom: space.sm,
+          }}
+        >
+          <Text style={{ ...type_.title, flex: 1 }} numberOfLines={1}>
+            {machine.name}
+          </Text>
           <Pill tone={rt?.state === "ready" ? "ok" : "dim"}>{rt?.state ?? "idle"}</Pill>
         </View>
+
+        <SectionLabel>Work</SectionLabel>
+        {canReadAgents ? (
+          <ListRow
+            icon={<Text style={{ color: colors.accent2, fontSize: 15 }}>✦</Text>}
+            label="Agents"
+            description="Chats with Copilot / Claude on this machine"
+            trailing={<Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>}
+            onPress={() => router.push(`/agent/${id}`)}
+          />
+        ) : null}
+        {canReadTerminal ? (
+          <ListRow
+            icon={<Text style={{ color: colors.dim, fontSize: 14 }}>⌨</Text>}
+            label="Terminals"
+            description="Persistent shells on this machine"
+            trailing={<Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>}
+            onPress={() => router.push(`/terminal/${id}`)}
+          />
+        ) : null}
+        {(rt?.editors ?? []).map((editor) => (
+          <ListRow
+            key={editor.editor_id}
+            icon={<Text style={{ color: colors.accent, fontSize: 14 }}>◈</Text>}
+            label={`VS Code${editor.workspace ? ` — ${editor.workspace}` : ""}`}
+            description={
+              editor.active_file
+                ? `✎ ${editor.active_file.name}${editor.active_file.line ? `:${editor.active_file.line}` : ""}`
+                : "no file focused"
+            }
+            trailing={
+              editor.diagnostics.errors > 0 ? (
+                <Pill tone="bad">{editor.diagnostics.errors} errors</Pill>
+              ) : editor.diagnostics.warnings > 0 ? (
+                <Pill tone="warn">{editor.diagnostics.warnings} warnings</Pill>
+              ) : editor.running_tasks.length > 0 ? (
+                <Pill tone="accent">▶ {editor.running_tasks.length}</Pill>
+              ) : (
+                <Pill tone="ok">no problems</Pill>
+              )
+            }
+          />
+        ))}
+
+        <SectionLabel>Projects · {rt?.projects?.length ?? 0} — tap for chats</SectionLabel>
+        {(rt?.projects ?? []).map((project) => (
+          <ListRow
+            key={project.project_id}
+            icon={<Text style={{ color: colors.accent2, fontSize: 13 }}>✦</Text>}
+            label={project.name}
+            description={project.root_path}
+            onPress={
+              canReadAgents
+                ? () =>
+                    router.push(`/agent/${id}?project=${encodeURIComponent(project.project_id)}`)
+                : undefined
+            }
+            trailing={
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                {project.wsl ? <Pill tone="dim">WSL</Pill> : null}
+                {canReadFiles ? (
+                  <RowAction
+                    label="Files"
+                    onPress={() =>
+                      router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)
+                    }
+                  />
+                ) : null}
+                {project.vcs === "git" && canReadGit ? (
+                  <RowAction
+                    label="⎇ Git"
+                    onPress={() =>
+                      router.push(`/git/${id}/${encodeURIComponent(project.project_id)}`)
+                    }
+                  />
+                ) : null}
+              </View>
+            }
+          />
+        ))}
+        {rt?.projects?.length === 0 ? (
+          <EmptyState
+            icon="○"
+            title="No projects indexed"
+            caption="Open a project folder on the computer once, or add it to the controller's project roots."
+          />
+        ) : null}
+
+        <View style={{ marginTop: space.xl }}>
+          <Button
+            kind="danger"
+            label="Forget this machine"
+            onPress={() => {
+              void forget(id);
+              router.replace("/");
+            }}
+          />
+        </View>
+      </ScrollView>
+
+      {/* status strip — the VS Code status bar analog */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: space.md,
+          paddingHorizontal: space.lg,
+          paddingVertical: 7,
+          borderTopWidth: 1,
+          borderTopColor: colors.borderSoft,
+          backgroundColor: colors.card,
+        }}
+      >
+        <Text
+          style={{ ...type_.caption, color: rt?.state === "ready" ? colors.accent : colors.dim }}
+        >
+          {rt?.transport === "relay" ? "☁ relay" : "⇄ Wi-Fi"}
+        </Text>
         {health ? (
           <>
+            {health.cpu.load_percent !== null ? (
+              <Text style={type_.caption}>CPU {health.cpu.load_percent}%</Text>
+            ) : null}
             <Text style={type_.caption}>
-              {health.platform}/{health.arch} · up {Math.floor(health.uptime_s / 3600)}h ·{" "}
-              {health.cpu.cores} cores
+              {formatGb(health.memory.total_bytes - health.memory.free_bytes)} used
             </Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.lg, marginTop: 4 }}>
-              <Stat
-                label="CPU"
-                value={health.cpu.load_percent !== null ? `${health.cpu.load_percent}%` : "—"}
-              />
-              <Stat
-                label="Memory"
-                value={`${formatGb(health.memory.total_bytes - health.memory.free_bytes)} of ${formatGb(health.memory.total_bytes)}`}
-              />
-              {health.disks.map((d) => (
-                <Stat key={d.drive} label={d.drive} value={`${formatGb(d.free_bytes)} free`} />
-              ))}
-              {health.battery ? (
-                <Stat
-                  label="Battery"
-                  value={`${health.battery.percent}%${health.battery.charging ? " ⚡" : ""}`}
-                />
-              ) : null}
-              {health.network.latency_ms !== null ? (
-                <Stat label="Latency" value={`${health.network.latency_ms}ms`} />
-              ) : null}
-            </View>
-            {health.gpu ? <Text style={type_.caption}>GPU · {health.gpu}</Text> : null}
+            {health.network.latency_ms !== null ? (
+              <Text style={type_.caption}>{health.network.latency_ms}ms</Text>
+            ) : null}
+            {health.battery ? (
+              <Text style={type_.caption}>
+                ▢ {health.battery.percent}%{health.battery.charging ? "⚡" : ""}
+              </Text>
+            ) : null}
+            {health.keep_awake?.enabled ? (
+              <Text style={{ ...type_.caption, color: colors.warn }}>☕ awake</Text>
+            ) : null}
           </>
         ) : (
           <Text style={type_.caption}>waiting for telemetry…</Text>
         )}
-      </Card>
-
-      {canReadAgents ? (
-        <Card accent onPress={() => router.push(`/agent/${id}`)}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Text style={{ fontSize: 20 }}>✦</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={type_.heading}>Agents</Text>
-              <Text style={type_.caption}>Run Copilot on this machine from your phone</Text>
-            </View>
-            <Text style={{ color: colors.accent, fontSize: 18 }}>›</Text>
-          </View>
-        </Card>
-      ) : null}
-
-      {(rt?.editors ?? []).map((editor) => (
-        <Card key={editor.editor_id}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <StatusDot color={colors.accent} />
-            <Text style={{ ...type_.heading, flex: 1 }} numberOfLines={1}>
-              VS Code{editor.workspace ? ` — ${editor.workspace}` : ""}
-            </Text>
-          </View>
-          {editor.active_file ? (
-            <Text style={{ ...type_.body, color: colors.accent }} numberOfLines={1}>
-              ✎ {editor.active_file.name}
-              {editor.active_file.line ? `:${editor.active_file.line}` : ""}
-            </Text>
-          ) : (
-            <Text style={type_.caption}>no file focused</Text>
-          )}
-          <View style={{ flexDirection: "row", gap: space.sm }}>
-            {editor.diagnostics.errors > 0 ? (
-              <Pill tone="bad">{editor.diagnostics.errors} errors</Pill>
-            ) : null}
-            {editor.diagnostics.warnings > 0 ? (
-              <Pill tone="warn">{editor.diagnostics.warnings} warnings</Pill>
-            ) : null}
-            {editor.diagnostics.errors === 0 && editor.diagnostics.warnings === 0 ? (
-              <Pill tone="ok">no problems</Pill>
-            ) : null}
-            {editor.running_tasks.length > 0 ? (
-              <Pill tone="accent">▶ {editor.running_tasks.join(", ")}</Pill>
-            ) : null}
-          </View>
-          {editor.last_command ? (
-            <Text style={{ ...type_.caption, fontFamily: "monospace" }} numberOfLines={1}>
-              $ {editor.last_command.command}
-              {editor.last_command.exit_code !== null
-                ? ` → ${editor.last_command.exit_code}`
-                : " …"}
-            </Text>
-          ) : null}
-        </Card>
-      ))}
-
-      {canReadTerminal ? (
-        <Card onPress={() => router.push(`/terminal/${id}`)} style={{ gap: 2 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Text style={{ ...type_.heading, flex: 1 }}>⌨ Terminals</Text>
-            <Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>
-          </View>
-          <Text style={type_.caption}>Persistent shells on this machine</Text>
-        </Card>
-      ) : null}
-
-      <SectionLabel>Projects — tap for chats</SectionLabel>
-      {(rt?.projects ?? []).map((project) => (
-        <Card
-          key={project.project_id}
-          onPress={
-            canReadAgents
-              ? () => router.push(`/agent/${id}?project=${encodeURIComponent(project.project_id)}`)
-              : undefined
-          }
-          style={{ gap: space.xs }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Text style={{ ...type_.heading, flex: 1 }} numberOfLines={1}>
-              ✦ {project.name}
-            </Text>
-            {project.wsl ? <Pill tone="dim">WSL</Pill> : null}
-            <Text style={{ color: colors.accent, fontSize: 16 }}>›</Text>
-          </View>
-          <Text style={type_.caption} numberOfLines={1}>
-            {project.root_path}
-          </Text>
-          <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.xs }}>
-            {canReadFiles ? (
-              <Button
-                small
-                kind="ghost"
-                label="Files"
-                onPress={() =>
-                  router.push(`/project/${id}/${encodeURIComponent(project.project_id)}`)
-                }
-              />
-            ) : null}
-            {project.vcs === "git" && canReadGit ? (
-              <Button
-                small
-                kind="ghost"
-                label="⎇ Git"
-                onPress={() => router.push(`/git/${id}/${encodeURIComponent(project.project_id)}`)}
-              />
-            ) : null}
-          </View>
-        </Card>
-      ))}
-      {rt?.projects?.length === 0 ? (
-        <Text style={type_.caption}>No projects detected on this machine.</Text>
-      ) : null}
-
-      <View style={{ marginTop: space.lg }}>
-        <Button
-          kind="danger"
-          label="Forget this machine"
-          onPress={() => {
-            void forget(id);
-            router.replace("/");
-          }}
-        />
+        <View style={{ flex: 1 }} />
+        <Text style={type_.caption}>up {health ? Math.floor(health.uptime_s / 3600) : "—"}h</Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
-function Stat(props: { label: string; value: string }) {
+function RowAction(props: { label: string; onPress: () => void }) {
   return (
-    <View style={{ gap: 1, minWidth: 90 }}>
-      <Text style={type_.micro}>{props.label}</Text>
-      <Text style={{ ...type_.body, fontSize: 13 }}>{props.value}</Text>
-    </View>
+    <Pressable
+      onPress={props.onPress}
+      hitSlop={8}
+      style={({ pressed }) => ({
+        borderColor: colors.border,
+        borderWidth: 1,
+        borderRadius: 7,
+        paddingHorizontal: 9,
+        paddingVertical: 4,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Text style={{ color: colors.accent, fontSize: 12, fontWeight: "600" }}>{props.label}</Text>
+    </Pressable>
   );
 }

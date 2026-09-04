@@ -11,9 +11,9 @@ import {
   useApp,
 } from "../../../src/machines.ts";
 import {
-  Card,
   colors,
   EmptyState,
+  ListRow,
   Pill,
   SectionLabel,
   StatusDot,
@@ -102,8 +102,14 @@ export default function TerminalsHome() {
 
       <SectionLabel>Open terminals</SectionLabel>
       {terminals.map((terminal) => (
-        <Card
+        <ListRow
           key={terminal.terminal_id}
+          icon={<StatusDot color={terminal.alive ? colors.ok : colors.faint} />}
+          label={terminal.title}
+          description={terminal.cwd}
+          trailing={
+            <Pill tone={terminal.alive ? "ok" : "dim"}>{terminal.alive ? "live" : "exited"}</Pill>
+          }
           onPress={() => router.push(`/terminal/${machine}/${terminal.terminal_id}`)}
           onLongPress={
             canControl
@@ -121,17 +127,7 @@ export default function TerminalsHome() {
                 }
               : undefined
           }
-          style={{ marginBottom: space.sm, gap: 4 }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <StatusDot color={terminal.alive ? colors.ok : colors.faint} />
-            <Text style={{ ...type_.heading, flex: 1 }}>{terminal.title}</Text>
-            <Pill tone={terminal.alive ? "ok" : "dim"}>{terminal.alive ? "live" : "exited"}</Pill>
-          </View>
-          <Text style={type_.caption} numberOfLines={1}>
-            {terminal.cwd}
-          </Text>
-        </Card>
+        />
       ))}
       {terminals.length === 0 ? (
         <EmptyState

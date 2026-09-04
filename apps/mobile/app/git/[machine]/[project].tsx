@@ -171,7 +171,29 @@ export default function GitScreen() {
 
       {staged.length > 0 ? (
         <>
-          <SectionLabel>Staged · {staged.length}</SectionLabel>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <View style={{ flex: 1 }}>
+              <SectionLabel>Staged · {staged.length}</SectionLabel>
+            </View>
+            {canWrite ? (
+              <Text
+                style={{ ...type_.caption, color: colors.accent, fontWeight: "600" }}
+                onPress={() =>
+                  busy
+                    ? undefined
+                    : void act(() =>
+                        gitUnstage(
+                          machine,
+                          project,
+                          staged.map((f) => f.path),
+                        ),
+                      )
+                }
+              >
+                − Unstage all
+              </Text>
+            ) : null}
+          </View>
           {staged.map((f) => row(f, true))}
           {canWrite ? (
             <View style={{ gap: space.sm, marginTop: space.md }}>
@@ -216,7 +238,29 @@ export default function GitScreen() {
         </>
       ) : null}
 
-      <SectionLabel>Changes · {unstaged.length}</SectionLabel>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <View style={{ flex: 1 }}>
+          <SectionLabel>Changes · {unstaged.length}</SectionLabel>
+        </View>
+        {canWrite && unstaged.length > 0 ? (
+          <Text
+            style={{ ...type_.caption, color: colors.accent, fontWeight: "600" }}
+            onPress={() =>
+              busy
+                ? undefined
+                : void act(() =>
+                    gitStage(
+                      machine,
+                      project,
+                      unstaged.map((f) => f.path),
+                    ),
+                  )
+            }
+          >
+            + Stage all
+          </Text>
+        ) : null}
+      </View>
       {unstaged.map((f) => row(f, false))}
       {state.files.length === 0 ? (
         <EmptyState
