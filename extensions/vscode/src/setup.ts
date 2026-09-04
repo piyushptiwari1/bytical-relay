@@ -103,9 +103,15 @@ export class ControllerLauncher {
     await this.#run("tar", ["-xzf", tgz, "-C", dir], undefined);
     await rm(tgz, { force: true });
     try {
-      const meta = (await (await fetch(RELEASE_API)).json()) as { tag_name?: string };
+      const meta = (await (await fetch(RELEASE_API)).json()) as {
+        tag_name?: string;
+        assets?: Array<{ name?: string; updated_at?: string }>;
+      };
       if (meta.tag_name)
         await this.context.globalState.update("relay.controllerTag", meta.tag_name);
+      const asset = meta.assets?.find((a) => a.name === "relay-controller-standalone.tgz");
+      if (asset?.updated_at)
+        await this.context.globalState.update("relay.controllerAssetAt", asset.updated_at);
     } catch {
       // tag bookkeeping only
     }
@@ -304,10 +310,20 @@ export class ControllerLauncher {
       const timer = setTimeout(() => controller.abort(), 5000);
       const meta = (await (await fetch(RELEASE_API, { signal: controller.signal })).json()) as {
         tag_name?: string;
+        assets?: Array<{ name?: string; updated_at?: string }>;
       };
       clearTimeout(timer);
       const current = this.context.globalState.get<string>("relay.controllerTag");
-      if (!meta.tag_name || meta.tag_name === current) {
+      const currentAssetAt = this.context.globalState.get<string>("relay.controllerAssetAt");
+      const latestAssetAt = meta.assets?.find(
+        (a) => a.name === "relay-controller-standalone.tgz",
+      )?.updated_at;
+      // in-place standalone refreshes keep the tag but bump the asset timestamp
+      const stale =
+        (meta.tag_name && meta.tag_name !== current) ||
+        (latestAssetAt && currentAssetAt && latestAssetAt !== currentAssetAt) ||
+        (latestAssetAt && !currentAssetAt);
+      if (!stale) {
         if (interactive) {
           const version = String(this.context.extension.packageJSON.version ?? "");
           void vscode.window.showInformationMessage(
@@ -317,7 +333,7 @@ export class ControllerLauncher {
         return;
       }
       const pick = await vscode.window.showInformationMessage(
-        `Relay: a controller update is available (${current ?? "unknown"} → ${meta.tag_name}). Updating restarts the controller.`,
+        `Relay: a controller update is available (${current ?? "unknown"} → ${meta.tag_name ?? "latest"}). Updating restarts the controller.`,
         "Update now",
         "Later",
       );
