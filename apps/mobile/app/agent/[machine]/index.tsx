@@ -1,7 +1,7 @@
 import type { AgentSession } from "@rdc/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { humanError } from "../../../src/errors.ts";
 import {
   agentArchive,
@@ -76,6 +76,7 @@ export default function AgentsHome() {
     machine ? (useApp.getState().runtime[machine]?.sessions ?? []) : [],
   );
   const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [external, setExternal] = useState<ExternalSession[]>([]);
   const [resuming, setResuming] = useState<string | null>(null);
@@ -240,6 +241,16 @@ export default function AgentsHome() {
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: space.lg, paddingBottom: space.xxl }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            setRefreshing(true);
+            void load().finally(() => setRefreshing(false));
+          }}
+          tintColor={colors.accent}
+        />
+      }
     >
       {focusProject ? (
         <View
@@ -571,6 +582,15 @@ export default function AgentsHome() {
               </Card>
             );
           })}
+        </>
+      ) : loaded && !focusProject && external.length === 0 ? (
+        <>
+          <SectionLabel>From your laptop</SectionLabel>
+          <Text style={{ ...type_.caption, paddingHorizontal: space.xs, paddingBottom: space.sm }}>
+            No VS Code chats found on this computer yet. Chats import from each computer's own VS
+            Code history — they don't follow you between machines. Open a Copilot chat in VS Code
+            there, then pull down to refresh.
+          </Text>
         </>
       ) : null}
 

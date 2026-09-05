@@ -86,12 +86,22 @@ async function start(): Promise<void> {
   } catch {
     // no saved state
   }
+  const vscodeChats = new VsCodeChatReader();
+  try {
+    // field-debuggable: "why no chat import" answers itself in the log
+    logger.info(
+      { panel_chats: vscodeChats.list().length },
+      "vscode chats scanned — imports come from this machine's VS Code history",
+    );
+  } catch (cause) {
+    logger.warn({ cause: String(cause) }, "vscode chat storage unreadable — imports disabled");
+  }
   const agents = new AgentManager(
     {
       eventStore,
       fsIndex,
       sessions: new SessionStore(path.join(dir, "sessions.db")),
-      vscodeChats: new VsCodeChatReader(),
+      vscodeChats,
     },
     [copilotAdapter(), claudeAdapter()],
   );
