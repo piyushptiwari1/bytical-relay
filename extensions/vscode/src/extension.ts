@@ -174,7 +174,7 @@ export function activate(context: vscode.ExtensionContext): void {
     start(context);
     // zero-touch: stale controllers replace themselves when the machine is idle
     const busy = async (): Promise<boolean> => {
-      if (!client || client.state !== "ready") return false; // down = safe to swap
+      if (client?.state !== "ready") return false; // down = safe to swap
       try {
         const result = await client.command(AgentList, {});
         return result.sessions.some((s) =>
