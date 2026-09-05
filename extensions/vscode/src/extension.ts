@@ -172,7 +172,21 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   void launcher.autoAttach().then(async () => {
     start(context);
-    void launcher.offerUpdateIfStale();
+    // zero-touch: stale controllers replace themselves when the machine is idle
+    const busy = async (): Promise<boolean> => {
+      if (!client || client.state !== "ready") return false; // down = safe to swap
+      try {
+        const result = await client.command(AgentList, {});
+        return result.sessions.some((s) =>
+          ["starting", "running", "awaiting_approval"].includes(s.status),
+        );
+      } catch {
+        return false;
+      }
+    };
+    void launcher.autoUpdateIfStale(busy);
+    const updateTimer = setInterval(() => void launcher.autoUpdateIfStale(busy), 12 * 3600_000);
+    context.subscriptions.push({ dispose: () => clearInterval(updateTimer) });
     // first-run nudge: fresh machine, nothing running — offer the one-click path
     if (
       launcher.mode === "off" &&

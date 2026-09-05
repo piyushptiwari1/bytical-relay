@@ -2,7 +2,7 @@
   "name": "relay-by-bytical",
   "displayName": "Relay by Bytical",
   "description": "Control your dev machine and AI coding agents from your phone. One-click setup: this extension installs and runs the Relay controller, then pairs your phone with a QR code \u2014 end-to-end encrypted.",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "private": true,
   "publisher": "bytical",
   "license": "Apache-2.0",

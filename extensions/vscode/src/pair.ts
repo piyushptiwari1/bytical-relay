@@ -44,7 +44,7 @@ export async function openPairPanel(context: vscode.ExtensionContext): Promise<v
     return (await response.json()) as Record<string, unknown>;
   };
 
-  let started: { qr_data_url?: string; code?: string };
+  let started: { qr_data_url?: string; code?: string; qr_payload?: { relay_pair_url?: string } };
   try {
     started = (await api("/api/pairing/start")) as typeof started;
   } catch (cause) {
@@ -52,6 +52,12 @@ export async function openPairPanel(context: vscode.ExtensionContext): Promise<v
       `Relay could not start pairing: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
     return;
+  }
+  if (!started.qr_payload?.relay_pair_url) {
+    // stale controller: QR only works on a shared, non-isolating network
+    void vscode.window.showWarningMessage(
+      "This computer's Relay controller is out of date — pairing currently needs the same Wi-Fi. It updates itself shortly, or run “Relay: Set up / update this computer”.",
+    );
   }
 
   const panel = vscode.window.createWebviewPanel(

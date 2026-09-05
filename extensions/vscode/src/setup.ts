@@ -294,6 +294,55 @@ export class ControllerLauncher {
     );
   }
 
+  /** Zero-touch policy: stale controllers update THEMSELVES when the machine is
+   * idle — users never run manual steps. Busy machines get a deferral nudge. */
+  async autoUpdateIfStale(isBusy: () => Promise<boolean>): Promise<void> {
+    if (this.#contributorPath()) return;
+    if (!existsSync(path.join(this.#standaloneDir(), "controller.mjs"))) return;
+    try {
+      const stale = await this.#staleInfo();
+      if (!stale) return;
+      if (await isBusy()) {
+        const pick = await vscode.window.showInformationMessage(
+          `Relay: an update is ready (${stale.from ?? "unknown"} → ${stale.to}) but an agent is working — update now anyway?`,
+          "Update now",
+          "When idle",
+        );
+        if (pick !== "Update now") return; // retried on next activation/interval
+      }
+      this.output.appendLine(
+        `[update] controller ${stale.from ?? "?"} → ${stale.to} — auto-updating…`,
+      );
+      await this.stop();
+      await this.setup();
+      this.output.appendLine("[update] controller auto-updated");
+      vscode.window.setStatusBarMessage(`Relay: controller updated to ${stale.to}`, 8000);
+    } catch (cause) {
+      this.output.appendLine(`[update] auto-update skipped: ${String(cause)}`);
+    }
+  }
+
+  /** null = current; otherwise {from, to} versions. */
+  async #staleInfo(): Promise<{ from: string | undefined; to: string } | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const meta = (await (await fetch(RELEASE_API, { signal: controller.signal })).json()) as {
+      tag_name?: string;
+      assets?: Array<{ name?: string; updated_at?: string }>;
+    };
+    clearTimeout(timer);
+    const current = this.context.globalState.get<string>("relay.controllerTag");
+    const currentAssetAt = this.context.globalState.get<string>("relay.controllerAssetAt");
+    const latestAssetAt = meta.assets?.find(
+      (a) => a.name === "relay-controller-standalone.tgz",
+    )?.updated_at;
+    const stale =
+      (meta.tag_name && meta.tag_name !== current) ||
+      (latestAssetAt && currentAssetAt && latestAssetAt !== currentAssetAt) ||
+      (latestAssetAt && !currentAssetAt);
+    return stale ? { from: current, to: meta.tag_name ?? "latest" } : null;
+  }
+
   /** Old controller downloads miss newer fixes — offer a one-click refresh.
    * interactive=true (menu “Check for updates”) also reports “up to date”. */
   async offerUpdateIfStale(interactive = false): Promise<void> {
@@ -306,26 +355,11 @@ export class ControllerLauncher {
     }
     if (!existsSync(path.join(this.#standaloneDir(), "controller.mjs"))) return;
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
-      const meta = (await (await fetch(RELEASE_API, { signal: controller.signal })).json()) as {
-        tag_name?: string;
-        assets?: Array<{ name?: string; updated_at?: string }>;
-      };
-      clearTimeout(timer);
-      const current = this.context.globalState.get<string>("relay.controllerTag");
-      const currentAssetAt = this.context.globalState.get<string>("relay.controllerAssetAt");
-      const latestAssetAt = meta.assets?.find(
-        (a) => a.name === "relay-controller-standalone.tgz",
-      )?.updated_at;
-      // in-place standalone refreshes keep the tag but bump the asset timestamp
-      const stale =
-        (meta.tag_name && meta.tag_name !== current) ||
-        (latestAssetAt && currentAssetAt && latestAssetAt !== currentAssetAt) ||
-        (latestAssetAt && !currentAssetAt);
+      const stale = await this.#staleInfo();
       if (!stale) {
         if (interactive) {
           const version = String(this.context.extension.packageJSON.version ?? "");
+          const current = this.context.globalState.get<string>("relay.controllerTag");
           void vscode.window.showInformationMessage(
             `Relay is up to date — controller ${current ?? "unknown"}, extension ${version}. The extension itself updates through VS Code.`,
           );
@@ -333,7 +367,7 @@ export class ControllerLauncher {
         return;
       }
       const pick = await vscode.window.showInformationMessage(
-        `Relay: a controller update is available (${current ?? "unknown"} → ${meta.tag_name ?? "latest"}). Updating restarts the controller.`,
+        `Relay: a controller update is available (${stale.from ?? "unknown"} → ${stale.to}). Updating restarts the controller.`,
         "Update now",
         "Later",
       );
