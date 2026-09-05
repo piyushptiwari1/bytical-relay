@@ -6,6 +6,7 @@ import * as Device from "expo-device";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import { Platform, Text, View } from "react-native";
+import { reportDiag } from "../src/diagnostics.ts";
 import { humanError } from "../src/errors.ts";
 import { getInstallId } from "../src/install-id.ts";
 import { useApp } from "../src/machines.ts";
@@ -86,6 +87,10 @@ export default function Pair() {
       }
       // isolated Wi-Fi: same ceremony, bridged through the encrypted relay
       if (qr.relay_pair_url && (await attempt(qr.relay_pair_url, 12_000))) return;
+      reportDiag(
+        "pair.failed",
+        `${qr.relay_pair_url ? "relay+lan" : "lan-only"} — ${attempts.map((a) => `${a.addr}: ${a.reason}`).join(" | ")}`,
+      );
       setPhase({ step: "error", message: `Couldn't reach ${qr.name}`, attempts });
       scanning.current = false;
     } catch {

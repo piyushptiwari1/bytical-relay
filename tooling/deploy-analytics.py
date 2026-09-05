@@ -10,7 +10,11 @@ session = boto3.Session(profile_name="rdc-dev", region_name="ap-south-1")
 ssm = session.client("ssm")
 s3 = session.client("s3")
 
-INSTANCE = "i-05dc8f42392f6bb38"
+# instance is replaceable — always resolve from the stack, never hardcode
+cfn = session.client("cloudformation")
+outputs = cfn.describe_stacks(StackName="rdc-relay")["Stacks"][0]["Outputs"]
+INSTANCE = next(o["OutputValue"] for o in outputs if o["OutputKey"] == "InstanceId")
+print("target instance:", INSTANCE)
 BUCKET = "rdc-relay-artifacts-960862431428"
 token = sys.argv[1] if len(sys.argv) > 1 else ""
 if len(token) < 16:

@@ -42,6 +42,7 @@ import type { HealthMonitor } from "./machine-health.ts";
 import { openPairingBridge } from "./pairing-bridge.ts";
 import type { PairingCoordinator } from "./pairing-coordinator.ts";
 import { type PushMessage, sendExpoPush } from "./push.ts";
+import { diag } from "./telemetry.ts";
 
 export interface ServerDeps {
   machineId: string;
@@ -373,6 +374,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
       relayPairUrl = `${deps.relay.url.replace(/\/+$/, "")}/pair-bridge?role=phone&pairing=${pairingId}`;
     }
     const payload = deps.pairing.qrPayload(addrs, relayPairUrl);
+    diag("pair.started", `relay=${relayPairUrl ? "yes" : "NO"} lan_addrs=${addrs.length}`);
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload), { margin: 1, width: 260 });
     return {
       code: started.code,
@@ -387,6 +389,7 @@ export async function buildServer(deps: ServerDeps): Promise<{
   app.post("/api/pairing/confirm", async (_req, reply) => {
     const granted = deps.pairing.confirm();
     if (!granted) return reply.code(409).send({ error: "nothing pending confirmation" });
+    diag("pair.granted", granted.repaired ? "repaired existing device" : "new device");
     deps.audit?.append({
       ts: new Date().toISOString(),
       actor: "local_owner",

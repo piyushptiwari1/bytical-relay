@@ -2,9 +2,27 @@ import "../src/polyfills.ts";
 import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
+import { reportDiag } from "../src/diagnostics.ts";
 import { useApp } from "../src/machines.ts";
 import { setupNotifications } from "../src/notifications.ts";
 import { colors } from "../src/theme.tsx";
+
+// crashes report themselves — the default handler still runs after
+const utils = (
+  globalThis as {
+    ErrorUtils?: {
+      getGlobalHandler(): (e: unknown, f?: boolean) => void;
+      setGlobalHandler(h: (e: unknown, f?: boolean) => void): void;
+    };
+  }
+).ErrorUtils;
+if (utils) {
+  const previous = utils.getGlobalHandler();
+  utils.setGlobalHandler((error, isFatal) => {
+    reportDiag(isFatal ? "js.crash" : "js.error", String(error).slice(0, 300));
+    previous?.(error, isFatal);
+  });
+}
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);

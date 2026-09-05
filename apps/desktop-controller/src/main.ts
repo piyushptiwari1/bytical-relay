@@ -22,6 +22,7 @@ import { RelayClient } from "./relay-client.ts";
 import { buildServer } from "./server.ts";
 import { SessionStore } from "./session-store.ts";
 import { acquireSingleInstanceLock } from "./single-instance.ts";
+import { diag } from "./telemetry.ts";
 import { VsCodeChatReader } from "./vscode-chats.ts";
 
 const RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
@@ -44,9 +45,11 @@ async function start(): Promise<void> {
   // provider crashes) must degrade the controller, never kill the phone link.
   process.on("uncaughtException", (cause) => {
     logger.error({ cause: String(cause?.stack ?? cause) }, "uncaught exception — continuing");
+    diag("uncaught", String(cause).slice(0, 300));
   });
   process.on("unhandledRejection", (cause) => {
     logger.error({ cause: String(cause) }, "unhandled rejection — continuing");
+    diag("unhandled_rejection", String(cause).slice(0, 300));
   });
 
   const keys = loadOrCreateKeys(dir);

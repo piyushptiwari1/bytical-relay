@@ -22,7 +22,7 @@ export interface AnalyticsOptions {
   publicCacheMs?: number;
 }
 
-const PUBLIC_KINDS = new Set(["pageview", "download", "app_launch", "app_pair"]);
+const PUBLIC_KINDS = new Set(["pageview", "download", "app_launch", "app_pair", "diag"]);
 const ALL_KINDS = new Set([...PUBLIC_KINDS, "event", "platform_up"]);
 const FEEDBACK_KINDS = new Set(["review", "feature", "update_request", "bug"]);
 const FEEDBACK_SURFACES = new Set(["website", "android", "ios", "vscode", "controller", "other"]);
@@ -218,9 +218,25 @@ export function buildAnalytics(options: AnalyticsOptions): FastifyInstance {
       region,
       deviceClass(typeof ua === "string" ? ua : undefined),
       visitorHash(ip, String(ua ?? ""), day),
-      clean(body.detail),
+      // diag = failure breadcrumbs from the field — allow a longer human reason
+      clean(body.detail, kind === "diag" ? 400 : undefined),
     );
     return reply.code(204).send();
+  });
+
+  /** Owner-only field diagnostics feed — newest first, error breadcrumbs only. */
+  app.get("/diag", async (req, reply) => {
+    if (!tokenOk(options.token, req.headers.authorization)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    return {
+      generated_at: new Date().toISOString(),
+      items: db
+        .prepare(
+          "SELECT ts, path AS source, device, country, detail FROM hits WHERE kind = 'diag' ORDER BY ts DESC LIMIT 200",
+        )
+        .all(),
+    };
   });
 
   /** Token-gated ingest for the controller (platform lifecycle). */
