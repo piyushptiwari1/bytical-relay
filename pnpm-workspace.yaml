@@ -24,7 +24,7 @@ catalog:
   ignore: ^7.0.6
   "@parcel/watcher": ^2.5.0
   tsx: ^4.19.0
-  "@noble/curves": ^2.3.0
+  "@noble/curves": ^2.4.0
   "@noble/ciphers": ^2.3.0
   "@noble/hashes": ^2.3.0
   qrcode: ^1.5.4
