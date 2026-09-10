@@ -92,12 +92,15 @@ async function start(): Promise<void> {
   const vscodeChats = new VsCodeChatReader();
   try {
     // field-debuggable: "why no chat import" answers itself in the log
+    const panelChats = vscodeChats.list().length;
     logger.info(
-      { panel_chats: vscodeChats.list().length },
+      { panel_chats: panelChats },
       "vscode chats scanned — imports come from this machine's VS Code history",
     );
+    diag("boot", `panel_chats=${panelChats}`);
   } catch (cause) {
     logger.warn({ cause: String(cause) }, "vscode chat storage unreadable — imports disabled");
+    diag("boot", `chat_scan_failed: ${String(cause).slice(0, 120)}`);
   }
   const agents = new AgentManager(
     {

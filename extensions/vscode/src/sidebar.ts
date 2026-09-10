@@ -75,6 +75,12 @@ export class RelaySidebar implements vscode.TreeDataProvider<RowSpec> {
         description: "owner console",
       },
       { label: "Send feedback", icon: "comment-discussion", command: "relay.feedback" },
+      {
+        label: "Install Copilot CLI",
+        icon: "github",
+        command: "relay.installCopilot",
+        description: "phone sessions need it",
+      },
       { label: "Check for updates", icon: "sync", command: "relay.checkUpdates" },
       { label: "Logs", icon: "output", command: "relay.logs" },
     ];

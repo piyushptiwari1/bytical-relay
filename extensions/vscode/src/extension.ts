@@ -160,6 +160,15 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("relay.stop", () => launcher.stop()),
     vscode.commands.registerCommand("relay.checkUpdates", () => launcher.offerUpdateIfStale(true)),
+    vscode.commands.registerCommand("relay.installCopilot", () => {
+      // needs the user's own GitHub auth — one click + sign-in is the floor
+      const terminal = vscode.window.createTerminal("Install Copilot CLI");
+      terminal.show();
+      terminal.sendText("npm install -g @github/copilot && copilot", true);
+      void vscode.window.showInformationMessage(
+        "Installing the GitHub Copilot CLI — when it opens, sign in once. Your phone can then start Copilot sessions on this computer.",
+      );
+    }),
     vscode.commands.registerCommand("relay.logs", () => output.show(true)),
     vscode.commands.registerCommand("rdc.reconnect", () => start(context)),
     vscode.commands.registerCommand("rdc.openAgents", async () => {

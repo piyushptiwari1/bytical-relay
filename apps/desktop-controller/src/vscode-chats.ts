@@ -249,9 +249,15 @@ function defaultStorageRoots(): string[] {
       ? [path.join(process.env.APPDATA ?? path.join(home, "AppData/Roaming"))]
       : process.platform === "darwin"
         ? [path.join(home, "Library/Application Support")]
-        : [process.env.XDG_CONFIG_HOME ?? path.join(home, ".config")];
+        : [
+            // snap/flatpak VS Code may redirect XDG — scan every plausible home
+            ...(process.env.XDG_CONFIG_HOME ? [process.env.XDG_CONFIG_HOME] : []),
+            path.join(home, ".config"),
+            path.join(home, "snap", "code", "current", ".config"),
+            path.join(home, ".var", "app", "com.visualstudio.code", "config"),
+          ];
   const roots: string[] = [];
-  for (const base of bases) {
+  for (const base of [...new Set(bases)]) {
     for (const product of ["Code", "Code - Insiders"]) {
       roots.push(path.join(base, product, "User", "workspaceStorage"));
     }

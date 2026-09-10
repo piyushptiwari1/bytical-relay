@@ -480,8 +480,9 @@ export default function AgentsHome() {
               </Text>
             ))}
             <Text style={type_.caption}>
-              Install GitHub Copilot CLI (npm install -g @github/copilot) or Claude Code on that
-              computer, then recheck.
+              Copilot inside VS Code isn't enough — phone sessions run through the Copilot CLI. In
+              VS Code on that computer: Relay sidebar → “Install Copilot CLI” (one click + sign-in),
+              then recheck.
             </Text>
             <Pressable
               onPress={() => {
