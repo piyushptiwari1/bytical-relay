@@ -31,12 +31,12 @@
     "changeset": "changeset"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.0",
-    "@changesets/cli": "^2.29.0",
+    "@biomejs/biome": "^2.5.12",
+    "@changesets/cli": "^3.0.2",
     "@rdc/protocol": "workspace:*",
     "@rdc/security": "workspace:*",
     "@rdc/transport": "workspace:*",
     "tsx": "catalog:",
-    "turbo": "^2.5.0"
+    "turbo": "^2.10.12"
   }
 }
