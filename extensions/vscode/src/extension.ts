@@ -194,7 +194,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     };
     void launcher.autoUpdateIfStale(busy);
-    const updateTimer = setInterval(() => void launcher.autoUpdateIfStale(busy), 12 * 3600_000);
+    // hourly: a VS Code window left open for days must still pick up controller fixes
+    const updateTimer = setInterval(() => void launcher.autoUpdateIfStale(busy), 3600_000);
     context.subscriptions.push({ dispose: () => clearInterval(updateTimer) });
     // first-run nudge: fresh machine, nothing running — offer the one-click path
     if (
