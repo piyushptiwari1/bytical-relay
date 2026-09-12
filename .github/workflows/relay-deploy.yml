@@ -12,12 +12,12 @@ on:
         default: "2"
         required: false
       instanceType:
-        description: "EC2 instance type (must match amiArch)"
+        description: "EC2 instance type (must match AMI arch)"
         default: "t3.micro"
         required: false
-      amiArch:
-        description: "AMI arch: x86_64 or arm64"
-        default: "x86_64"
+      amiId:
+        description: "Override pinned AMI (CAUTION: replaces the instance)"
+        default: ""
         required: false
 
 concurrency: relay-deploy
@@ -42,32 +42,42 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
+      - name: Backup analytics db (best effort — protects feedback if instance gets replaced)
+        run: |
+          INSTANCE=$(aws cloudformation describe-stacks --stack-name rdc-relay \
+            --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" --output text 2>/dev/null) || exit 0
+          [ -n "$INSTANCE" ] || exit 0
+          aws ssm send-command --instance-ids "$INSTANCE" --document-name AWS-RunShellScript \
+            --parameters commands="/usr/local/bin/rdc-analytics-backup.sh || true" \
+            --comment "pre-deploy analytics backup" || true
+          sleep 15
+
       - name: Deploy stack (rdc-relay)
         run: |
+          PARAMS="RelayToken=${{ secrets.RDC_RELAY_TOKEN }} AnalyticsToken=${{ secrets.RDC_ANALYTICS_TOKEN }} AzIndex=${{ inputs.azIndex || '1' }} InstanceType=${{ inputs.instanceType || 't3.micro' }}"
+          if [ -n "${{ inputs.amiId }}" ]; then PARAMS="$PARAMS AmiId=${{ inputs.amiId }}"; fi
           aws cloudformation deploy \
             --template-file infra/relay-stack.yml \
             --stack-name rdc-relay \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
-            --parameter-overrides RelayToken=${{ secrets.RDC_RELAY_TOKEN }} \
-              AzIndex=${{ inputs.azIndex || '1' }} \
-              InstanceType=${{ inputs.instanceType || 't3.micro' }} \
-              Al2023Ami=/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-${{ inputs.amiArch || 'x86_64' }}
+            --parameter-overrides $PARAMS
 
-      - name: Upload relay bundle
+      - name: Upload bundles
         run: |
           BUCKET=$(aws cloudformation describe-stacks --stack-name rdc-relay \
             --query "Stacks[0].Outputs[?OutputKey=='ArtifactsBucket'].OutputValue" --output text)
           aws s3 cp apps/relay/dist/relay.mjs "s3://$BUCKET/relay.mjs"
+          aws s3 cp apps/relay/dist/analytics.mjs "s3://$BUCKET/analytics.mjs"
 
-      - name: Restart relay service (best effort — first boot self-heals)
+      - name: Restart services (best effort — first boot self-heals)
         run: |
           INSTANCE=$(aws cloudformation describe-stacks --stack-name rdc-relay \
             --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" --output text)
           aws ssm send-command \
             --instance-ids "$INSTANCE" \
             --document-name AWS-RunShellScript \
-            --parameters commands="systemctl restart rdc-relay" \
+            --parameters commands="systemctl restart rdc-relay rdc-analytics" \
             --comment "rdc relay redeploy" || echo "SSM not ready yet; systemd retry loop will pick up the bundle"
 
       - name: Print endpoint

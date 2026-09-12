@@ -10,6 +10,11 @@ Parameters:
     NoEcho: true
     MinLength: 16
     Description: Controller-only relay credential and signed phone-ticket secret
+  AnalyticsToken:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Bearer token for the first-party analytics owner endpoints
   RelayPort:
     Type: Number
     Default: 8443
@@ -21,10 +26,14 @@ Parameters:
     Default: 1
     AllowedValues: [0, 1, 2]
     Description: Which AZ in the region to use (capacity varies per AZ)
-  Al2023Ami:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-    Description: Must match InstanceType arch (x86_64 for t3*, arm64 for t4g*)
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-08188a5a4dfdbd573
+    Description: >
+      PINNED so routine deploys never replace the instance (latest-AL2023 SSM
+      lookups caused silent replacements on 09-04 and 09-12, wiping local
+      state). Bump deliberately for OS refreshes — replacement is safe now
+      (analytics DB restores from S3), but it still drops live connections.
 
 Resources:
   RdcVpc:
@@ -125,6 +134,9 @@ Resources:
               - Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub ${RdcArtifactsBucket.Arn}/*
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${RdcArtifactsBucket.Arn}/analytics.db.bak
 
   RdcInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -135,7 +147,7 @@ Resources:
   RdcRelayInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref Al2023Ami
+      ImageId: !Ref AmiId
       InstanceType: !Ref InstanceType
       SubnetId: !Ref RdcPublicSubnet
       SecurityGroupIds: [!Ref RdcRelaySecurityGroup]
@@ -146,6 +158,7 @@ Resources:
           #!/bin/bash
           set -x
           dnf install -y nodejs22 || dnf install -y nodejs20
+          dnf install -y sqlite
           mkdir -p /opt/rdc
           cat > /etc/rdc-relay.env <<EOF
           RELAY_TOKEN=${RelayToken}
@@ -169,15 +182,77 @@ Resources:
           [Install]
           WantedBy=multi-user.target
           EOF
+          # ---- first-party analytics (feedback + field diagnostics) ----
+          cat > /etc/rdc-analytics.env <<EOF
+          ANALYTICS_TOKEN=${AnalyticsToken}
+          ANALYTICS_PORT=8444
+          ANALYTICS_DB=/opt/rdc/analytics.db
+          EOF
+          chmod 600 /etc/rdc-analytics.env
+          # fresh instance: restore feedback/diag history from the last backup
+          if [ ! -f /opt/rdc/analytics.db ]; then
+            aws s3 cp s3://${RdcArtifactsBucket}/analytics.db.bak /opt/rdc/analytics.db || true
+          fi
+          cat > /etc/systemd/system/rdc-analytics.service <<'EOF'
+          [Unit]
+          Description=rdc-analytics first-party product analytics
+          After=network-online.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          EnvironmentFile=/etc/rdc-analytics.env
+          ExecStartPre=/usr/bin/aws s3 cp s3://${RdcArtifactsBucket}/analytics.mjs /opt/rdc/analytics.mjs
+          ExecStart=/usr/bin/env node /opt/rdc/analytics.mjs
+          Restart=always
+          RestartSec=10
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          cat > /usr/local/bin/rdc-analytics-backup.sh <<'EOF'
+          #!/bin/bash
+          set -e
+          [ -f /opt/rdc/analytics.db ] || exit 0
+          sqlite3 /opt/rdc/analytics.db ".backup /tmp/analytics.db.bak"
+          aws s3 cp /tmp/analytics.db.bak s3://${RdcArtifactsBucket}/analytics.db.bak
+          EOF
+          chmod +x /usr/local/bin/rdc-analytics-backup.sh
+          cat > /etc/systemd/system/rdc-analytics-backup.service <<'EOF'
+          [Unit]
+          Description=backup rdc analytics db to s3
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/rdc-analytics-backup.sh
+          EOF
+          cat > /etc/systemd/system/rdc-analytics-backup.timer <<'EOF'
+          [Unit]
+          Description=periodic rdc analytics db backup
+
+          [Timer]
+          OnBootSec=15min
+          OnUnitActiveSec=6h
+
+          [Install]
+          WantedBy=timers.target
+          EOF
           systemctl daemon-reload
           systemctl enable --now rdc-relay
+          systemctl enable --now rdc-analytics
+          systemctl enable --now rdc-analytics-backup.timer
           # TLS termination: caddy proxies wss://ws.relay.bytical.ai -> :${RelayPort}
           curl -sL -o /usr/local/bin/caddy "https://caddyserver.com/api/download?os=linux&arch=amd64"
           chmod +x /usr/local/bin/caddy
           mkdir -p /etc/caddy
           cat > /etc/caddy/Caddyfile <<EOF
           ws.relay.bytical.ai {
-            reverse_proxy 127.0.0.1:${RelayPort}
+            handle_path /a/* {
+              reverse_proxy 127.0.0.1:8444
+            }
+            handle {
+              reverse_proxy 127.0.0.1:${RelayPort}
+            }
           }
           EOF
           cat > /etc/systemd/system/caddy.service <<'EOF'
