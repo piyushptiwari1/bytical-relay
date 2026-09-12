@@ -9,14 +9,15 @@ version, or credentials. Strategy lives in [PRODUCT-DIRECTION.md](PRODUCT-DIRECT
 | Surface | Status | Version | Code | Distribution | Update path | Analytics |
 | --- | --- | --- | --- | --- | --- | --- |
 | **Website** relay.bytical.ai | 🟢 Live | rolling | `apps/site` | Vercel (`relay-bytical`), auto-deploy on public push | git push → Vercel | first-party beacon → `/a/collect` |
-| **Android app** | 🟢 Alpha | 0.1.1 | `apps/mobile` | GitHub Releases APK (`releases/latest`) | in-app banner (checks releases API ≤ 6 h) | `app_launch` ping |
+| **Android app** | 🟢 Alpha | 0.3.3 (0.3.4 building) | `apps/mobile` | GitHub Releases APK (`releases/latest`, evergreen `relay-by-bytical.apk`) | in-app banner (checks releases API ≤ 6 h) + manual check | `app_launch` ping + `diag` breadcrumbs |
 | **iOS app** | ⚪ Not started | — | same `apps/mobile` codebase | TestFlight → App Store (needs Apple Dev account) | TestFlight / App Store | same ping |
-| **Desktop controller** (Win) | 🟢 Alpha | rolling | `apps/desktop-controller` | via VS Code extension setup, or git clone | `git pull` (extension "Set up / update") | `platform_up` ping |
-| **Desktop controller** (macOS/Linux) | 🟡 Untested | rolling | same | same (config paths already per-OS) | same | same |
-| **VS Code extension** | 🟢 Live | 0.1.2 | `extensions/vscode` | [Marketplace `bytical.relay-by-bytical`](https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical) + VSIX on releases | Marketplace auto-update | — |
+| **Desktop controller** (Win) | 🟢 Alpha | rolling (standalone tgz on latest release) | `apps/desktop-controller` | extension downloads `relay-controller-standalone.tgz`, runs on VS Code's own Node — no system Node/Git | **silent auto-update** when idle (activation + hourly); dies with VS Code, respawns on activation | `platform_up` ping + `diag` breadcrumbs |
+| **Desktop controller** (Linux) | 🟢 Field-verified (Ubuntu, snap VS Code) | same | same | same; detached — survives window reloads, not logout | same | same |
+| **Desktop controller** (macOS) | 🟡 Untested (arm64 natives unverified) | same | same | same | same | same |
+| **VS Code extension** | 🟢 Live | 0.2.10 | `extensions/vscode` | [Marketplace `bytical.relay-by-bytical`](https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical) + VSIX on releases | Marketplace auto-update | — |
 | **Open VSX** (Cursor/VSCodium) | ⚪ Not started | — | same VSIX | open-vsx.org (needs namespace `bytical`) | Open VSX auto-update | — |
-| **Relay server** | 🟢 Live | rolling | `apps/relay` | EC2 `rdc-relay` (ap-south-1), `wss://ws.relay.bytical.ai` | GH workflow "Relay deploy" (private repo) | `/healthz`, relay_online on `/stats` |
-| **Analytics service** | 🟢 Live | rolling | `apps/relay` (analytics.mjs :8444) | same EC2, Caddy `/a/*` | `tooling/deploy-analytics.py` | is the analytics |
+| **Relay server** | 🟢 Live | rolling | `apps/relay` | EC2 `rdc-relay` (ap-south-1, **pinned AMI** — deploys update in place), `wss://ws.relay.bytical.ai` | GH workflow "Relay deploy" (private repo) | `/healthz` {machines, channels, pair_bridges} |
+| **Analytics + field diagnostics** | 🟢 Live | rolling | `apps/relay` (analytics.mjs :8444) | same EC2, provisioned by stack UserData, Caddy `/a/*`; sqlite backed up to S3 every 6 h + pre-deploy, restored on fresh instance | same "Relay deploy" workflow (`tooling/deploy-analytics.py` for hotfix) | is the analytics; owner feed `GET /a/diag` |
 | **Owner console** `/data` | 🟢 Live | rolling | `apps/desktop-controller` | local only, password-gated | with controller | reads everything |
 | **Public stats** `/stats` | 🟢 Live | rolling | `apps/site/public/stats.html` | Vercel | with site | reads `/a/public` |
 
@@ -41,10 +42,10 @@ EAS build APK → pin sha256 in release/artifact.json → commit → tag vX.Y.Z-
 
 - Extension-only fixes (icon, README): **manual dispatch** of the Release workflow → Marketplace
   publish from `main`, no tag needed.
-- Version rule: all surfaces share the **minor** (0.1.x now, 0.2.x next feature wave); patch
-  numbers move independently per surface. App version lives in `apps/mobile/app.json`, extension
-  version in `extensions/vscode/package.json` — bump both when tagging a minor.
-- Relay/analytics/controller are rolling (deployed from main); no user-facing version.
+- Version rule: app 0.3.x, extension 0.2.x — patch numbers move independently per surface. App
+  version lives in `apps/mobile/app.json`, extension version in `extensions/vscode/package.json`.
+- Relay/analytics/controller are rolling (deployed from main); the controller standalone is
+  refreshed in place on the latest release by every tag AND every manual dispatch.
 
 ## 4 · Credentials & keys registry (locations only — never commit values)
 
@@ -53,8 +54,9 @@ EAS build APK → pin sha256 in release/artifact.json → commit → tag vX.Y.Z-
 | `VSCE_PAT` | Marketplace publish (CI + manual vsce) | GitHub secret on public repo · created at `dev.azure.com/byticalai/_usersSettings/tokens` (scope: Marketplace Manage, all orgs) | expires 2027-08-30 · **all-orgs PATs die Dec 2026 → re-issue before** |
 | Expo account | EAS Android/iOS builds | `piyushptiwari` EAS login on this machine (`~/.expo`) | — |
 | AWS profile `rdc-dev` | relay/analytics infra (ap-south-1) | local AWS credentials | — |
-| Relay token | controller ↔ relay auth | `%LOCALAPPDATA%/rdc/config.json` (`relay.token`) + EC2 env | rotate via stack redeploy |
-| Analytics token | `/ingest` + `/stats` auth | same config (`analytics.token`) + `/etc/rdc-analytics.env` on EC2 | `tooling/deploy-analytics.py <token>` |
+| Relay token | **verified tier** controller ↔ relay auth (owner machines only) | `%LOCALAPPDATA%/rdc/config.json` (`relay.token`) + EC2 env | rotate via stack redeploy |
+| Relay machine secret | **open tier** — every field controller self-mints `relay_machine_secret` (≥32 chars), TOFU-bound to `machine_id` at the relay while connected | `config.json` (auto-added) | delete from config → new identity |
+| Analytics token | `/ingest` + `/stats` + `/diag` auth | same config (`analytics.token`) + `/etc/rdc-analytics.env` on EC2 + GH secret `RDC_ANALYTICS_TOKEN` (private repo) | `tooling/deploy-analytics.py <token>` + stack param |
 | Local owner token | dashboard/API on :8347 | `config.json` (`local_token`) | regenerate in config |
 | Data console password | `/data` owner console | `config.json` (`data_password`) | edit config |
 | Git identities | private=piyushptiwari, public=piyushptiwari1 | GCM per-repo (`useHttpPath` + per-URL usernames) | `git credential approve` |
@@ -92,19 +94,27 @@ by regenerating `vsce-relay-publish` at dev.azure.com/byticalai (values are show
 | macOS | ARM64 vs x64 prebuilds for pty/watcher/koffi | ⚠️ npm resolves per-platform at standalone build; CI builds on linux-x64 — **standalone natives are per-OS!** |
 | All | Watcher/agent/provider faults must never kill the controller | ✅ global containment handlers + per-subsystem catch |
 | All | Port 8347 conflicts (second controller) | ✅ diagnosed with actionable message |
+| All | Half-open WebSocket to relay after relay restart / NAT drop → machine silently gone | ✅ fixed 09-12: controller pings relay 30 s, 2 misses → reconnect |
+| Infra | "latest AL2023" AMI lookup replaced the EC2 instance on routine deploys (09-04, 09-12) → hand-installed services + analytics db lost | ✅ fixed: AMI pinned, analytics in UserData, S3 backup/restore |
+| Windows | Controller lifetime = VS Code lifetime (no logon task) → phone "unreachable" when VS Code closed | ⚠️ by design for now; boot-on-login (Task Scheduler / systemd user unit) is the next zero-touch slice |
 
 **Known architectural gap:** the standalone tgz bundles natives npm-resolved **on the CI runner (linux-x64)** — pty/watcher/koffi ship several platforms' prebuilds inside one package, which is why Windows + Linux both work today, but this must be validated per new OS/arch (macOS arm64 especially).
 
-## 7 · Gap list (priority order)
+## 7 · Gap list (priority order, refreshed 2026-09-12)
 
-1. **Phone E2E on v0.1.1-alpha** — install APK, re-pair (all old pairings revoked), verify relay
-   path + notifications + outbox. *(user action — everything else is staged on it)*
-2. **P4 Claude Code adapter** — second provider through the existing contract.
-3. **P5 Play Store track** — Firebase/FCM, store listing assets, crash reporting, `eas submit`
-   closed testing (privacy page ✅ done).
-4. **Open VSX publish** — same VSIX, reaches Cursor/VSCodium/Windsurf users.
-5. **macOS/Linux controller validation** — paths exist, needs a real run + keep-awake/pty checks.
-6. **iOS** — after Play Store: Apple Dev account, EAS iOS build, TestFlight.
-7. **Hardening** — close public `ws://:8443` once all phones are on ticket APKs; relay
-   monitoring/alerting; MaxMind geo (replace ip-api) before real traffic.
-8. **npm CLI** (`@bytical/relay-cli`) — controller without git clone, enables `npx` quick start.
+1. **Controller boot-on-login** (Windows Task Scheduler logon task / Linux systemd user unit /
+   macOS LaunchAgent) — removes the #1 field confusion ("unreachable" = VS Code closed).
+   Phone copy meanwhile: "computer is off or VS Code is closed".
+2. **Relay observability** — per-machine last-seen on relay, surfaced to the phone as
+   "last online 3 h ago" instead of a bare unreachable; owner alerting when relay/analytics down.
+3. **P5 Play Store track** — Firebase/FCM (killed-app push for approvals), store listing assets,
+   crash reporting, `eas submit` closed testing (privacy page ✅ done).
+4. **D4 design polish** — codicons + motion on the conversations-first home shipped in 0.3.4.
+5. **Claude Code E2E** on a machine with the `claude` CLI (adapter + picker already live).
+6. **macOS validation** — arm64 natives in the standalone tgz, keep-awake, pty.
+7. **Open VSX publish** — same VSIX, reaches Cursor/VSCodium/Windsurf users.
+8. **Relay HA** — single t3.micro; acceptable for alpha (LAN path still works when relay is
+   down; phones fall back automatically). Revisit at first paying users: 2 instances + ALB.
+9. **iOS** — after Play Store: Apple Dev account, EAS iOS build, TestFlight.
+10. **Hardening** — close public `ws://:8443` (all phones on wss now); MaxMind geo before real
+    traffic; TypeScript 7 migration (Dependabot #7 closed deliberately).
