@@ -369,6 +369,8 @@ export const AgentList = defineCommand(
         native_id: z.string(),
         title: z.string(),
         project_id: z.string().nullable(),
+        /** umbrella-workspace chats belong to every project under that folder */
+        covers_project_ids: z.array(z.string()).optional(),
         updated_at: z.string(),
       }),
     ),

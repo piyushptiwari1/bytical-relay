@@ -137,7 +137,10 @@ export default function AgentsHome() {
     (s) => inScope(s.project_id) && matchesQuery(s.title, s.project_id),
   );
   const scopedExternal = external.filter(
-    (e) => inScope(e.project_id) && matchesQuery(e.title, e.project_id),
+    (e) =>
+      (inScope(e.project_id) ||
+        (focusProject !== null && (e.covers_project_ids ?? []).includes(focusProject))) &&
+      matchesQuery(e.title, e.project_id),
   );
   const ongoing = scopedSessions.filter((s) => LIVE.has(s.status));
   const history = scopedSessions.filter((s) => !LIVE.has(s.status));

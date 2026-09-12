@@ -599,6 +599,7 @@ export interface ExternalSession {
   native_id: string;
   title: string;
   project_id: string | null;
+  covers_project_ids?: string[];
   updated_at: string;
 }
 

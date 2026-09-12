@@ -39,6 +39,53 @@ function makeManager() {
 }
 
 describe("AgentManager end-to-end with scripted ACP agent", () => {
+  test("umbrella workspace chats cover every contained project", async () => {
+    const eventStore = new MemoryEventStore();
+    const fsIndex = new FsIndex(":memory:");
+    for (const name of ["bytical-platform-frontend", "bytical-platform-backend"]) {
+      fsIndex.upsertProject({
+        project_id: `git_${name}`,
+        name,
+        root_path: `/home/piyush/bytical/${name}`,
+        vcs: "git",
+        fingerprint: "b".repeat(40),
+        wsl: false,
+      });
+    }
+    const adapter = {
+      id: "copilot",
+      detect: async () => ({ available: true, detail: "stub" }),
+      createSession: async (): Promise<never> => {
+        throw new Error("not used in this test");
+      },
+      listNativeSessions: async () => [
+        {
+          native_id: "umbrella-chat",
+          title: "chat in the parent folder",
+          cwd: "/home/piyush/bytical",
+          updated_at: new Date().toISOString(),
+        },
+        {
+          native_id: "exact-chat",
+          title: "chat in the frontend",
+          cwd: "/home/piyush/bytical/bytical-platform-frontend",
+          updated_at: new Date().toISOString(),
+        },
+      ],
+    };
+    const manager = new AgentManager({ eventStore, fsIndex }, [adapter]);
+    const external = await manager.externalSessions();
+    const umbrella = external.find((e) => e.native_id === "umbrella-chat");
+    const exact = external.find((e) => e.native_id === "exact-chat");
+    expect(umbrella?.covers_project_ids?.sort()).toEqual([
+      "git_bytical-platform-backend",
+      "git_bytical-platform-frontend",
+    ]);
+    expect(umbrella?.project_id).toBeTruthy();
+    expect(exact?.project_id).toBe("git_bytical-platform-frontend");
+    expect(exact?.covers_project_ids).toBeUndefined();
+  });
+
   test("start → stream → approval → respond → idle; journal replayable", async () => {
     const { manager, eventStore } = makeManager();
 

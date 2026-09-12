@@ -236,6 +236,7 @@ export class AgentManager {
       native_id: string;
       title: string;
       project_id: string | null;
+      covers_project_ids?: string[];
       updated_at: string;
     }>
   > {
@@ -244,6 +245,7 @@ export class AgentManager {
       native_id: string;
       title: string;
       project_id: string | null;
+      covers_project_ids?: string[];
       updated_at: string;
     }> = [];
     const known = this.deps.sessions?.knownNativeIds() ?? new Set<string>();
@@ -252,11 +254,13 @@ export class AgentManager {
       try {
         for (const native of await adapter.listNativeSessions()) {
           if (known.has(native.native_id)) continue;
+          const map = this.#projectMapForCwd(native.cwd);
           results.push({
             provider: adapter.id,
             native_id: native.native_id,
             title: native.title,
-            project_id: this.#projectIdForCwd(native.cwd),
+            project_id: map.primary,
+            ...(map.covers.length > 1 ? { covers_project_ids: map.covers } : {}),
             updated_at: native.updated_at,
           });
         }
@@ -269,11 +273,13 @@ export class AgentManager {
       try {
         for (const chat of this.deps.vscodeChats.list()) {
           if (known.has(chat.id)) continue;
+          const map = this.#projectMapForCwd(chat.workspace_path);
           results.push({
             provider: "vscode-chat",
             native_id: chat.id,
             title: chat.title,
-            project_id: this.#projectIdForCwd(chat.workspace_path),
+            project_id: map.primary,
+            ...(map.covers.length > 1 ? { covers_project_ids: map.covers } : {}),
             updated_at: chat.updated_at,
           });
         }
@@ -385,17 +391,22 @@ export class AgentManager {
   }
 
   #projectIdForCwd(cwd: string): string | null {
+    return this.#projectMapForCwd(cwd).primary;
+  }
+
+  /** Exact/child match → that project. Umbrella workspace → every contained project. */
+  #projectMapForCwd(cwd: string): { primary: string | null; covers: string[] } {
     const normalized = normalizePath(cwd);
-    let containedProject: string | null = null;
+    const covers: string[] = [];
     for (const project of this.deps.fsIndex.listProjects()) {
       const root = normalizePath(project.root_path);
-      if (normalized === root || normalized.startsWith(`${root}/`)) return project.project_id;
-      // workspace folder is a PARENT of the project root (VS Code opened the umbrella dir)
-      if (containedProject === null && root.startsWith(`${normalized}/`)) {
-        containedProject = project.project_id;
+      if (normalized === root || normalized.startsWith(`${root}/`)) {
+        return { primary: project.project_id, covers: [project.project_id] };
       }
+      // workspace folder is a PARENT of the project root (VS Code opened the umbrella dir)
+      if (root.startsWith(`${normalized}/`)) covers.push(project.project_id);
     }
-    return containedProject;
+    return { primary: covers[0] ?? null, covers };
   }
 
   async prompt(
