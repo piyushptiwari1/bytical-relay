@@ -1,18 +1,18 @@
-**Relay by Bytical 0.3.2** — pair from any network.
+**Relay by Bytical 0.3.3** — your chats, where you actually work.
 
 ## New in this release
 
-- **Same Wi-Fi no longer required** — pairing now falls back through the encrypted relay automatically when the local network isolates devices (office and guest Wi-Fi, VPNs). Scan the QR; it just works. The ceremony is unchanged and end-to-end: one-time code, emoji fingerprint, sealed grant — the relay only forwards ciphertext.
-- **Pairing that explains itself** — if a connection path fails, the app lists every address it tried and why it failed, with a checklist and a one-tap retry.
-- **Check for updates, everywhere** — a button on the phone's home screen and in the VS Code extension (0.2.6) reports "up to date" or offers the download.
-- **VS Code-style machine screen** — Work and Projects sections as clean list rows, plus a live status strip (connection · CPU · memory · latency · battery · keep-awake) like VS Code's status bar. Terminals and Git aligned to the same language, with one-tap Stage all / Unstage all.
+- **Parent-folder chats show up in every project** — if you chat in VS Code with an umbrella folder open (one folder containing several repos), those chats now appear inside each contained project's view on the phone, not hidden under an arbitrary one.
+- **Field diagnostics** — pairing failures and app crashes now report anonymous breadcrumbs (event + reason + version, never your code or prompts) to our own server, so problems get fixed before you finish describing them. Opt-out on the controller with RDC_NO_TELEMETRY=1.
+- **Clearer guidance** — the app explains that phone sessions need the Copilot CLI (one click from the VS Code sidebar: “Install Copilot CLI”), that chats import from each computer's own VS Code history, and pull-to-refresh everywhere it matters.
 
-## Also inside (0.3.x line)
+## Companion updates (already live)
 
-- VS Code-style chat rows with provider identity, markdown + tap-to-copy code, quick replies, Allow/Skip from the notification shade, instant optimistic sends, day-grouped searchable history, human error messages everywhere.
+- **VS Code extension 0.2.9** — one-click Copilot CLI installer; controller updates itself silently when idle.
+- **Controller** — remote access works out of the box for every install (no credentials to configure); Linux chat scanning covers snap/flatpak variants.
 
 ## Get it
 
-- **Android app (APK)** — `relay-by-bytical.apk` below, or [relay.bytical.ai/download](https://relay.bytical.ai/download). Install over the old version; pairings are kept.
-- **VS Code extension** — [marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical](https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical). Accept the controller update nudge (or run *Set up / update*) so your computer gains the pairing bridge.
+- **Android app (APK)** — `relay-by-bytical.apk` below, or [relay.bytical.ai/download](https://relay.bytical.ai/download). Install over the old version — pairings are kept.
+- **VS Code extension** — [marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical](https://marketplace.visualstudio.com/items?itemName=bytical.relay-by-bytical).
 - **Standalone controller** (`relay-controller-standalone.tgz`) — extract, `node controller.mjs start`.
