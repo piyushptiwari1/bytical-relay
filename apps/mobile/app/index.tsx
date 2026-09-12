@@ -1,13 +1,11 @@
 import type { AgentSession } from "@rdc/protocol";
-import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useApp } from "../src/machines.ts";
 import {
   Button,
-  Card,
   colors,
   EmptyState,
   Pill,
@@ -17,7 +15,7 @@ import {
   space,
   type_,
 } from "../src/theme.tsx";
-import { type AvailableUpdate, checkForUpdate, checkForUpdateNow } from "../src/update-check.ts";
+import { type AvailableUpdate, checkForUpdate } from "../src/update-check.ts";
 
 type SessionItem = {
   machineId: string;
@@ -26,16 +24,6 @@ type SessionItem = {
   waitingToSend: number;
   session: AgentSession;
 };
-
-const connectionStyle: Record<string, { color: string; tone: PillTone; label: string }> = {
-  ready: { color: colors.ok, tone: "ok", label: "connected" },
-  connecting: { color: colors.warn, tone: "warn", label: "connecting" },
-  reconnecting: { color: colors.warn, tone: "warn", label: "reconnecting" },
-  unreachable: { color: colors.bad, tone: "bad", label: "unreachable" },
-  closed: { color: colors.faint, tone: "dim", label: "offline" },
-  idle: { color: colors.faint, tone: "dim", label: "waiting" },
-};
-const waitingConnection = { color: colors.faint, tone: "dim" as const, label: "waiting" };
 
 function relativeTime(value: string): string {
   const minutes = Math.max(0, Math.round((Date.now() - Date.parse(value)) / 60_000));
@@ -47,22 +35,19 @@ function relativeTime(value: string): string {
 }
 
 function sessionLabel(session: AgentSession): string {
-  if (session.status === "awaiting_approval") return "Approval needed";
-  if (session.status === "failed") return "Needs review";
-  if (session.status === "starting") return "Starting";
-  if (session.status === "running") return "Working";
-  if (session.status === "idle") return "Ready";
-  if (session.status === "completed") return "Completed";
-  return "Stopped";
+  if (session.status === "awaiting_approval") return "needs you";
+  if (session.status === "failed") return "needs you";
+  if (session.status === "starting" || session.status === "running") return "working";
+  return "done";
 }
 
 function sessionTone(session: AgentSession): PillTone {
   if (session.status === "awaiting_approval" || session.status === "failed") return "bad";
   if (session.status === "starting" || session.status === "running") return "warn";
-  if (session.status === "idle" || session.status === "completed") return "ok";
   return "dim";
 }
 
+/** Conversations-first home: your chats plus one big input — machines stay backstage. */
 export default function RelayHome() {
   const router = useRouter();
   const machines = useApp((s) => s.machines);
@@ -70,7 +55,6 @@ export default function RelayHome() {
   const connect = useApp((s) => s.connect);
   const refreshMachine = useApp((s) => s.refreshMachine);
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     void checkForUpdate().then(setUpdate);
@@ -113,7 +97,7 @@ export default function RelayHome() {
         <EmptyState
           icon=""
           title="Connect your computer"
-          caption="On your computer, open the Relay dashboard and choose Pair device. Then scan its QR code here."
+          caption="Install the Relay extension in VS Code on your computer, choose Pair phone, then scan its QR code here."
         />
         <Button label="Scan pairing QR" onPress={() => router.push("/pair")} />
       </View>
@@ -139,179 +123,114 @@ export default function RelayHome() {
       (item) => item.session.status === "awaiting_approval" || item.session.status === "failed",
     )
     .sort(byRecent);
-  const active = sessionItems
-    .filter((item) => item.session.status === "starting" || item.session.status === "running")
-    .sort(byRecent);
-  const recentlyReady = sessionItems
-    .filter((item) => item.session.status === "idle" || item.session.status === "completed")
+  const chats = sessionItems
+    .filter(
+      (item) => item.session.status !== "awaiting_approval" && item.session.status !== "failed",
+    )
     .sort(byRecent)
-    .slice(0, 3);
-
-  const retry = (machineId: string) => {
-    void refreshMachine(machineId).catch(() => connect(machineId));
-  };
+    .slice(0, 30);
+  const troubled = machines.filter((machine) => {
+    const state = runtime[machine.machine_id]?.state;
+    return state === "unreachable" || state === "closed";
+  });
 
   return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
-    >
-      <View style={{ gap: 4, paddingTop: space.xs }}>
-        <Text style={type_.title}>Your work</Text>
-        <Text style={type_.caption}>
-          Follow what needs you now. Your computer keeps the work and its context.
-        </Text>
-      </View>
-
-      {updateBanner}
-
-      <SectionLabel>Needs your attention</SectionLabel>
-      {attention.length > 0 ? (
-        attention.map((item) => <WorkRow key={item.session.session_id} item={item} />)
-      ) : (
-        <View style={{ borderLeftWidth: 2, borderLeftColor: colors.ok, paddingLeft: space.md }}>
-          <Text style={{ ...type_.body, fontSize: 13 }}>
-            Nothing needs your decision right now.
-          </Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xl }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Text style={{ ...type_.title, flex: 1 }}>Your chats</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/machines")}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, padding: space.xs })}
+          >
+            <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
+              Computers ›
+            </Text>
+          </Pressable>
         </View>
-      )}
 
-      <SectionLabel>Working now</SectionLabel>
-      {active.length > 0 ? (
-        active.map((item) => <WorkRow key={item.session.session_id} item={item} />)
-      ) : (
-        <Text style={type_.caption}>
-          No active sessions. Start work from a workspace when you are ready.
-        </Text>
-      )}
+        {updateBanner}
 
-      {recentlyReady.length > 0 ? (
-        <>
-          <SectionLabel>Ready to continue</SectionLabel>
-          {recentlyReady.map((item) => (
-            <WorkRow key={item.session.session_id} item={item} quiet />
-          ))}
-        </>
-      ) : null}
+        {troubled.map((machine) => (
+          <Pressable
+            key={machine.machine_id}
+            onPress={() =>
+              void refreshMachine(machine.machine_id).catch(() => connect(machine.machine_id))
+            }
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: space.sm,
+              borderLeftWidth: 2,
+              borderLeftColor: colors.warn,
+              paddingLeft: space.md,
+              paddingVertical: space.xs,
+            }}
+          >
+            <Text style={{ ...type_.caption, flex: 1 }}>
+              {machine.name} is unreachable — is it on and online?
+            </Text>
+            <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>Retry</Text>
+          </Pressable>
+        ))}
 
-      <SectionLabel>Computers</SectionLabel>
-      <View style={{ borderTopColor: colors.borderSoft, borderTopWidth: 1 }}>
-        {machines.map((machine) => {
-          const machineRuntime = runtime[machine.machine_id];
-          const state = connectionStyle[machineRuntime?.state ?? "idle"] ?? waitingConnection;
-          const transport =
-            machineRuntime?.transport === "relay"
-              ? "Relay"
-              : machineRuntime?.transport === "direct"
-                ? "LAN"
-                : null;
-          const sampledAt = machineRuntime?.health?.sampled_at ?? machineRuntime?.last_refreshed_at;
-          const cpu = machineRuntime?.health?.cpu.load_percent;
-          return (
-            <Pressable
-              key={machine.machine_id}
-              onPress={() => router.push(`/machine/${machine.machine_id}`)}
-              style={({ pressed }) => ({
-                alignItems: "center",
-                borderBottomColor: colors.borderSoft,
-                borderBottomWidth: 1,
-                flexDirection: "row",
-                gap: space.sm,
-                opacity: pressed ? 0.72 : 1,
-                paddingVertical: space.md,
-              })}
-            >
-              <StatusDot color={state.color} />
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ ...type_.body, fontWeight: "600" }} numberOfLines={1}>
-                  {machine.name}
-                </Text>
-                <Text style={type_.caption} numberOfLines={1}>
-                  {[
-                    transport,
-                    sampledAt ? `updated ${relativeTime(sampledAt)}` : "waiting for update",
-                    cpu !== null && cpu !== undefined ? `CPU ${cpu}%` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </Text>
-              </View>
-              {machineRuntime?.state === "unreachable" ? (
-                <Pressable
-                  accessibilityLabel={`Retry ${machine.name}`}
-                  onPress={(event) => {
-                    event.stopPropagation();
-                    retry(machine.machine_id);
-                  }}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, padding: space.xs })}
-                >
-                  <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
-                    Retry
-                  </Text>
-                </Pressable>
-              ) : (
-                <Pill tone={state.tone}>{state.label}</Pill>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
+        {attention.length > 0 ? (
+          <>
+            <SectionLabel>Needs you · {attention.length}</SectionLabel>
+            {attention.map((item) => (
+              <WorkRow key={item.session.session_id} item={item} />
+            ))}
+          </>
+        ) : null}
 
-      <Card
-        onPress={() => router.push("/pair")}
-        style={{ alignItems: "center", paddingVertical: space.md }}
-      >
-        <Text style={{ color: colors.accent, fontSize: 13, fontWeight: "600" }}>
-          Pair another computer
-        </Text>
-      </Card>
+        <SectionLabel>Chats</SectionLabel>
+        {chats.map((item) => (
+          <WorkRow key={item.session.session_id} item={item} quiet />
+        ))}
+        {chats.length === 0 && attention.length === 0 ? (
+          <EmptyState
+            icon="✦"
+            title="Start your first chat"
+            caption="Your agent runs on your computer and keeps working even when you put the phone away."
+          />
+        ) : null}
+      </ScrollView>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.push("/feedback")}
-        style={{ alignItems: "center", paddingVertical: space.sm }}
-      >
-        <Text style={{ ...type_.caption, textDecorationLine: "underline" }}>
-          Review · request · report — send feedback
-        </Text>
-      </Pressable>
-
-      <Pressable
-        accessibilityRole="button"
-        disabled={checkingUpdate}
-        onPress={() => {
-          setCheckingUpdate(true);
-          void checkForUpdateNow()
-            .then((result) => {
-              if (result.status === "update") {
-                Alert.alert(
-                  `Relay ${result.update.version} is available`,
-                  "Download installs over this version — your pairings are kept.",
-                  [
-                    { text: "Later", style: "cancel" },
-                    { text: "Download", onPress: () => void Linking.openURL(result.update.url) },
-                  ],
-                );
-              } else if (result.status === "latest") {
-                Alert.alert("You're up to date", `Relay ${result.current} is the newest version.`);
-              } else {
-                Alert.alert(
-                  "Couldn't check",
-                  "No connection to the releases feed right now — try again later.",
-                );
-              }
-            })
-            .finally(() => setCheckingUpdate(false));
+      {/* the ChatGPT bar: one obvious way in, context remembered */}
+      <View
+        style={{
+          paddingHorizontal: space.lg,
+          paddingTop: space.sm,
+          paddingBottom: space.lg,
+          borderTopWidth: 1,
+          borderTopColor: colors.borderSoft,
+          backgroundColor: colors.bg,
         }}
-        style={{ alignItems: "center", paddingVertical: space.sm }}
       >
-        <Text style={{ ...type_.caption, textDecorationLine: "underline" }}>
-          {checkingUpdate
-            ? "checking…"
-            : `Relay ${Constants.expoConfig?.version ?? ""} — check for updates`}
-        </Text>
-      </Pressable>
-    </ScrollView>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/compose")}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.md,
+            backgroundColor: pressed ? colors.cardRaised : colors.card,
+            borderColor: colors.accent,
+            borderWidth: 1,
+            borderRadius: 26,
+            paddingHorizontal: space.lg,
+            paddingVertical: 14,
+          })}
+        >
+          <Text style={{ color: colors.accent, fontSize: 18, fontWeight: "700" }}>＋</Text>
+          <Text style={{ color: colors.dim, fontSize: 15, flex: 1 }}>Ask your agents…</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -329,10 +248,12 @@ function WorkRow(props: { item: SessionItem; quiet?: boolean }) {
         borderColor: quiet ? "transparent" : colors.borderSoft,
         borderTopWidth: quiet ? 0 : 1,
         borderWidth: quiet ? 0 : 1,
+        borderRadius: quiet ? 0 : 12,
         gap: space.sm,
         opacity: pressed ? 0.75 : 1,
         paddingHorizontal: quiet ? 0 : space.md,
         paddingVertical: space.md,
+        borderBottomWidth: 1,
       })}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: space.sm }}>
@@ -342,13 +263,15 @@ function WorkRow(props: { item: SessionItem; quiet?: boolean }) {
               ? colors.bad
               : item.session.status === "running" || item.session.status === "starting"
                 ? colors.warn
-                : colors.ok
+                : colors.faint
           }
         />
         <Text style={{ ...type_.body, flex: 1, fontWeight: "600" }} numberOfLines={1}>
           {item.session.title}
         </Text>
-        <Pill tone={sessionTone(item.session)}>{sessionLabel(item.session)}</Pill>
+        {sessionLabel(item.session) !== "done" ? (
+          <Pill tone={sessionTone(item.session)}>{sessionLabel(item.session)}</Pill>
+        ) : null}
       </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingLeft: 16 }}>
         <Text style={type_.caption} numberOfLines={1}>

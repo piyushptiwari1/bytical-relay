@@ -68,6 +68,8 @@ export default function RootLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: "Relay" }} />
+      <Stack.Screen name="compose" options={{ title: "New chat", presentation: "modal" }} />
+      <Stack.Screen name="machines" options={{ title: "Computers" }} />
       <Stack.Screen name="pair" options={{ title: "Pair device", presentation: "modal" }} />
       <Stack.Screen name="machine/[id]" options={{ title: "Machine" }} />
       <Stack.Screen name="project/[machine]/[project]" options={{ title: "Files" }} />
