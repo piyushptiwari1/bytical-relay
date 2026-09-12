@@ -27,6 +27,8 @@ interface Envelope {
 
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 60_000;
+const LIVENESS_INTERVAL_MS = 30_000;
+const LIVENESS_MISS_LIMIT = 2; // ~75s of silence → assume half-open, reconnect
 
 /**
  * Dials OUT to the relay and turns each relay channel into a virtual protocol
@@ -73,9 +75,32 @@ export class RelayClient {
     const ws = new WebSocket(url);
     this.#ws = ws;
 
+    // Half-open detection: relay restarts / NAT drops often leave this socket
+    // looking OPEN forever — without our own pings we would never notice and
+    // the machine would silently vanish from the relay until process restart.
+    let pongMisses = 0;
+    let liveness: NodeJS.Timeout | null = null;
+
     ws.on("open", () => {
       this.#backoffMs = RECONNECT_MIN_MS;
       this.#deps.log?.("relay connected", { url: this.#deps.url });
+      liveness = setInterval(() => {
+        if (pongMisses >= LIVENESS_MISS_LIMIT) {
+          this.#deps.log?.("relay unresponsive — forcing reconnect");
+          ws.terminate(); // 'close' fires → reconnect with backoff
+          return;
+        }
+        pongMisses += 1;
+        try {
+          ws.ping();
+        } catch {
+          // socket already dying — close path takes over
+        }
+      }, LIVENESS_INTERVAL_MS);
+      liveness.unref?.();
+    });
+    ws.on("pong", () => {
+      pongMisses = 0;
     });
     ws.on("message", (raw, isBinary) => {
       if (isBinary) return;
@@ -91,6 +116,7 @@ export class RelayClient {
       else if (msg.t === "close") this.#dropChannel(msg.ch);
     });
     ws.on("close", (code: number, reason: Buffer) => {
+      if (liveness) clearInterval(liveness);
       if (this.#ws === ws) this.#ws = null;
       // 44xx = the relay refused us — that must never stay silent
       if (code >= 4400 && code < 4500) {
