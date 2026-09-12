@@ -1,15 +1,26 @@
-**Relay by Bytical 0.3.3** — your chats, where you actually work.
+**Relay by Bytical 0.3.5** — a home that feels like chat, and pairing that connects.
 
-## New in this release
+## Fix you'll feel first
 
-- **Parent-folder chats show up in every project** — if you chat in VS Code with an umbrella folder open (one folder containing several repos), those chats now appear inside each contained project's view on the phone, not hidden under an arbitrary one.
-- **Field diagnostics** — pairing failures and app crashes now report anonymous breadcrumbs (event + reason + version, never your code or prompts) to our own server, so problems get fixed before you finish describing them. Opt-out on the controller with RDC_NO_TELEMETRY=1.
-- **Clearer guidance** — the app explains that phone sessions need the Copilot CLI (one click from the VS Code sidebar: “Install Copilot CLI”), that chats import from each computer's own VS Code history, and pull-to-refresh everywhere it matters.
+- **Paired but “unreachable” — fixed.** Phones that paired through the relay (office Wi-Fi, firewalls, different networks) never received the relay credentials and could only try the laptop's Wi-Fi address. The pairing grant now carries them, so the phone connects through the relay right after pairing. **Re-pair each computer once after installing** — the fix travels in the pairing itself.
+
+## New home screen
+
+- **Conversations first** — the home is now a single list of your chats across all computers, newest first, with a **“Needs you”** section on top when an agent is waiting for an answer.
+- **“＋ Ask your agents…”** — one bar at the bottom starts a new conversation; pick the computer and project as chips, not a journey through screens. It remembers your last choice.
+- **Computers moved out of the way** — a **Computers ›** screen holds pairing, retry, feedback and update checks. A computer only appears on the home when something's wrong, with a one-tap Retry.
+- **Human words** — “needs you”, “working”, “done” instead of status codes.
+
+## Under the hood
+
+- Phone reports *why* a connection failed (timeout / refused / auth — never addresses or tokens) so problems get diagnosed remotely.
+- Everything from 0.3.3: umbrella-folder chats in every project, field diagnostics, Copilot CLI guidance, pull-to-refresh.
 
 ## Companion updates (already live)
 
-- **VS Code extension 0.2.9** — one-click Copilot CLI installer; controller updates itself silently when idle.
-- **Controller** — remote access works out of the box for every install (no credentials to configure); Linux chat scanning covers snap/flatpak variants.
+- **VS Code extension 0.2.10** — checks hourly for controller updates (was 12 h), so long-running VS Code windows pick up fixes fast.
+- **Controller** — relay link self-heals after relay restarts or network drops (client-side heartbeat); relay rejections are logged; pairing grants carry relay tickets.
+- **Relay infrastructure** — pinned server image (no more silent instance replacement), diagnostics database backed up to S3 and restored automatically.
 
 ## Get it
 
