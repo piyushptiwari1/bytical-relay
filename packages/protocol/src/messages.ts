@@ -80,6 +80,20 @@ export const PairReject = defineMessage(
 /** payload.sealed = crypto_box(nonce‖cipher) of PairGrant JSON — proves controller identity. */
 export const PairGranted = defineMessage("pair.granted", z.object({ sealed: z.string() }));
 
+export const RelayAdvertSchema = z.object({
+  url: z.string(),
+  tickets: z
+    .array(
+      z.object({
+        ticket: z.string().min(1),
+        not_before: z.iso.datetime(),
+        expires_at: z.iso.datetime(),
+      }),
+    )
+    .min(1)
+    .max(31),
+});
+
 export const PairGrantSchema = z.object({
   device_id: z.string().min(1),
   token: z.string().min(16),
@@ -87,6 +101,9 @@ export const PairGrantSchema = z.object({
   machine_id: z.string().min(1),
   machine_name: z.string().min(1),
   controller_kx_pub: z.string().min(1),
+  /** Relay credentials issued AT pairing — a phone that paired through the relay
+   * bridge (isolated Wi-Fi, firewall) has no LAN path to fetch them later. */
+  relay: RelayAdvertSchema.nullable().optional(),
 });
 export type PairGrant = z.infer<typeof PairGrantSchema>;
 
@@ -121,22 +138,7 @@ export const MachineStatus = defineCommand(
     /** Paired-device token expiry; the raw token is never returned here. */
     device_token_expires_at: z.iso.datetime().nullable().optional(),
     /** Short-lived device-bound relay tickets; the controller credential is never returned. */
-    relay: z
-      .object({
-        url: z.string(),
-        tickets: z
-          .array(
-            z.object({
-              ticket: z.string().min(1),
-              not_before: z.iso.datetime(),
-              expires_at: z.iso.datetime(),
-            }),
-          )
-          .min(1)
-          .max(31),
-      })
-      .nullable()
-      .optional(),
+    relay: RelayAdvertSchema.nullable().optional(),
   }),
 );
 

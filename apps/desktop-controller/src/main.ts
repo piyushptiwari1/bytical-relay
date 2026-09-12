@@ -55,11 +55,26 @@ async function start(): Promise<void> {
   const keys = loadOrCreateKeys(dir);
   const devices = new DeviceStore(path.join(dir, "devices.db"));
   const audit = new AuditLog(path.join(dir, "audit.db"));
+
+  // env overrides let local probes point at a scratch relay without touching config
+  const relayUrl = process.env.RDC_RELAY_URL ?? config.relay?.url;
+  const relayToken = process.env.RDC_RELAY_TOKEN ?? config.relay?.token;
+  const relaySecret = config.relay_machine_secret;
+  const relay = relayUrl
+    ? {
+        url: relayUrl,
+        ...(relayToken ? { token: relayToken } : {}),
+        ...(relaySecret ? { secret: relaySecret } : {}),
+      }
+    : undefined;
+  const relayTicketKey = relay?.token ?? relay?.secret;
+
   const pairing = new PairingCoordinator({
     keys,
     devices,
     machineId: config.machine_id,
     machineName: os.hostname(),
+    ...(relay && relayTicketKey ? { relay: { url: relay.url, ticketKey: relayTicketKey } } : {}),
   });
   const eventStore = new SqliteEventStore(path.join(dir, "events.db"));
   const fsIndex = new FsIndex(path.join(dir, "index.db"));
@@ -157,18 +172,6 @@ async function start(): Promise<void> {
     }
   }, RECONCILE_INTERVAL_MS);
   reconcileTimer.unref();
-
-  // env overrides let local probes point at a scratch relay without touching config
-  const relayUrl = process.env.RDC_RELAY_URL ?? config.relay?.url;
-  const relayToken = process.env.RDC_RELAY_TOKEN ?? config.relay?.token;
-  const relaySecret = config.relay_machine_secret;
-  const relay = relayUrl
-    ? {
-        url: relayUrl,
-        ...(relayToken ? { token: relayToken } : {}),
-        ...(relaySecret ? { secret: relaySecret } : {}),
-      }
-    : undefined;
 
   const { app, attachProtocolSocket } = await buildServer({
     machineId: config.machine_id,

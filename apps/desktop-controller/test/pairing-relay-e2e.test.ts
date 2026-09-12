@@ -1,5 +1,5 @@
 import { buildRelay } from "@rdc/relay";
-import { generateKxKeypair } from "@rdc/security";
+import { generateKxKeypair, verifyRelayTicket } from "@rdc/security";
 import { pairWithController } from "@rdc/transport";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { DeviceStore } from "../src/device-store.ts";
@@ -73,17 +73,19 @@ describe("pairing through the relay bridge (isolated Wi-Fi path)", () => {
   test("open tier: controller with only a self-registered machine secret can bridge pairing", async () => {
     const keys = generateKxKeypair();
     const devices = new DeviceStore(":memory:");
+    const machineSecret = "self-minted-secret-at-least-32-chars-long!";
     const pairing = new PairingCoordinator({
       keys,
       devices,
       machineId: "mch_open_tier",
       machineName: "open-tier-host",
+      relay: { url: relayUrl, ticketKey: machineSecret },
     });
     const started = pairing.start();
     const pairingId = "open-tier-pairing-0001";
     const closeBridge = openPairingBridge({
       relayUrl,
-      machineSecret: "self-minted-secret-at-least-32-chars-long!",
+      machineSecret,
       pairingId,
       pairing,
     });
@@ -106,6 +108,14 @@ describe("pairing through the relay bridge (isolated Wi-Fi path)", () => {
     });
     clearInterval(confirmLoop);
     expect(grant.machine_id).toBe("mch_open_tier");
+    // FIELD BUG: a phone that pairs through the relay has no LAN path to fetch
+    // relay tickets via machine.status → grant must carry them
+    expect(grant.relay?.url).toBe(relayUrl);
+    const ticket = grant.relay?.tickets[0];
+    expect(ticket).toBeDefined();
+    const claims = verifyRelayTicket(machineSecret, ticket?.ticket ?? "");
+    expect(claims?.machine_id).toBe("mch_open_tier");
+    expect(claims?.device_id).toBe(grant.device_id);
   });
 
   test("wrong relay token cannot register a bridge; unknown pairing id is rejected", async () => {

@@ -10,6 +10,7 @@ import {
 import {
   emojiFingerprint,
   fromB64,
+  issueRelayTicketBundle,
   issueToken,
   type KxKeypair,
   PairingSession,
@@ -45,6 +46,8 @@ export class PairingCoordinator {
       devices: DeviceStore;
       machineId: string;
       machineName: string;
+      /** when set, grants include relay url + device-bound tickets */
+      relay?: { url: string; ticketKey: string };
     },
   ) {}
 
@@ -184,6 +187,15 @@ export class PairingCoordinator {
       machine_id: this.deps.machineId,
       machine_name: this.deps.machineName,
       controller_kx_pub: toB64(this.deps.keys.publicKey),
+      relay: this.deps.relay
+        ? {
+            url: this.deps.relay.url,
+            tickets: issueRelayTicketBundle(this.deps.relay.ticketKey, {
+              machineId: this.deps.machineId,
+              deviceId,
+            }),
+          }
+        : null,
     };
     const sealed = sealBox(
       new TextEncoder().encode(JSON.stringify(grant)),

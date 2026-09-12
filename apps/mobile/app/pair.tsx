@@ -66,6 +66,8 @@ export default function Pair() {
             kx_pub: toB64(keypair.publicKey),
             kx_priv: toB64(keypair.privateKey),
             addrs: qr.addrs,
+            // paired through the relay bridge → relay is likely the ONLY path that works
+            relay: grant.relay ?? null,
           });
           router.replace("/");
           return true;

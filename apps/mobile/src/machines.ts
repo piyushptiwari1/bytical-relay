@@ -45,6 +45,7 @@ import { fromB64 } from "@rdc/security/client";
 import { newCommandId, nowIso } from "@rdc/shared";
 import { type ClientState, ControllerClient } from "@rdc/transport";
 import { create } from "zustand";
+import { reportDiag } from "./diagnostics.ts";
 import {
   expoPushTokenOrNull,
   onAgentStatus,
@@ -360,6 +361,7 @@ export const useApp = create<AppState>((set, get) => {
       const candidates = options.preferRelay
         ? [...relayCandidates, ...directCandidates]
         : [...directCandidates, ...relayCandidates];
+      const failures: string[] = [];
       for (const candidate of candidates) {
         const client = new ControllerClient({
           url: candidate.url,
@@ -425,10 +427,31 @@ export const useApp = create<AppState>((set, get) => {
             )
             .catch(() => {});
           return;
-        } catch {
+        } catch (cause) {
           client.close();
+          const raw = cause instanceof Error ? cause.message : String(cause);
+          // class only — never addresses or tokens
+          failures.push(
+            `${candidate.transport}:${
+              /timeout|timed out/i.test(raw)
+                ? "timeout"
+                : /refused|ECONNREFUSED/i.test(raw)
+                  ? "refused"
+                  : /forbidden|unauthorized|4401|4403/i.test(raw)
+                    ? "auth"
+                    : /4404|offline/i.test(raw)
+                      ? "machine_offline"
+                      : /network|ENETUNREACH|EHOSTUNREACH/i.test(raw)
+                        ? "network"
+                        : "other"
+            }`,
+          );
         }
       }
+      reportDiag(
+        "connect.failed",
+        `lan_addrs=${machine.addrs.length} relay=${machine.relay ? (activeRelayTicket(machine.relay) ? "ticket" : "expired") : "none"} — ${failures.join(" | ") || "no candidates"}`,
+      );
       patchRuntime(machineId, { state: "unreachable" });
     },
 
