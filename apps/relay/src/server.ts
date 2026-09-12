@@ -226,6 +226,8 @@ export async function buildRelay(options: RelayOptions): Promise<FastifyInstance
       socket.on("close", () => {
         if (machines.get(machineId) !== entry) return; // already replaced
         machines.delete(machineId);
+        // binding guards LIVE sessions; a reinstalled machine must be able to return
+        machineSecretHashes.delete(machineId);
         for (const [, phone] of entry.phones) phone.close(4410, "machine disconnected");
       });
       return;

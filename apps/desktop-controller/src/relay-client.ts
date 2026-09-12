@@ -2,6 +2,7 @@ import { verifyRelayTicket } from "@rdc/security";
 import WebSocket from "ws";
 import type { DeviceStore } from "./device-store.ts";
 import type { WsLike } from "./server.ts";
+import { diag } from "./telemetry.ts";
 
 export interface RelayClientDeps {
   url: string; // ws(s)://host:port — /tunnel appended here
@@ -89,8 +90,14 @@ export class RelayClient {
       else if (msg.t === "msg") this.#channels.get(msg.ch)?.receive(msg);
       else if (msg.t === "close") this.#dropChannel(msg.ch);
     });
-    ws.on("close", () => {
+    ws.on("close", (code: number, reason: Buffer) => {
       if (this.#ws === ws) this.#ws = null;
+      // 44xx = the relay refused us — that must never stay silent
+      if (code >= 4400 && code < 4500) {
+        const why = reason?.toString() || "rejected";
+        this.#deps.log?.("relay REJECTED this controller", { code, reason: why });
+        diag("relay.rejected", `code=${code} ${why}`);
+      }
       this.#closeAllChannels();
       this.#scheduleReconnect();
     });

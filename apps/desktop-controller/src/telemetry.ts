@@ -5,6 +5,8 @@ const recent = new Map<string, number>();
 
 export function diag(code: string, detail: string): void {
   if (process.env.RDC_NO_TELEMETRY === "1") return;
+  // test/CI processes must never pollute field diagnostics
+  if (process.env.CI === "true" || process.env.VITEST || process.env.NODE_ENV === "test") return;
   try {
     const key = `${code}:${detail.slice(0, 80)}`;
     const now = Date.now();
